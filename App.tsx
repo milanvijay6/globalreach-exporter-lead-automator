@@ -504,34 +504,42 @@ const App: React.FC = () => {
                       }
                   }
               } else if (channel === 'WeChat') {
-                  // WeChat handling (existing logic)
-                  const content = payload.Content;
-                  const contact = payload.FromUserName;
+                  // WeChat handling - parse XML and process via MessagingService
+                  const { MessagingService } = await import('./services/messagingService');
                   
-                  if (content && contact) {
-                      setImporters(prev => {
-                          const existing = prev.find(i => i.contactDetail.includes(contact) || contact.includes(i.contactDetail));
-                          
-                          if (existing) {
-                              CampaignService.stopEnrollment(existing.id);
-                              const newMessage: Message = {
-                                  id: `wh-${Date.now()}`,
-                                  content: content,
-                                  sender: 'importer',
-                                  timestamp: timestamp || Date.now(),
-                                  channel: Channel.WECHAT,
-                                  status: MessageStatus.DELIVERED
-                              };
-                              return prev.map(i => i.id === existing.id ? { 
-                                  ...i, 
-                                  status: LeadStatus.ENGAGED,
-                                  chatHistory: [...i.chatHistory, newMessage],
-                                  lastContacted: Date.now(),
-                                  activityLog: [...i.activityLog, { id: `log-${Date.now()}`, timestamp: Date.now(), type: 'system', description: `Incoming WeChat message` }]
-                              } : i);
-                          }
-                          return prev;
-                      });
+                  if (typeof payload === 'string') {
+                      // XML payload from webhook
+                      MessagingService.processWeChatWebhook(payload);
+                  } else {
+                      // Legacy format support
+                      const content = payload.Content || payload.content || '';
+                      const contact = payload.FromUserName || payload.fromUserName || '';
+                      
+                      if (content && contact) {
+                          setImporters(prev => {
+                              const existing = prev.find(i => i.contactDetail.includes(contact) || contact.includes(i.contactDetail));
+                              
+                              if (existing) {
+                                  CampaignService.stopEnrollment(existing.id);
+                                  const newMessage: Message = {
+                                      id: `wc-${Date.now()}`,
+                                      content: content,
+                                      sender: 'importer',
+                                      timestamp: timestamp || Date.now(),
+                                      channel: Channel.WECHAT,
+                                      status: MessageStatus.DELIVERED
+                                  };
+                                  return prev.map(i => i.id === existing.id ? { 
+                                      ...i, 
+                                      status: LeadStatus.ENGAGED,
+                                      chatHistory: [...i.chatHistory, newMessage],
+                                      lastContacted: Date.now(),
+                                      activityLog: [...i.activityLog, { id: `log-${Date.now()}`, timestamp: Date.now(), type: 'system', description: `Incoming WeChat message` }]
+                                  } : i);
+                              }
+                              return prev;
+                          });
+                      }
                   }
               }
           });

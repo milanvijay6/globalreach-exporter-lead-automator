@@ -59,6 +59,16 @@ export interface EmailCredentials {
   oauthClientSecret?: string;
 }
 
+export interface WeChatCredentials {
+  appId: string;
+  appSecret: string; // Encrypted
+  accessToken?: string;
+  accessTokenExpiry?: number;
+  refreshToken?: string; // For OAuth user tokens
+  webhookToken?: string; // For webhook verification
+  encodingAESKey?: string; // For message encryption (optional)
+}
+
 export interface PlatformConnection {
   channel: Channel;
   status: PlatformStatus;
@@ -69,6 +79,7 @@ export interface PlatformConnection {
   healthStatus?: 'healthy' | 'error';
   whatsappCredentials?: WhatsAppCredentials;
   emailCredentials?: EmailCredentials;
+  wechatCredentials?: WeChatCredentials;
 }
 
 export interface User {
@@ -333,6 +344,91 @@ export const DEFAULT_NOTIFICATIONS: NotificationConfig = {
   dailyDigest: false,
   criticalAlerts: true
 };
+
+// WeChat Message Types
+export interface WeChatTextMessage {
+  ToUserName: string;
+  FromUserName: string;
+  CreateTime: number;
+  MsgType: 'text';
+  Content: string;
+  MsgId: string;
+}
+
+export interface WeChatImageMessage {
+  ToUserName: string;
+  FromUserName: string;
+  CreateTime: number;
+  MsgType: 'image';
+  PicUrl: string;
+  MediaId: string;
+  MsgId: string;
+}
+
+export interface WeChatVoiceMessage {
+  ToUserName: string;
+  FromUserName: string;
+  CreateTime: number;
+  MsgType: 'voice';
+  MediaId: string;
+  Format: string;
+  Recognition?: string; // Voice recognition result
+  MsgId: string;
+}
+
+export interface WeChatVideoMessage {
+  ToUserName: string;
+  FromUserName: string;
+  CreateTime: number;
+  MsgType: 'video';
+  MediaId: string;
+  ThumbMediaId: string;
+  MsgId: string;
+}
+
+export interface WeChatEventMessage {
+  ToUserName: string;
+  FromUserName: string;
+  CreateTime: number;
+  MsgType: 'event';
+  Event: 'subscribe' | 'unsubscribe' | 'SCAN' | 'LOCATION' | 'CLICK' | 'VIEW';
+  EventKey?: string;
+  Ticket?: string; // For QR code scan events
+  Latitude?: number; // For location events
+  Longitude?: number; // For location events
+}
+
+export type WeChatMessage = WeChatTextMessage | WeChatImageMessage | WeChatVoiceMessage | WeChatVideoMessage | WeChatEventMessage;
+
+export interface WeChatWebhookPayload {
+  xml: WeChatMessage;
+}
+
+export interface WeChatUserInfo {
+  subscribe: number; // 0 = not subscribed, 1 = subscribed
+  openid: string;
+  nickname?: string;
+  sex?: number; // 0 = unknown, 1 = male, 2 = female
+  language?: string;
+  city?: string;
+  province?: string;
+  country?: string;
+  headimgurl?: string;
+  subscribe_time?: number;
+  unionid?: string;
+  remark?: string;
+  groupid?: number;
+  tagid_list?: number[];
+  subscribe_scene?: string;
+  qr_scene?: number;
+  qr_scene_str?: string;
+}
+
+export interface WeChatQRCodeResponse {
+  ticket: string;
+  expire_seconds: number;
+  url: string;
+}
 
 export const canEditSettings = (role: UserRole) => role === UserRole.ADMIN;
 export const canExportData = (role: UserRole) => role === UserRole.ADMIN;

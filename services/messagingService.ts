@@ -2,6 +2,7 @@
 import { Channel, MessageStatus, PlatformConnection } from '../types';
 import { WhatsAppService } from './whatsappService';
 import { EmailService } from './emailService';
+import { WeChatService } from './wechatService';
 import { loadPlatformConnections } from './securityService';
 
 // Types for the internal mock event system
@@ -24,6 +25,17 @@ const getWhatsAppConnection = async (): Promise<PlatformConnection | null> => {
     conn => conn.channel === Channel.WHATSAPP && 
     conn.status === 'Connected' && 
     conn.whatsappCredentials
+  ) || null;
+};
+
+const getWeChatConnection = async (): Promise<PlatformConnection | null> => {
+  if (!cachedConnections) {
+    cachedConnections = await loadPlatformConnections();
+  }
+  return cachedConnections.find(
+    conn => conn.channel === Channel.WECHAT && 
+    conn.status === 'Connected' && 
+    conn.wechatCredentials
   ) || null;
 };
 
@@ -69,6 +81,40 @@ export const MessagingService = {
         return { success: true };
       } else {
         console.warn('[MessagingService] WhatsApp not connected, falling back to simulation');
+        // Fall through to simulation
+      }
+    }
+
+    // Use real WeChat API if connected
+    if (channel === Channel.WECHAT) {
+      const wechatConn = await getWeChatConnection();
+      
+      if (wechatConn?.wechatCredentials) {
+        // Notify SENT status immediately
+        if (statusListener) statusListener(messageId, MessageStatus.SENT);
+        
+        // 'to' should be OpenID for WeChat
+        const result = await WeChatService.sendTextMessage(
+          wechatConn.wechatCredentials,
+          to, // OpenID
+          content
+        );
+        
+        if (!result.success) {
+          // Update status to FAILED on error
+          if (statusListener) statusListener(messageId, MessageStatus.FAILED);
+          return { success: false, error: MessagingService.handleWeChatError(result.error) };
+        }
+        
+        // WeChat doesn't provide real-time delivery/read status via API
+        // Status updates will come via webhook if available
+        setTimeout(() => {
+          if (statusListener) statusListener(messageId, MessageStatus.DELIVERED);
+        }, 1000);
+        
+        return { success: true };
+      } else {
+        console.warn('[MessagingService] WeChat not connected, falling back to simulation');
         // Fall through to simulation
       }
     }
@@ -190,6 +236,28 @@ export const MessagingService = {
   },
 
   /**
+   * Handles WeChat API errors with user-friendly messages
+   */
+  handleWeChatError: (error: any): string => {
+    if (typeof error === 'string') {
+      if (error.includes('quota exceeded') || error.includes('45009')) {
+        return 'WeChat API quota exceeded. Daily limit: 2000 calls. Please try again tomorrow.';
+      }
+      if (error.includes('Invalid credential') || error.includes('40001')) {
+        return 'Invalid WeChat credentials. Please check your AppID and AppSecret in Settings.';
+      }
+      if (error.includes('Invalid access_token') || error.includes('40014')) {
+        return 'WeChat access token expired. Please reconnect your WeChat account.';
+      }
+      if (error.includes('Network')) {
+        return 'Network error. Please check your internet connection.';
+      }
+      return error || 'Failed to send message. Please try again.';
+    }
+    return error?.message || 'Failed to send message. Please try again.';
+  },
+
+  /**
    * Register a callback for when new messages arrive via Webhook/Socket
    */
   onIncomingMessage: (handler: IncomingHandler) => {
@@ -253,6 +321,47 @@ export const MessagingService = {
       if (statusListener) {
         statusListener(status.messageId, status.status);
       }
+    }
+  },
+
+  /**
+   * Process incoming WeChat webhook payload and trigger callbacks
+   */
+  processWeChatWebhook: (xmlPayload: string) => {
+    const message = WeChatService.parseXMLMessage(xmlPayload);
+    
+    if (!message) {
+      console.warn('[MessagingService] Failed to parse WeChat message');
+      return;
+    }
+
+    // Extract content based on message type
+    let content = '';
+    if (message.MsgType === 'text') {
+      content = (message as any).Content || '';
+    } else if (message.MsgType === 'image') {
+      content = '[Image]';
+    } else if (message.MsgType === 'voice') {
+      content = (message as any).Recognition || '[Voice]';
+    } else if (message.MsgType === 'video') {
+      content = '[Video]';
+    } else if (message.MsgType === 'event') {
+      const event = message as any;
+      if (event.Event === 'subscribe') {
+        content = '[User subscribed]';
+      } else if (event.Event === 'unsubscribe') {
+        content = '[User unsubscribed]';
+      } else {
+        content = `[Event: ${event.Event}]`;
+      }
+    } else {
+      content = `[${message.MsgType}]`;
+    }
+
+    // Trigger incoming message callback
+    if (incomingListener && content) {
+      // Use FromUserName (OpenID) as contact identifier
+      incomingListener(null, message.FromUserName, content, Channel.WECHAT);
     }
   }
 };

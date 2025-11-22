@@ -70,6 +70,7 @@ function startServer(startingPort) {
   // Middleware
   appServer.use(express.json());
   appServer.use(express.urlencoded({ extended: true }));
+  // WeChat uses XML, so we need to handle text/xml separately in the route
 
   // Static Files
   // This points to 'electron/build'
@@ -126,6 +127,81 @@ function startServer(startingPort) {
       res.sendStatus(200);
     } catch (err) {
       logger.error('Error processing WhatsApp webhook', err);
+      res.sendStatus(500);
+    }
+  });
+
+  // WeChat Webhook Verification (GET)
+  appServer.get('/webhooks/wechat', (req, res) => {
+    const signature = req.query.signature;
+    const timestamp = req.query.timestamp;
+    const nonce = req.query.nonce;
+    const echostr = req.query.echostr;
+    const webhookToken = getConfig('webhookVerifyToken', 'globalreach_secret_token');
+
+    if (!signature || !timestamp || !nonce || !echostr) {
+      logger.warn('WeChat webhook verification failed: Missing parameters');
+      return res.sendStatus(400);
+    }
+
+    // WeChat signature algorithm: SHA1(token + timestamp + nonce) sorted
+    const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
+    const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
+
+    if (sha1 === signature) {
+      logger.info('WeChat webhook verified successfully');
+      res.send(echostr);
+    } else {
+      logger.warn('WeChat webhook verification failed: Invalid signature', { 
+        received: signature, 
+        expected: sha1 
+      });
+      res.sendStatus(403);
+    }
+  });
+
+  // WeChat Webhook Handler (POST)
+  appServer.post('/webhooks/wechat', express.text({ type: 'application/xml', limit: '10mb' }), (req, res) => {
+    logger.info('WeChat webhook received', { body: req.body?.substring(0, 200) });
+    
+    try {
+      const xmlPayload = req.body;
+      
+      if (!xmlPayload) {
+        logger.warn('WeChat webhook: Empty payload');
+        return res.sendStatus(400);
+      }
+
+      // Verify signature (optional but recommended for security)
+      const signature = req.query.signature;
+      const timestamp = req.query.timestamp;
+      const nonce = req.query.nonce;
+      const webhookToken = getConfig('webhookVerifyToken', 'globalreach_secret_token');
+
+      if (signature && timestamp && nonce) {
+        const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
+        const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
+        
+        if (sha1 !== signature) {
+          logger.warn('WeChat webhook: Invalid signature', { received: signature, expected: sha1 });
+          return res.sendStatus(403);
+        }
+      }
+
+      // Forward to renderer if window exists
+      if (mainWindow) {
+        mainWindow.webContents.send('webhook-payload', { 
+          channel: 'WeChat', 
+          payload: xmlPayload, 
+          timestamp: Date.now() 
+        });
+      }
+      
+      // WeChat expects a response (can be empty or echo)
+      res.type('application/xml');
+      res.send('<xml><return_code><![CDATA[SUCCESS]]></return_code></xml>');
+    } catch (err) {
+      logger.error('Error processing WeChat webhook', err);
       res.sendStatus(500);
     }
   });

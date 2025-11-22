@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Smartphone, CheckCircle, Loader2, RefreshCw, Mail, Globe, Server, MessageCircle, AlertCircle, Key } from 'lucide-react';
-import { Channel, PlatformStatus, PlatformConnection, WhatsAppCredentials, EmailCredentials } from '../types';
+import { Channel, PlatformStatus, PlatformConnection, WhatsAppCredentials, EmailCredentials, WeChatCredentials } from '../types';
 import { WhatsAppService } from '../services/whatsappService';
 import { EmailService } from '../services/emailService';
+import { WeChatService } from '../services/wechatService';
 import { PlatformService } from '../services/platformService';
 
 interface PlatformConnectModalProps {
@@ -23,8 +24,14 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [businessAccountId, setBusinessAccountId] = useState('');
   const [webhookVerifyToken, setWebhookVerifyToken] = useState('');
+  
+  // WeChat credentials state
+  const [appId, setAppId] = useState('');
+  const [appSecret, setAppSecret] = useState('');
+  const [wechatWebhookToken, setWechatWebhookToken] = useState('');
+  
   const [errorMessage, setErrorMessage] = useState('');
-  const [testResult, setTestResult] = useState<{ success: boolean; phoneNumber?: string; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; phoneNumber?: string; accountName?: string; error?: string } | null>(null);
 
   // Reset state when opening
   useEffect(() => {
@@ -33,7 +40,9 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         setStep('provider-select');
       } else if (channel === Channel.WHATSAPP) {
         setStep('credentials');
-        // Load existing credentials if any
+        loadExistingCredentials();
+      } else if (channel === Channel.WECHAT) {
+        setStep('credentials');
         loadExistingCredentials();
       } else {
         setStep('provider-select');
@@ -51,13 +60,24 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
     try {
       const { loadPlatformConnections } = await import('../services/securityService');
       const connections = await loadPlatformConnections();
-      const whatsappConn = connections.find(c => c.channel === Channel.WHATSAPP && c.whatsappCredentials);
-      if (whatsappConn?.whatsappCredentials) {
-        const creds = whatsappConn.whatsappCredentials;
-        setAccessToken(creds.accessToken);
-        setPhoneNumberId(creds.phoneNumberId);
-        setBusinessAccountId(creds.businessAccountId);
-        setWebhookVerifyToken(creds.webhookVerifyToken);
+      
+      if (channel === Channel.WHATSAPP) {
+        const whatsappConn = connections.find(c => c.channel === Channel.WHATSAPP && c.whatsappCredentials);
+        if (whatsappConn?.whatsappCredentials) {
+          const creds = whatsappConn.whatsappCredentials;
+          setAccessToken(creds.accessToken);
+          setPhoneNumberId(creds.phoneNumberId);
+          setBusinessAccountId(creds.businessAccountId);
+          setWebhookVerifyToken(creds.webhookVerifyToken);
+        }
+      } else if (channel === Channel.WECHAT) {
+        const wechatConn = connections.find(c => c.channel === Channel.WECHAT && c.wechatCredentials);
+        if (wechatConn?.wechatCredentials) {
+          const creds = wechatConn.wechatCredentials;
+          setAppId(creds.appId);
+          setAppSecret(''); // Don't load secret for security
+          setWechatWebhookToken(creds.webhookToken || '');
+        }
       }
     } catch (e) {
       console.error('Failed to load existing credentials', e);
@@ -65,83 +85,163 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
   };
 
   const handleTestConnection = async () => {
-    if (!accessToken.trim() || !phoneNumberId.trim()) {
-      setErrorMessage('Please enter Access Token and Phone Number ID');
-      return;
-    }
-
-    setStep('testing');
-    setErrorMessage('');
-    setTestResult(null);
-
-    try {
-      const result = await WhatsAppService.testConnection(phoneNumberId, accessToken);
-      setTestResult(result);
-      
-      if (result.success) {
-        // Auto-advance to success after a moment
-        setTimeout(() => {
-          handleConnect();
-        }, 1500);
-      } else {
-        setStep('credentials');
-        setErrorMessage(result.error || 'Connection test failed');
+    if (channel === Channel.WHATSAPP) {
+      if (!accessToken.trim() || !phoneNumberId.trim()) {
+        setErrorMessage('Please enter Access Token and Phone Number ID');
+        return;
       }
-    } catch (error: any) {
-      setStep('credentials');
-      setErrorMessage(error.message || 'Failed to test connection');
-      setTestResult({ success: false, error: error.message });
+
+      setStep('testing');
+      setErrorMessage('');
+      setTestResult(null);
+
+      try {
+        const result = await WhatsAppService.testConnection(phoneNumberId, accessToken);
+        setTestResult(result);
+        
+        if (result.success) {
+          setTimeout(() => {
+            handleConnect();
+          }, 1500);
+        } else {
+          setStep('credentials');
+          setErrorMessage(result.error || 'Connection test failed');
+        }
+      } catch (error: any) {
+        setStep('credentials');
+        setErrorMessage(error.message || 'Failed to test connection');
+        setTestResult({ success: false, error: error.message });
+      }
+    } else if (channel === Channel.WECHAT) {
+      if (!appId.trim() || !appSecret.trim()) {
+        setErrorMessage('Please enter AppID and AppSecret');
+        return;
+      }
+
+      setStep('testing');
+      setErrorMessage('');
+      setTestResult(null);
+
+      try {
+        const credentials: WeChatCredentials = {
+          appId,
+          appSecret,
+          webhookToken: wechatWebhookToken || 'globalreach_secret_token',
+        };
+        const result = await WeChatService.testConnection(credentials);
+        setTestResult(result);
+        
+        if (result.success) {
+          setTimeout(() => {
+            handleConnect();
+          }, 1500);
+        } else {
+          setStep('credentials');
+          setErrorMessage(result.error || 'Connection test failed');
+        }
+      } catch (error: any) {
+        setStep('credentials');
+        setErrorMessage(error.message || 'Failed to test connection');
+        setTestResult({ success: false, error: error.message });
+      }
     }
   };
 
   const handleConnect = async () => {
-    if (!accessToken.trim() || !phoneNumberId.trim() || !businessAccountId.trim() || !webhookVerifyToken.trim()) {
-      setErrorMessage('Please fill in all required fields');
-      return;
-    }
-
-    setStep('testing');
-    setErrorMessage('');
-
-    try {
-      // Test connection first
-      const testResult = await WhatsAppService.testConnection(phoneNumberId, accessToken);
-      
-      if (!testResult.success) {
-        setStep('credentials');
-        setErrorMessage(testResult.error || 'Connection test failed');
+    if (channel === Channel.WHATSAPP) {
+      if (!accessToken.trim() || !phoneNumberId.trim() || !businessAccountId.trim() || !webhookVerifyToken.trim()) {
+        setErrorMessage('Please fill in all required fields');
         return;
       }
 
-      // Save webhook verify token to config
-      await PlatformService.setAppConfig('webhookVerifyToken', webhookVerifyToken);
+      setStep('testing');
+      setErrorMessage('');
 
-      const credentials: WhatsAppCredentials = {
-        accessToken,
-        phoneNumberId,
-        businessAccountId,
-        webhookVerifyToken,
-      };
+      try {
+        const testResult = await WhatsAppService.testConnection(phoneNumberId, accessToken);
+        
+        if (!testResult.success) {
+          setStep('credentials');
+          setErrorMessage(testResult.error || 'Connection test failed');
+          return;
+        }
 
-      const connection: PlatformConnection = {
-        channel: Channel.WHATSAPP,
-        status: PlatformStatus.CONNECTED,
-        accountName: testResult.phoneNumber || phoneNumberId,
-        connectedAt: Date.now(),
-        provider: 'whatsapp',
-        whatsappCredentials: credentials,
-        healthStatus: 'healthy',
-      };
+        await PlatformService.setAppConfig('webhookVerifyToken', webhookVerifyToken);
 
-      onLink(connection);
-      setStep('success');
-      
-      setTimeout(() => {
-        onClose();
-      }, 2000);
-    } catch (error: any) {
-      setStep('credentials');
-      setErrorMessage(error.message || 'Failed to connect');
+        const credentials: WhatsAppCredentials = {
+          accessToken,
+          phoneNumberId,
+          businessAccountId,
+          webhookVerifyToken,
+        };
+
+        const connection: PlatformConnection = {
+          channel: Channel.WHATSAPP,
+          status: PlatformStatus.CONNECTED,
+          accountName: testResult.phoneNumber || phoneNumberId,
+          connectedAt: Date.now(),
+          provider: 'whatsapp',
+          whatsappCredentials: credentials,
+          healthStatus: 'healthy',
+        };
+
+        onLink(connection);
+        setStep('success');
+        
+        setTimeout(() => {
+          onClose();
+        }, 2000);
+      } catch (error: any) {
+        setStep('credentials');
+        setErrorMessage(error.message || 'Failed to connect');
+      }
+    } else if (channel === Channel.WECHAT) {
+      if (!appId.trim() || !appSecret.trim()) {
+        setErrorMessage('Please fill in AppID and AppSecret');
+        return;
+      }
+
+      setStep('testing');
+      setErrorMessage('');
+
+      try {
+        const credentials: WeChatCredentials = {
+          appId,
+          appSecret,
+          webhookToken: wechatWebhookToken || 'globalreach_secret_token',
+        };
+        
+        const testResult = await WeChatService.testConnection(credentials);
+        
+        if (!testResult.success) {
+          setStep('credentials');
+          setErrorMessage(testResult.error || 'Connection test failed');
+          return;
+        }
+
+        // Save webhook token to config
+        await PlatformService.setAppConfig('webhookVerifyToken', wechatWebhookToken || 'globalreach_secret_token');
+
+        const connection: PlatformConnection = {
+          channel: Channel.WECHAT,
+          status: PlatformStatus.CONNECTED,
+          accountName: testResult.accountName || `WeChat Account (${appId.substring(0, 8)}...)`,
+          connectedAt: Date.now(),
+          provider: 'wechat',
+          wechatCredentials: credentials,
+          healthStatus: 'healthy',
+        };
+
+        onLink(connection);
+        setStep('success');
+        
+        setTimeout(() => {
+          onClose();
+        }, 2000);
+      } catch (error: any) {
+        setStep('credentials');
+        setErrorMessage(error.message || 'Failed to connect');
+      }
     }
   };
 
@@ -210,12 +310,20 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         );
       case Channel.WECHAT:
         return (
-          <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 mt-4">
-            <li>Open <strong>WeChat</strong> on your mobile phone.</li>
-            <li>Tap the <strong>+</strong> button in the top right.</li>
-            <li>Select <strong>Scan</strong>.</li>
-            <li>Point your phone at this screen to authorize login.</li>
-          </ol>
+          <div className="text-left space-y-3 text-sm text-slate-600">
+            <p className="font-semibold text-slate-800 mb-2">How to get your WeChat Official Account credentials:</p>
+            <ol className="list-decimal list-inside space-y-2">
+              <li>Go to <a href="https://mp.weixin.qq.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">WeChat Official Account Platform</a></li>
+              <li>Log in with your WeChat Official Account</li>
+              <li>Navigate to <strong>Development</strong> → <strong>Basic Configuration</strong></li>
+              <li>Copy your <strong>AppID</strong> and <strong>AppSecret</strong></li>
+              <li>Configure your <strong>Server URL</strong> (webhook URL) and <strong>Token</strong> in the webhook settings</li>
+              <li>Enable <strong>Message Encryption</strong> if needed (optional)</li>
+            </ol>
+            <p className="mt-3 text-xs text-slate-500">
+              For testing, you can use WeChat's test account. See <a href="https://developers.weixin.qq.com/doc/offiaccount/Basic_Information/Getting_started_with_an_Official_Account.html" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">documentation</a>.
+            </p>
+          </div>
         );
       default:
         return null;
@@ -512,6 +620,85 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
             </div>
           )}
 
+          {/* WECHAT: Credentials Form */}
+          {step === 'credentials' && channel === Channel.WECHAT && (
+            <div className="w-full space-y-4 animate-in slide-in-from-bottom-4 duration-300">
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+                <h3 className="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
+                  <Key className="w-4 h-4" />
+                  WeChat Official Account Credentials
+                </h3>
+                {getInstructions()}
+              </div>
+
+              {errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">{errorMessage}</p>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    AppID <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={appId}
+                    onChange={(e) => setAppId(e.target.value)}
+                    placeholder="wx1234567890abcdef"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Found in WeChat Official Account Platform → Development → Basic Configuration</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    AppSecret <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={appSecret}
+                    onChange={(e) => setAppSecret(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Keep this secret secure. Reset it if exposed.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Webhook Token (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={wechatWebhookToken}
+                    onChange={(e) => setWechatWebhookToken(e.target.value)}
+                    placeholder="globalreach_secret_token"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Use this token when configuring webhook in WeChat Official Account Platform</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleTestConnection}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+                >
+                  Test Connection
+                </button>
+                <button
+                  onClick={handleConnect}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  Connect
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Testing/Verifying */}
           {step === 'testing' && (
             <div className="h-64 flex flex-col items-center justify-center space-y-4">
@@ -520,13 +707,15 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
               <p className="text-slate-500 text-sm">
                 {channel === Channel.WHATSAPP 
                   ? 'Verifying WhatsApp API credentials...'
+                  : channel === Channel.WECHAT
+                  ? 'Verifying WeChat API credentials...'
                   : channel === Channel.EMAIL 
                   ? `Connecting to ${emailProvider === 'google' ? 'Google' : emailProvider === 'microsoft' ? 'Microsoft' : 'Server'}...`
                   : "Securely linking your device session."}
               </p>
               {testResult && testResult.success && (
                 <div className="mt-2 text-sm text-green-600 font-medium">
-                  ✓ Connected to {testResult.phoneNumber || phoneNumberId}
+                  ✓ Connected to {testResult.phoneNumber || testResult.accountName || phoneNumberId || appId}
                 </div>
               )}
             </div>
@@ -539,7 +728,7 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                 <CheckCircle className="w-10 h-10" />
               </div>
               <h3 className="font-bold text-slate-800 text-xl">
-                {channel === Channel.EMAIL ? 'Email Linked!' : 'WhatsApp Connected!'}
+                {channel === Channel.EMAIL ? 'Email Linked!' : channel === Channel.WECHAT ? 'WeChat Connected!' : 'WhatsApp Connected!'}
               </h3>
               <p className="text-slate-500 text-sm">Redirecting back to settings...</p>
             </div>
