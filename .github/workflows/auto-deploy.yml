@@ -1,0 +1,75 @@
+name: Auto Deploy on Push
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'README.md'
+
+jobs:
+  deploy:
+    name: Auto Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build React app
+        run: npm run build:react
+
+      - name: Check for changes
+        id: git-check
+        run: |
+          git status
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit build files
+        if: steps.git-check.outputs.has_changes == 'true'
+        run: |
+          git add electron/build
+          git commit -m "chore: auto-update build files [skip ci]" || exit 0
+
+      - name: Push changes
+        if: steps.git-check.outputs.has_changes == 'true'
+        run: |
+          git push || echo "No changes to push"
+
+      - name: Create summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- React app built to electron/build" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.git-check.outputs.has_changes }}" == "true" ]; then
+            echo "- Build files committed and pushed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- No build changes detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
