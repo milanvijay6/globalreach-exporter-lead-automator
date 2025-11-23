@@ -1,8 +1,121 @@
 
-import { google } from 'googleapis';
-import nodemailer from 'nodemailer';
-import Imap from 'imap';
-import { simpleParser } from 'mailparser';
+// Dynamic imports for Node.js-only modules (only load when needed, not in browser)
+let google: any;
+let nodemailer: any;
+let Imap: any;
+let simpleParser: any;
+
+// Lazy load functions
+const getGoogle = async () => {
+  if (!google) {
+    // Only import in Node.js/Electron environment
+    if (typeof window === 'undefined' || (window as any).electronAPI) {
+      try {
+        // Use require for Node.js modules in Electron to avoid Vite bundling
+        if (typeof require !== 'undefined') {
+          // Dynamic require to prevent static analysis
+          const moduleName = 'googleapis';
+          const googleapis = require(moduleName);
+          google = googleapis.google || googleapis;
+        } else {
+          // Fallback: use Function constructor to prevent static analysis
+          const moduleName = 'googleapis';
+          const importFunc = new Function('specifier', 'return import(specifier)');
+          const googleapis = await importFunc(moduleName);
+          google = googleapis.google || googleapis.default?.google || googleapis.default || googleapis;
+        }
+      } catch (error: any) {
+        throw new Error('Google APIs is not available in this environment. Gmail integration requires Node.js.');
+      }
+    } else {
+      throw new Error('Google APIs is not available in browser environment. Use OAuth or configure via Electron.');
+    }
+  }
+  return google;
+};
+
+const getNodemailer = async () => {
+  if (!nodemailer) {
+    // Only import in Node.js/Electron environment
+    if (typeof window === 'undefined' || (window as any).electronAPI) {
+      try {
+        // Use require for Node.js modules in Electron to avoid Vite bundling
+        if (typeof require !== 'undefined') {
+          // Dynamic require to prevent static analysis
+          const moduleName = 'nodemailer';
+          nodemailer = require(moduleName);
+        } else {
+          // Fallback: use Function constructor to prevent static analysis
+          const moduleName = 'nodemailer';
+          const importFunc = new Function('specifier', 'return import(specifier)');
+          const nodemailerModule = await importFunc(moduleName);
+          nodemailer = nodemailerModule.default || nodemailerModule;
+        }
+      } catch (error: any) {
+        throw new Error('Nodemailer is not available in this environment. Email sending via SMTP requires Node.js.');
+      }
+    } else {
+      throw new Error('Nodemailer is not available in browser environment. Use OAuth or configure via Electron.');
+    }
+  }
+  return nodemailer;
+};
+
+const getImap = async () => {
+  if (!Imap) {
+    // Only import in Node.js/Electron environment
+    if (typeof window === 'undefined' || (window as any).electronAPI) {
+      try {
+        // Use require for Node.js modules in Electron to avoid Vite bundling
+        if (typeof require !== 'undefined') {
+          // Dynamic require to prevent static analysis
+          const moduleName = 'imap';
+          Imap = require(moduleName);
+        } else {
+          // Fallback: use Function constructor to prevent static analysis
+          const moduleName = 'imap';
+          const importFunc = new Function('specifier', 'return import(specifier)');
+          const imapModule = await importFunc(moduleName);
+          Imap = imapModule.default || imapModule;
+        }
+      } catch (error: any) {
+        throw new Error('IMAP module is not available in this environment. Email reading requires Node.js.');
+      }
+    } else {
+      throw new Error('IMAP module is not available in browser environment. Use OAuth or configure via Electron.');
+    }
+  }
+  return Imap;
+};
+
+const getSimpleParser = async () => {
+  if (!simpleParser) {
+    // Only import in Node.js/Electron environment
+    if (typeof window === 'undefined' || (window as any).electronAPI) {
+      try {
+        // Use require for Node.js modules in Electron to avoid Vite bundling
+        if (typeof require !== 'undefined') {
+          // Dynamic require to prevent static analysis
+          const moduleName = 'mailparser';
+          const mailparserModule = require(moduleName);
+          simpleParser = mailparserModule.simpleParser || mailparserModule;
+        } else {
+          // Fallback: use Function constructor to prevent static analysis
+          const moduleName = 'mailparser';
+          const importFunc = new Function('specifier', 'return import(specifier)');
+          const mailparserModule = await importFunc(moduleName);
+          simpleParser = mailparserModule.simpleParser || mailparserModule.default?.simpleParser || mailparserModule.default || mailparserModule;
+        }
+      } catch (error: any) {
+        throw new Error('Mailparser is not available in this environment. Email parsing requires Node.js.');
+      }
+    } else {
+      throw new Error('Mailparser is not available in browser environment. Use OAuth or configure via Electron.');
+    }
+  }
+  return simpleParser;
+};
+
 import { PlatformConnection, Channel } from '../types';
 import { loadPlatformConnections } from './securityService';
 import { PlatformService } from './platformService';
@@ -67,16 +180,67 @@ export const EmailService = {
 
   /**
    * Initializes Gmail API client with OAuth credentials
+   * Automatically refreshes token if it expires in less than 5 minutes
    */
   getGmailClient: async (credentials: EmailCredentials) => {
     if (credentials.provider !== 'gmail' || !credentials.accessToken) {
       throw new Error('Gmail credentials not available');
     }
 
-    const oauth2Client = new google.auth.OAuth2(
+    // Check if token needs refresh (expires in < 5 minutes)
+    const REFRESH_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const needsRefresh = credentials.tokenExpiryDate 
+      ? (credentials.tokenExpiryDate - now) < REFRESH_BUFFER_MS
+      : true; // If no expiry date, assume needs refresh
+
+    // Proactively refresh token if needed
+    if (needsRefresh && credentials.refreshToken && credentials.oauthClientId && credentials.oauthClientSecret) {
+      try {
+        const { EmailAuthService } = await import('./emailAuthService');
+        const refreshed = await EmailAuthService.refreshTokensIfNeeded(credentials);
+        if (refreshed) {
+          // Use refreshed credentials
+          credentials.accessToken = refreshed.accessToken;
+          credentials.refreshToken = refreshed.refreshToken || credentials.refreshToken;
+          credentials.tokenExpiryDate = refreshed.tokenExpiryDate;
+          
+          // Persist updated credentials
+          const connection = await EmailService.getEmailConnection();
+          if (connection?.emailCredentials && connection.emailCredentials.provider === 'gmail') {
+            connection.emailCredentials.accessToken = refreshed.accessToken;
+            connection.emailCredentials.refreshToken = refreshed.refreshToken || connection.emailCredentials.refreshToken;
+            connection.emailCredentials.tokenExpiryDate = refreshed.tokenExpiryDate;
+            
+            const { savePlatformConnections } = await import('./securityService');
+            const allConnections = await loadPlatformConnections();
+            const updated = allConnections.map(c => 
+              c.channel === Channel.EMAIL ? connection : c
+            );
+            await savePlatformConnections(updated);
+          }
+        }
+      } catch (error: any) {
+        // Log but continue - might still work if token isn't actually expired
+        const { Logger } = await import('./loggerService');
+        Logger.warn('[EmailService] Proactive token refresh failed, continuing with existing token:', error.message);
+      }
+    }
+
+    const googleLib = await getGoogle();
+    
+    // Get redirect URI from stored credentials or construct from server port
+    let redirectUri = credentials.redirectUri;
+    if (!redirectUri) {
+      // Try to get server port from config, default to 4000
+      const port = await PlatformService.getAppConfig('serverPort', 4000);
+      redirectUri = `http://localhost:${port}/auth/oauth/callback`;
+    }
+    
+    const oauth2Client = new googleLib.auth.OAuth2(
       credentials.oauthClientId,
       credentials.oauthClientSecret,
-      'urn:ietf:wg:oauth:2.0:oob' // For desktop app
+      redirectUri
     );
 
     oauth2Client.setCredentials({
@@ -84,25 +248,34 @@ export const EmailService = {
       refresh_token: credentials.refreshToken,
     });
 
-    // Auto-refresh token if expired
+    // Auto-refresh token if expired (backup mechanism)
     oauth2Client.on('tokens', async (tokens) => {
-      if (tokens.refresh_token) {
-        // Update stored refresh token
+      if (tokens.refresh_token || tokens.access_token) {
+        // Update stored tokens
         const connection = await EmailService.getEmailConnection();
         if (connection?.emailCredentials) {
-          connection.emailCredentials.refreshToken = tokens.refresh_token;
+          if (tokens.access_token) {
+            connection.emailCredentials.accessToken = tokens.access_token;
+          }
+          if (tokens.refresh_token) {
+            connection.emailCredentials.refreshToken = tokens.refresh_token;
+          }
+          if (tokens.expiry_date) {
+            connection.emailCredentials.tokenExpiryDate = tokens.expiry_date;
+          }
+          
           // Save updated credentials
           const { savePlatformConnections } = await import('./securityService');
           const allConnections = await loadPlatformConnections();
           const updated = allConnections.map(c => 
             c.channel === Channel.EMAIL ? connection : c
           );
-          savePlatformConnections(updated);
+          await savePlatformConnections(updated);
         }
       }
     });
 
-    return google.gmail({ version: 'v1', auth: oauth2Client });
+    return googleLib.gmail({ version: 'v1', auth: oauth2Client });
   },
 
   /**
@@ -154,20 +327,68 @@ export const EmailService = {
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
+      // When replying, fetch the original message to get the threadId
+      let threadId: string | undefined = undefined;
+      if (options.inReplyTo) {
+        try {
+          const originalMessage = await gmail.users.messages.get({
+            userId: 'me',
+            id: options.inReplyTo,
+            format: 'minimal',
+          });
+          threadId = originalMessage.data.threadId || undefined;
+        } catch (error: any) {
+          // If we can't fetch the original message, Gmail will still auto-thread based on headers
+          const { Logger } = await import('./loggerService');
+          Logger.warn('[EmailService] Could not fetch threadId for reply, relying on auto-threading:', error.message);
+        }
+      }
+
       const response = await gmail.users.messages.send({
         userId: 'me',
         requestBody: {
           raw: encodedMessage,
-          threadId: options.inReplyTo ? undefined : undefined, // Gmail auto-threads
+          threadId: threadId, // Include threadId if available for proper threading
         },
       });
 
       return { success: true, messageId: response.data.id || undefined };
     } catch (error: any) {
       console.error('[EmailService] Gmail send error:', error);
+      
+      // Automatic token refresh on 401/403 errors
+      if ((error.code === 401 || error.code === 403) && credentials.refreshToken) {
+        try {
+          const { EmailAuthService } = await import('./emailAuthService');
+          const refreshed = await EmailAuthService.refreshTokensIfNeeded(credentials);
+          if (refreshed && refreshed.accessToken) {
+            // Retry once with refreshed token
+            return await EmailService.sendViaGmail(refreshed, options);
+          }
+        } catch (refreshError: any) {
+          // Token refresh failed, fall through to error handling
+          const { Logger } = await import('./loggerService');
+          Logger.error('[EmailService] Token refresh failed on 401/403:', refreshError);
+        }
+      }
+      
+      // Enhanced error handling with quota detection
+      let errorMessage = error.message || 'Failed to send email via Gmail';
+      let retryable = false;
+      
+      if (error.code === 429 || error.message?.includes('quota') || error.message?.includes('rate limit')) {
+        errorMessage = 'Gmail quota exceeded. Please try again later.';
+      } else if (error.code === 401 || error.code === 403) {
+        errorMessage = 'Authentication failed. Please reconnect your Gmail account.';
+      } else if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+        errorMessage = 'Connection failed. Please check your internet connection.';
+        retryable = true;
+      }
+      
       return { 
         success: false, 
-        error: error.message || 'Failed to send email via Gmail' 
+        error: errorMessage,
+        retryable,
       };
     }
   },
@@ -187,7 +408,8 @@ export const EmailService = {
       // Decrypt password if needed (in production, decrypt from secure storage)
       const password = credentials.password || '';
 
-      const transporter = nodemailer.createTransport({
+      const nodemailerLib = await getNodemailer();
+      const transporter = nodemailerLib.createTransport({
         host: credentials.smtpHost,
         port: credentials.smtpPort || 587,
         secure: credentials.smtpPort === 465, // true for 465, false for other ports
@@ -219,9 +441,25 @@ export const EmailService = {
       return { success: true, messageId: info.messageId };
     } catch (error: any) {
       console.error('[EmailService] SMTP send error:', error);
+      
+      // Enhanced error handling
+      let errorMessage = error.message || 'Failed to send email via SMTP';
+      let retryable = false;
+      
+      // Detect quota/rate limit errors
+      if (error.responseCode === 550 || error.message?.includes('quota') || error.message?.includes('limit')) {
+        errorMessage = 'Email quota exceeded. Please try again later.';
+      } else if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+        errorMessage = 'Connection failed. Please check your internet connection.';
+        retryable = true;
+      } else if (error.responseCode === 535 || error.message?.includes('authentication')) {
+        errorMessage = 'Authentication failed. Please check your credentials.';
+      }
+      
       return { 
         success: false, 
-        error: error.message || 'Failed to send email via SMTP' 
+        error: errorMessage,
+        retryable,
       };
     }
   },
@@ -237,7 +475,7 @@ export const EmailService = {
     try {
       const gmail = await EmailService.getGmailClient(credentials);
       
-      // List messages
+      // List messages  
       const listResponse = await gmail.users.messages.list({
         userId: 'me',
         maxResults,
@@ -310,6 +548,23 @@ export const EmailService = {
       return { success: true, messages };
     } catch (error: any) {
       console.error('[EmailService] Gmail read error:', error);
+      
+      // Automatic token refresh on 401/403 errors
+      if ((error.code === 401 || error.code === 403) && credentials.refreshToken) {
+        try {
+          const { EmailAuthService } = await import('./emailAuthService');
+          const refreshed = await EmailAuthService.refreshTokensIfNeeded(credentials);
+          if (refreshed && refreshed.accessToken) {
+            // Retry once with refreshed token
+            return await EmailService.readViaGmail(refreshed, maxResults, query);
+          }
+        } catch (refreshError: any) {
+          // Token refresh failed, fall through to error handling
+          const { Logger } = await import('./loggerService');
+          Logger.error('[EmailService] Token refresh failed on 401/403:', refreshError);
+        }
+      }
+      
       return { 
         success: false, 
         error: error.message || 'Failed to read emails via Gmail' 
@@ -324,13 +579,15 @@ export const EmailService = {
     credentials: EmailCredentials,
     maxResults: number = 10
   ): Promise<{ success: boolean; messages?: EmailMessage[]; error?: string }> => {
-    return new Promise((resolve) => {
-      if (!credentials.imapHost || !credentials.username) {
-        resolve({ success: false, error: 'IMAP credentials incomplete' });
-        return;
-      }
+    if (!credentials.imapHost || !credentials.username) {
+      return { success: false, error: 'IMAP credentials incomplete' };
+    }
 
-      const imap = new Imap({
+    const ImapLib = await getImap();
+    const parser = await getSimpleParser();
+    
+    return new Promise((resolve) => {
+      const imap = new ImapLib({
         user: credentials.username,
         password: credentials.password || '',
         host: credentials.imapHost,
@@ -367,7 +624,7 @@ export const EmailService = {
 
             fetch.on('message', (msg, seqno) => {
               msg.on('body', (stream) => {
-                simpleParser(stream, (err, parsed) => {
+                parser(stream, (err, parsed) => {
                   if (err) {
                     processed++;
                     if (processed === Math.min(results.length, maxResults)) {
@@ -457,7 +714,8 @@ export const EmailService = {
       } else if (credentials.provider === 'smtp' || credentials.provider === 'imap') {
         // Test SMTP connection
         if (credentials.smtpHost) {
-          const transporter = nodemailer.createTransport({
+          const nodemailerLib = await getNodemailer();
+          const transporter = nodemailerLib.createTransport({
             host: credentials.smtpHost,
             port: credentials.smtpPort || 587,
             secure: credentials.smtpPort === 465,

@@ -28,5 +28,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
   
   // Environment
-  platform: process.platform
+  platform: process.platform,
+  
+  // OAuth
+  initiateOAuth: (provider, config, email) => ipcRenderer.invoke('oauth-initiate', { provider, config, email }),
+  exchangeOAuthCode: (provider, code, state, config) => ipcRenderer.invoke('oauth-exchange', { provider, code, state, config }),
+  refreshOAuthToken: (provider, refreshToken, config) => ipcRenderer.invoke('oauth-refresh', { provider, refreshToken, config }),
+  revokeOAuthToken: (provider, token, config) => ipcRenderer.invoke('oauth-revoke', { provider, token, config }),
+  onOAuthCallback: (callback) => ipcRenderer.on('oauth-callback', callback),
+  removeOAuthCallback: () => ipcRenderer.removeAllListeners('oauth-callback'),
+  
+  // Magic Links
+  validateMagicLink: (token) => ipcRenderer.invoke('magic-link-validate', token),
+  generateMagicLink: (email, provider, purpose) => ipcRenderer.invoke('magic-link-generate', { email, provider, purpose }),
+  sendMagicLink: (email, provider, purpose) => ipcRenderer.invoke('magic-link-send', { email, provider, purpose }),
+  onMagicLinkCallback: (callback) => ipcRenderer.on('magic-link-callback', callback),
+  removeMagicLinkCallback: () => ipcRenderer.removeAllListeners('magic-link-callback'),
+  
+  // Deep Links
+  handleDeepLink: (url) => ipcRenderer.invoke('handle-deep-link', url),
+  onDeepLink: (callback) => {
+    ipcRenderer.on('deep-link', (event, url) => callback(event, url));
+  },
+  removeDeepLink: () => ipcRenderer.removeAllListeners('deep-link')
 });

@@ -107,14 +107,37 @@ This project includes automatic deployment workflows. See [DEPLOYMENT.md](DEPLOY
 1. Go to Settings → Integrations
 2. Click "Connect" on Email
 3. Choose provider:
-   - **Gmail**: OAuth 2.0 (requires setup)
-   - **Custom**: SMTP/IMAP credentials
+   - **Gmail**: OAuth 2.0 (recommended - see [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md))
+   - **Outlook**: OAuth 2.0 (recommended) or SMTP/IMAP (see [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md))
+   - **Custom**: SMTP/IMAP credentials (see [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md))
+
+#### Gmail OAuth Setup
+For Gmail integration, you'll need to:
+1. Create a Google Cloud Project
+2. Enable Gmail API
+3. Configure OAuth 2.0 credentials
+4. Set up redirect URIs
+
+See the [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md) for detailed step-by-step instructions.
+
+#### Outlook SMTP/IMAP Setup
+For Outlook email using SMTP/IMAP:
+1. Find your email server settings (see [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md))
+2. Use preset configurations in the app (Outlook.com, Gmail, Yahoo)
+3. Or manually enter SMTP and IMAP server details
+
+See the [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md) for:
+- How to find settings in Windows Control Panel
+- Complete server settings for Outlook, Gmail, Yahoo
+- Step-by-step app configuration
+- Troubleshooting common issues
 
 ## Documentation
 
 - [Deployment Guide](DEPLOYMENT.md) - Detailed deployment instructions
+- [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md) - Complete guide for setting up Gmail OAuth 2.0 authentication
+- [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md) - Complete guide for configuring Outlook email via SMTP/IMAP
 - [WhatsApp Integration](./whatsapp-cloud-api-integration.plan.md) - WhatsApp setup guide
-- [Email Integration](./whatsapp-cloud-api-integration.plan.md) - Email setup guide
 
 ## License
 

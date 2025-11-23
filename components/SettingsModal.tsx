@@ -1,13 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Save, RefreshCcw, Globe, Shield, Link as LinkIcon, CheckCircle, AlertCircle, Mail, Smartphone, Monitor, LogOut, Lock, Bell, MessageSquare, Server, Download, Cpu, Radio, Network, Database, Upload, FileText, Terminal, Activity, PlayCircle, Zap, Brain, Sparkles, ThumbsUp, ThumbsDown, Trash2 } from 'lucide-react';
-import { AppTemplates, DEFAULT_TEMPLATES, Language, UserRole, PlatformConnection, Channel, PlatformStatus, AuthSession, NotificationConfig, DEFAULT_NOTIFICATIONS, Importer, OptimizationInsight } from '../types';
+import { AppTemplates, DEFAULT_TEMPLATES, Language, UserRole, PlatformConnection, Channel, PlatformStatus, AuthSession, NotificationConfig, DEFAULT_NOTIFICATIONS, Importer, OptimizationInsight, User } from '../types';
 import { t } from '../services/i18n';
 import PlatformConnectModal from './PlatformConnectModal';
 import { getActiveSessions } from '../services/securityService';
 import { PlatformService, isDesktop } from '../services/platformService';
 import { Logger } from '../services/loggerService';
 import { OptimizationService } from '../services/optimizationService';
+import ApiKeyManagementTab from './ApiKeyManagementTab';
+import ApiKeyUsageDashboard from './ApiKeyUsageDashboard';
+import MfaSetupModal from './MfaSetupModal';
+import AdminActionLog from './AdminActionLog';
+import AdminMonitoringDashboard from './AdminMonitoringDashboard';
+import { hasAdminAccess, canViewAuditLogs } from '../services/permissionService';
+import ResourceSettings from './ResourceSettings';
+import SystemStatus from './SystemStatus';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,6 +25,7 @@ interface SettingsModalProps {
   language: Language;
   setLanguage: (l: Language) => void;
   userRole: UserRole;
+  user?: User;
   connectedPlatforms: PlatformConnection[];
   onUpdateConnection: (conn: PlatformConnection) => void;
   notificationConfig?: NotificationConfig;
@@ -33,6 +42,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     language, 
     setLanguage, 
     userRole,
+    user,
     connectedPlatforms,
     onUpdateConnection,
     notificationConfig = DEFAULT_NOTIFICATIONS,
@@ -42,7 +52,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localTemplates, setLocalTemplates] = useState<AppTemplates>(templates);
   const [localNotifications, setLocalNotifications] = useState<NotificationConfig>(notificationConfig);
-  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network'>('general');
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   
@@ -58,6 +68,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [healthLogs, setHealthLogs] = useState<string[]>([]);
   
   const [sessions, setSessions] = useState<AuthSession[]>([]);
+  const [showMfaModal, setShowMfaModal] = useState(false);
+  const [showUsageDashboard, setShowUsageDashboard] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState(false);
 
   // AI Optimization State
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -262,6 +275,43 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         }}
       />
 
+      {/* MFA Modal */}
+      {user && (
+        <MfaSetupModal
+          isOpen={showMfaModal}
+          onClose={() => setShowMfaModal(false)}
+          user={user}
+          onMfaEnabled={() => {
+            // Reload user session to get updated MFA status
+            const { loadUserSession } = require('./../services/securityService');
+            loadUserSession().then((updatedUser: User | null) => {
+              if (updatedUser) {
+                // Update user in parent component would be needed
+                // For now, just close modal
+                setShowMfaModal(false);
+              }
+            });
+          }}
+        />
+      )}
+
+      {/* Audit Log Modal */}
+      {user && showAuditLog && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-slate-800">Audit Log</h2>
+              <button onClick={() => setShowAuditLog(false)} className="p-2 hover:bg-slate-200 rounded-full">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <AdminActionLog user={user} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
           <h2 className="text-xl font-bold text-slate-800">{t('settings', language)}</h2>
@@ -271,14 +321,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex border-b border-slate-200 px-6 gap-6 overflow-x-auto scrollbar-hide">
-            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'data', 'diagnostics'].map(tab => (
+            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => (
                 <button 
                     key={tab}
                     onClick={() => setActiveTab(tab as any)} 
                     className={`py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap capitalize
                         ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
-                    {tab === 'tuning' ? t('aiTuning', language) : tab}
+                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab}
                 </button>
             ))}
         </div>
@@ -434,26 +484,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     return (
                         <div key={channel} className="border border-slate-200 rounded-lg overflow-hidden">
                             <div className="flex items-center justify-between p-4 hover:bg-slate-50">
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${getChannelIcon(channel)}`}>
-                                        {channel === Channel.EMAIL ? <Mail className="w-6 h-6" /> : <LinkIcon className="w-6 h-6" />}
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-slate-800">{channel}</h4>
-                                        {isConnected ? (
-                                            <div className="flex flex-col">
-                                                <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {connection.accountName}</p>
-                                                {connection.provider && <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">VIA {connection.provider}</span>}
-                                            </div>
-                                        ) : <p className="text-xs text-slate-500">Not connected</p>}
-                                    </div>
+                            <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${getChannelIcon(channel)}`}>
+                                    {channel === Channel.EMAIL ? <Mail className="w-6 h-6" /> : <LinkIcon className="w-6 h-6" />}
                                 </div>
-                                <button 
-                                    onClick={() => isConnected ? onUpdateConnection({ ...connection, status: PlatformStatus.DISCONNECTED }) : openConnectModal(channel)}
-                                    className={`px-3 py-1.5 text-xs border rounded ${isConnected ? 'border-red-200 text-red-600 hover:bg-red-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
-                                >
-                                    {isConnected ? 'Disconnect' : 'Connect'}
-                                </button>
+                                <div>
+                                    <h4 className="font-bold text-slate-800">{channel}</h4>
+                                    {isConnected ? (
+                                        <div className="flex flex-col">
+                                            <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {connection.accountName}</p>
+                                            {connection.provider && <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">VIA {connection.provider}</span>}
+                                        </div>
+                                    ) : <p className="text-xs text-slate-500">Not connected</p>}
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => isConnected ? onUpdateConnection({ ...connection, status: PlatformStatus.DISCONNECTED }) : openConnectModal(channel)}
+                                className={`px-3 py-1.5 text-xs border rounded ${isConnected ? 'border-red-200 text-red-600 hover:bg-red-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                            >
+                                {isConnected ? 'Disconnect' : 'Connect'}
+                            </button>
                             </div>
                             
                             {/* WhatsApp-specific details */}
@@ -525,6 +575,56 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* SECURITY */}
           {activeTab === 'security' && (
              <div className="space-y-6">
+                 {/* MFA Section */}
+                 {user && (
+                   <div>
+                     <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><Lock className="w-4 h-4" /> Multi-Factor Authentication</h3>
+                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                       <div className="flex items-center justify-between">
+                         <div>
+                           <p className="text-sm font-medium text-slate-800">
+                             MFA Status: {user.mfaEnabled ? (
+                               <span className="text-green-600">Enabled</span>
+                             ) : (
+                               <span className="text-slate-500">Disabled</span>
+                             )}
+                           </p>
+                           <p className="text-xs text-slate-500 mt-1">
+                             {user.mfaEnabled 
+                               ? 'Your account is protected with two-factor authentication.'
+                               : 'Add an extra layer of security to your admin account.'}
+                           </p>
+                         </div>
+                         <button
+                           onClick={() => setShowMfaModal(true)}
+                           className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                         >
+                           {user.mfaEnabled ? 'Manage MFA' : 'Enable MFA'}
+                         </button>
+                       </div>
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Audit Log Section */}
+                 {user && canViewAuditLogs(user) && (
+                   <div>
+                     <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><FileText className="w-4 h-4" /> Audit Log</h3>
+                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                       <p className="text-sm text-slate-600 mb-4">
+                         View all admin actions and changes made to the system.
+                       </p>
+                       <button
+                         onClick={() => setShowAuditLog(true)}
+                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                       >
+                         View Audit Log
+                       </button>
+                     </div>
+                   </div>
+                 )}
+
+                 {/* Active Sessions */}
                  <div>
                      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><Monitor className="w-4 h-4" /> Active Sessions</h3>
                      <div className="space-y-3">
@@ -547,6 +647,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                      </div>
                  </div>
              </div>
+          )}
+
+          {/* RESOURCES */}
+          {activeTab === 'resources' && (
+            <div className="space-y-6">
+              <ResourceSettings onSave={() => {}} />
+            </div>
+          )}
+
+          {/* NETWORK */}
+          {activeTab === 'network' && (
+            <div className="space-y-6">
+              <SystemStatus serverPort={parseInt(serverPort)} />
+            </div>
           )}
 
           {/* SYSTEM */}
@@ -738,6 +852,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
              </div>
           )}
 
+          {/* API KEYS */}
+          {activeTab === 'api-keys' && user && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">API Key Management</h3>
+                  <p className="text-sm text-slate-500">Manage and monitor API keys for external services</p>
+                </div>
+                <button
+                  onClick={() => setShowUsageDashboard(!showUsageDashboard)}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  {showUsageDashboard ? 'Hide Dashboard' : 'Show Usage Dashboard'}
+                </button>
+              </div>
+              
+              {showUsageDashboard ? (
+                <ApiKeyUsageDashboard user={user} />
+              ) : (
+                <ApiKeyManagementTab user={user} />
+              )}
+             </div>
+          )}
+
           {/* TEMPLATES */}
           {activeTab === 'templates' && (
             <div className={userRole !== UserRole.ADMIN ? 'opacity-50 pointer-events-none' : ''}>
@@ -757,6 +895,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="w-full h-40 p-3 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
                 </div>
+            </div>
+          )}
+
+          {/* ADMIN MONITORING */}
+          {activeTab === 'admin-monitoring' && user && hasAdminAccess(user) && (
+            <div>
+              <AdminMonitoringDashboard 
+                user={user} 
+                importers={importers || []}
+                onNavigateToSettings={() => setActiveTab('tuning')}
+              />
             </div>
           )}
         </div>

@@ -1,11 +1,105 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { Importer, Message, LeadStatus, AnalysisResult, SalesForecast, Channel, AppTemplates, OptimizationInsight, StrategicInsight, TrainingModule } from "../types";
+import { Importer, Message, LeadStatus, AnalysisResult, SalesForecast, Channel, AppTemplates, OptimizationInsight, StrategicInsight, TrainingModule, ApiKeyProvider } from "../types";
 import { checkRateLimit } from "./securityService";
+import { getPrimaryKey, getDecryptedKeyValue, onKeyChange } from "./apiKeyService";
+import { selectBestKey, recordUsage } from "./apiKeyOptimizer";
+import { ApiKeyUsage } from "../types";
+import { onCacheInvalidation } from "./apiKeyCache";
 
-// Initialize the client
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// Initialize the client - will be done dynamically with API key from service
+let ai: GoogleGenAI | null = null;
+let currentApiKey: string | null = null;
+
+/**
+ * Clears the cached AI client to force refresh on next use
+ */
+const clearAiClientCache = () => {
+  ai = null;
+  currentApiKey = null;
+};
+
+// Listen for key changes and invalidate cache
+onKeyChange((event, keyId, provider) => {
+  if (provider === ApiKeyProvider.GEMINI) {
+    clearAiClientCache();
+  }
+});
+
+// Listen for cache invalidation events
+onCacheInvalidation(() => {
+  clearAiClientCache();
+});
+
+/**
+ * Gets or initializes the Gemini AI client with the best available API key
+ */
+const getAiClient = async (): Promise<GoogleGenAI> => {
+  try {
+    // Try to get the best key from the optimizer
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    
+    if (bestKey) {
+      const decryptedKey = await getDecryptedKeyValue(bestKey.id);
+      if (decryptedKey && decryptedKey !== currentApiKey) {
+        currentApiKey = decryptedKey;
+        ai = new GoogleGenAI({ apiKey: decryptedKey });
+      }
+    } else {
+      // Fallback to primary key
+      const primaryKey = await getPrimaryKey(ApiKeyProvider.GEMINI);
+      if (primaryKey) {
+        const decryptedKey = await getDecryptedKeyValue(primaryKey.id);
+        if (decryptedKey && decryptedKey !== currentApiKey) {
+          currentApiKey = decryptedKey;
+          ai = new GoogleGenAI({ apiKey: decryptedKey });
+        }
+      } else {
+        // Last resort: try environment variable (for backward compatibility)
+        const envKey = process.env.API_KEY || '';
+        if (envKey && envKey !== currentApiKey) {
+          currentApiKey = envKey;
+          ai = new GoogleGenAI({ apiKey: envKey });
+        }
+      }
+    }
+    
+    if (!ai) {
+      throw new Error('No Gemini API key available. Please add an API key in Settings > API Keys.');
+    }
+    
+    return ai;
+  } catch (error) {
+    console.error('[GeminiService] Failed to get API key:', error);
+    // Fallback to environment variable
+    const envKey = process.env.API_KEY || '';
+    if (envKey) {
+      ai = new GoogleGenAI({ apiKey: envKey });
+      return ai;
+    }
+    throw new Error('No Gemini API key available. Please configure an API key in Settings.');
+  }
+};
+
+/**
+ * Records usage for an API call
+ */
+const recordApiUsage = async (keyId: string, success: boolean, responseTime?: number, error?: string) => {
+  try {
+    await recordUsage(keyId, {
+      keyId,
+      timestamp: Date.now(),
+      provider: ApiKeyProvider.GEMINI,
+      action: 'gemini_api_call',
+      success,
+      responseTime,
+      errorMessage: error,
+    });
+  } catch (error) {
+    // Don't fail the main operation if usage tracking fails
+    console.error('[GeminiService] Failed to record usage:', error);
+  }
+};
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
@@ -16,17 +110,38 @@ const replacePlaceholders = (template: string, values: Record<string, string>) =
 /**
  * Generates the initial introductory message based on a customizable template.
  * Adapts format based on target channel (Email vs Chat).
+ * Now enhanced with lead research for deeper personalization.
  */
 export const generateIntroMessage = async (
   importer: Importer, 
   myCompany: string, 
   myProduct: string,
   template: string,
-  targetChannel: Channel
+  targetChannel: Channel,
+  useResearch: boolean = true
 ): Promise<string> => {
   
   if (!checkRateLimit()) {
     return "Error: Rate limit exceeded. Please wait a moment.";
+  }
+
+  // Get lead research if enabled
+  let researchContext = '';
+  if (useResearch) {
+    try {
+      const { LeadResearchService } = await import('./leadResearchService');
+      const research = await LeadResearchService.researchLead(importer);
+      researchContext = `
+        Lead Research Insights:
+        - Industry: ${research.industry}
+        - Pain Points: ${research.painPoints.join(', ') || 'Not identified'}
+        - Opportunities: ${research.opportunities.join(', ') || 'Not identified'}
+        - Recommended Approach: ${research.recommendedApproach}
+        - Personalization Tips: ${research.personalizationTips.join('; ') || 'None'}
+      `;
+    } catch (error) {
+      console.warn('[GeminiService] Failed to get lead research, continuing without it:', error);
+    }
   }
 
   const filledTemplate = replacePlaceholders(template, {
@@ -43,30 +158,56 @@ export const generateIntroMessage = async (
     
     Target Channel: ${targetChannel}
     
-    Task: Finalize this drafted message based on the template below. 
-    Ensure it is polite and professionally formatted for the specific target channel.
+    ${researchContext ? `\n${researchContext}\n` : ''}
+    
+    Task: Create a highly personalized introductory message based on the template below.
+    ${researchContext ? 'Use the lead research insights to craft a message that addresses their specific needs and pain points.' : ''}
+    Ensure it is polite, professional, and formatted for the specific target channel.
     
     Channel Constraints:
     ${targetChannel === Channel.EMAIL 
         ? '- Include a professional Subject line at the very top (Format: "Subject: ...").\n- Use standard email signing.' 
         : '- Do NOT include a Subject line.\n- Keep it concise and chat-friendly.\n- Break into small paragraphs.'}
 
-    Draft Template:
+    Base Template:
     """
     ${filledTemplate}
     """
+    
+    ${researchContext ? 'IMPORTANT: Customize the message to be highly relevant to this specific lead based on the research insights. Avoid generic messaging.' : ''}
     
     Output ONLY the final message text.
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    // Get the key ID for usage tracking
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
     });
+    
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+    
     return response.text || "Error generating message.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
+    
+    // Record failed usage
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      await recordApiUsage(keyId, false, undefined, error.message);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
     return "Could not generate intro message. Please check API Key.";
   }
 };
@@ -123,13 +264,32 @@ export const generateAgentReply = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
     });
+    
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+    
     return response.text || "Error generating reply.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Reply Error:", error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      await recordApiUsage(keyId, false, undefined, error.message);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
     return "System Error: AI unavailable.";
   }
 };
@@ -223,7 +383,13 @@ export const analyzeLeadQuality = async (history: Message[]): Promise<AnalysisRe
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
       config: {
@@ -232,10 +398,21 @@ export const analyzeLeadQuality = async (history: Message[]): Promise<AnalysisRe
       }
     });
 
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+
     const jsonText = response.text || "{}";
     return JSON.parse(jsonText) as AnalysisResult;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      await recordApiUsage(keyId, false, undefined, error.message);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
     return {
       status: LeadStatus.ENGAGED,
       summary: "Analysis failed",
@@ -302,7 +479,13 @@ export const analyzeAndOptimize = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
+        const client = await getAiClient();
+        const startTime = Date.now();
+        
+        const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+        const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+        
+        const response = await client.models.generateContent({
             model: MODEL_NAME,
             contents: prompt,
             config: {
@@ -310,11 +493,137 @@ export const analyzeAndOptimize = async (
                 responseSchema: responseSchema,
             }
         });
+        
+        const responseTime = Date.now() - startTime;
+        await recordApiUsage(keyId, true, responseTime);
+        
         const jsonText = response.text || "{}";
         return JSON.parse(jsonText) as OptimizationInsight;
-    } catch (error) {
+    } catch (error: any) {
         console.error("Optimization Error", error);
+        
+        try {
+          const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+          const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+          await recordApiUsage(keyId, false, undefined, error.message);
+        } catch (trackError) {
+          // Ignore tracking errors
+        }
+        
         throw error;
+    }
+};
+
+/**
+ * Generates comprehensive lead research using AI
+ */
+export const generateLeadResearch = async (context: any): Promise<{
+  summary: string;
+  industry: string;
+  companySize?: string;
+  businessModel?: string;
+  painPoints: string[];
+  opportunities: string[];
+  recommendedApproach: string;
+  personalizationTips: string[];
+}> => {
+  if (!checkRateLimit()) {
+    throw new Error("Rate Limit Exceeded");
+  }
+
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      summary: { type: Type.STRING },
+      industry: { type: Type.STRING },
+      companySize: { type: Type.STRING },
+      businessModel: { type: Type.STRING },
+      painPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+      opportunities: { type: Type.ARRAY, items: { type: Type.STRING } },
+      recommendedApproach: { type: Type.STRING },
+      personalizationTips: { type: Type.ARRAY, items: { type: Type.STRING } },
+    },
+    required: ["summary", "industry", "painPoints", "opportunities", "recommendedApproach", "personalizationTips"],
+  };
+
+  const prompt = `
+    You are a lead research analyst. Analyze the following lead data and generate comprehensive research insights.
+    
+    Lead Data:
+    - Name: ${context.name}
+    - Company: ${context.company}
+    - Country: ${context.country}
+    - Products Imported: ${context.productsImported}
+    - Quantity: ${context.quantity || 'Not specified'}
+    - Price Range: ${context.priceRange || 'Not specified'}
+    - Current Status: ${context.status}
+    - Lead Score: ${context.leadScore || 'Not calculated'}
+    - Satisfaction Index: ${context.satisfactionIndex || 'Not calculated'}
+    - Conversation Summary: ${context.conversationSummary || 'No previous conversation'}
+    - Interest Shown: ${context.interestShownIn || 'Not identified'}
+    - Next Step: ${context.nextStep || 'Not defined'}
+    
+    Previous Interactions:
+    ${context.previousMessages?.length > 0 
+      ? context.previousMessages.map((m: any) => `- [${m.channel}] ${new Date(m.date).toLocaleDateString()}: ${m.summary}`).join('\n')
+      : 'No previous interactions'}
+    
+    Activity Log:
+    ${context.activityLog?.length > 0
+      ? context.activityLog.map((log: any) => `- ${log.type}: ${log.description}`).join('\n')
+      : 'No activity log'}
+    
+    Tasks:
+    1. Analyze the lead's business profile and infer industry, company size, and business model
+    2. Identify potential pain points based on their import patterns and location
+    3. Identify opportunities for engagement based on their needs
+    4. Recommend the best approach for initial contact
+    5. Provide specific personalization tips for crafting a highly relevant message
+    
+    Focus on making the research actionable for creating personalized outreach messages.
+  `;
+
+  try {
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+      },
+    });
+    
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+    
+    const jsonText = response.text || "{}";
+    return JSON.parse(jsonText);
+  } catch (error: any) {
+    console.error("Lead Research Error:", error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      await recordApiUsage(keyId, false, undefined, error.message);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
+    // Return default research
+    return {
+      summary: `Basic research for ${context.company} in ${context.country}`,
+      industry: 'Import/Export',
+      painPoints: [],
+      opportunities: [],
+      recommendedApproach: 'Standard professional outreach',
+      personalizationTips: ['Mention their country', 'Reference their import products'],
+    };
     }
 };
 
@@ -335,12 +644,29 @@ export const simulateImporterResponse = async (importer: Importer, history: Mess
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
     });
+    
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+    
     return response.text || "...";
-  } catch (error) {
+  } catch (error: any) {
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      await recordApiUsage(keyId, false, undefined, error.message);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
     return "Interested, please send details.";
   }
 };
@@ -397,7 +723,13 @@ export const generateSalesForecast = async (importers: Importer[]): Promise<Sale
     `;
 
     try {
-        const response = await ai.models.generateContent({
+        const client = await getAiClient();
+        const startTime = Date.now();
+        
+        const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+        const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+        
+        const response = await client.models.generateContent({
             model: MODEL_NAME,
             contents: prompt,
             config: {
@@ -405,10 +737,22 @@ export const generateSalesForecast = async (importers: Importer[]): Promise<Sale
                 responseSchema: responseSchema,
             }
         });
+        
+        const responseTime = Date.now() - startTime;
+        await recordApiUsage(keyId, true, responseTime);
+        
         const jsonText = response.text || "[]";
         return JSON.parse(jsonText) as SalesForecast[];
-    } catch (error) {
+    } catch (error: any) {
         console.error("Forecast Error", error);
+        
+        try {
+          const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+          const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+          await recordApiUsage(keyId, false, undefined, error.message);
+        } catch (trackError) {
+          // Ignore tracking errors
+        }
         // Fallback mock data
         return [
             { date: 'Week 1', predictedConversions: 2, confidence: 0.8 },
@@ -470,7 +814,13 @@ export const generateTrainingProgram = async (insights: StrategicInsight[]): Pro
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
       config: {
@@ -479,10 +829,21 @@ export const generateTrainingProgram = async (insights: StrategicInsight[]): Pro
       }
     });
 
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+
     const jsonText = response.text || "[]";
     return JSON.parse(jsonText) as TrainingModule[];
-  } catch (error) {
+  } catch (error: any) {
     console.error("Training Generation Error", error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      await recordApiUsage(keyId, false, undefined, error.message);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
     // Fallback
     return [];
   }

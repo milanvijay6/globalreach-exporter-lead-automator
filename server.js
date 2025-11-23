@@ -2,6 +2,8 @@ const express = require('express');
 const path = require('path');
 const compression = require('compression');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
 const auth = require('basic-auth');
 const crypto = require('crypto');
 
@@ -26,13 +28,73 @@ if (USER && PASS) {
   });
 }
 
-// Middleware
+// Security: Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter);
+
+// Security: Enhanced Helmet configuration
 app.use(helmet({
-  contentSecurityPolicy: false, // Disabled for simplicity with inline scripts/styles in dev
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  noSniff: true,
+  xssFilter: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
+
+// Middleware
 app.use(compression());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Security: Input validation middleware
+app.use((req, res, next) => {
+  // Basic XSS protection
+  const sanitize = (obj) => {
+    if (typeof obj === 'string') {
+      return obj.replace(/<script[^>]*>.*?<\/script>/gi, '')
+                .replace(/javascript:/gi, '')
+                .replace(/on\w+\s*=/gi, '');
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(sanitize);
+    }
+    if (obj && typeof obj === 'object') {
+      const sanitized = {};
+      for (const key in obj) {
+        sanitized[key] = sanitize(obj[key]);
+      }
+      return sanitized;
+    }
+    return obj;
+  };
+  
+  if (req.body) {
+    req.body = sanitize(req.body);
+  }
+  if (req.query) {
+    req.query = sanitize(req.query);
+  }
+  
+  next();
+});
 
 // Serve Static Assets
 app.use(express.static(path.join(__dirname, 'build')));

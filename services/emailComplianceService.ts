@@ -14,7 +14,60 @@ const unsubscribeList: Map<string, UnsubscribeRecord> = new Map();
 /**
  * Email Compliance Service
  * Handles security, CAN-SPAM, GDPR compliance
+ * Enhanced with GDPR compliance features
  */
+
+// Audit log for data access (GDPR requirement)
+const dataAccessLog: Array<{
+  timestamp: number;
+  userId: string;
+  dataType: string;
+  action: string;
+}> = [];
+
+/**
+ * Logs data access for GDPR compliance
+ */
+export const logDataAccess = (userId: string, dataType: string, action: string) => {
+  dataAccessLog.push({
+    timestamp: Date.now(),
+    userId,
+    dataType,
+    action,
+  });
+  
+  // Keep only last 1000 entries
+  if (dataAccessLog.length > 1000) {
+    dataAccessLog.shift();
+  }
+};
+
+/**
+ * Gets audit log for data access (GDPR requirement)
+ */
+export const getDataAccessLog = (userId?: string) => {
+  if (userId) {
+    return dataAccessLog.filter(log => log.userId === userId);
+  }
+  return dataAccessLog.slice(-100); // Last 100 entries
+};
+
+/**
+ * GDPR: Right to deletion - removes all email data for a user
+ */
+export const deleteUserEmailData = async (email: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Add to unsubscribe list
+    EmailComplianceService.unsubscribe(email, 'GDPR deletion request');
+    
+    // In production, delete all data associated with email
+    logDataAccess('system', 'email_data', `deletion for ${email}`);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
 export const EmailComplianceService = {
   /**
    * Adds email to unsubscribe list

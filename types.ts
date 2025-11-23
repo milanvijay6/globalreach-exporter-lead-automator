@@ -23,6 +23,17 @@ export enum UserRole {
   VIEWER = 'Viewer'
 }
 
+export enum Permission {
+  READ = 'READ',
+  WRITE = 'WRITE',
+  DELETE = 'DELETE',
+  ADMIN_ACCESS = 'ADMIN_ACCESS',
+  API_KEY_MANAGE = 'API_KEY_MANAGE',
+  SETTINGS_MANAGE = 'SETTINGS_MANAGE',
+  DATA_EXPORT = 'DATA_EXPORT',
+  AUDIT_VIEW = 'AUDIT_VIEW'
+}
+
 export enum PlatformStatus {
   DISCONNECTED = 'Disconnected',
   CONNECTING = 'Connecting',
@@ -38,6 +49,32 @@ export enum MessageStatus {
   FAILED = 'failed'
 }
 
+export enum AuthStep {
+  IDLE = 'idle',
+  INITIATING = 'initiating',
+  AUTHENTICATING = 'authenticating',
+  EXCHANGING = 'exchanging',
+  CONNECTED = 'connected',
+  ERROR = 'error'
+}
+
+export interface AuthError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  details?: any;
+}
+
+export interface AuthState {
+  status: AuthStep;
+  provider?: 'gmail' | 'outlook' | 'custom';
+  step: AuthStep;
+  error?: AuthError;
+  timestamp: number;
+  email?: string;
+  method?: 'oauth' | 'magic-link' | 'imap' | 'smtp';
+}
+
 export interface WhatsAppCredentials {
   accessToken: string;
   phoneNumberId: string;
@@ -49,6 +86,7 @@ export interface EmailCredentials {
   provider: 'gmail' | 'outlook' | 'smtp' | 'imap';
   accessToken?: string;
   refreshToken?: string;
+  tokenExpiryDate?: number; // Absolute timestamp when access token expires
   smtpHost?: string;
   smtpPort?: number;
   imapHost?: string;
@@ -57,6 +95,7 @@ export interface EmailCredentials {
   password?: string; // Encrypted
   oauthClientId?: string;
   oauthClientSecret?: string;
+  redirectUri?: string; // Store redirect URI used for token refresh
 }
 
 export interface WeChatCredentials {
@@ -87,6 +126,10 @@ export interface User {
   name: string;
   role: UserRole;
   avatar?: string;
+  permissions?: Permission[];
+  mfaEnabled?: boolean;
+  mfaSecret?: string; // Encrypted
+  lastMfaVerified?: number;
 }
 
 export interface AuthSession {
@@ -430,6 +473,257 @@ export interface WeChatQRCodeResponse {
   url: string;
 }
 
+// Admin & API Key Management Types
+export interface AdminAction {
+  id: string;
+  userId: string;
+  userName: string;
+  action: string; // 'api_key_created', 'settings_modified', etc.
+  resource: string; // 'api_key:gemini-001', 'settings:templates'
+  details: Record<string, any>;
+  timestamp: number;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export enum ApiKeyProvider {
+  GEMINI = 'gemini',
+  WHATSAPP = 'whatsapp',
+  WECHAT = 'wechat',
+  EMAIL_GMAIL = 'email_gmail',
+  EMAIL_OUTLOOK = 'email_outlook',
+  EMAIL_SMTP = 'email_smtp',
+  CUSTOM = 'custom'
+}
+
+export interface ApiKey {
+  id: string;
+  provider: ApiKeyProvider;
+  label: string; // User-friendly name
+  keyValue: string; // Encrypted
+  metadata: {
+    createdAt: number;
+    createdBy: string;
+    lastUsed?: number;
+    lastRotated?: number;
+    usageCount: number;
+    errorCount: number;
+    isActive: boolean;
+    isPrimary: boolean; // Primary key for this provider
+  };
+  limits?: {
+    dailyLimit?: number;
+    monthlyLimit?: number;
+    rateLimitPerMinute?: number;
+  };
+  permissions?: string[]; // Provider-specific scopes
+  tags?: string[]; // For organization
+  notes?: string;
+}
+
+export interface ApiKeyUsage {
+  keyId: string;
+  timestamp: number;
+  provider: ApiKeyProvider;
+  action: string; // 'generate_message', 'send_whatsapp', etc.
+  success: boolean;
+  responseTime?: number; // ms
+  errorCode?: string;
+  errorMessage?: string;
+  cost?: number; // If applicable
+}
+
+export interface KeyStatistics {
+  keyId: string;
+  timeframe: '24h' | '7d' | '30d';
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  averageResponseTime: number;
+  errorRate: number;
+  cost?: number;
+  requestsByHour?: Array<{ hour: number; count: number }>;
+}
+
+export interface UsageStats {
+  provider?: ApiKeyProvider;
+  timeframe: string;
+  totalRequests: number;
+  successRate: number;
+  averageResponseTime: number;
+  totalCost?: number;
+  keysUsed: number;
+}
+
+export interface PerformanceMetrics {
+  keyId: string;
+  averageResponseTime: number;
+  p95ResponseTime: number;
+  p99ResponseTime: number;
+  errorRate: number;
+  throughput: number; // requests per minute
+}
+
+export interface Alert {
+  id: string;
+  type: 'rate_limit' | 'error_spike' | 'key_expired' | 'quota_exceeded';
+  keyId: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  timestamp: number;
+  acknowledged: boolean;
+}
+
+// Admin Monitoring Dashboard Types
+export interface SystemHealth {
+  overall: 'healthy' | 'warning' | 'critical';
+  score: number; // 0-100
+  apiKeys: { status: string; active: number; issues: number };
+  conversations: { active: number; healthy: number; issues: number };
+  aiService: { status: string; errorRate: number };
+  lastUpdated: number;
+}
+
+export interface AiInteractionMetrics {
+  totalCalls: number;
+  successRate: number;
+  averageResponseTime: number;
+  totalCost?: number;
+  callsByHour: Array<{ hour: number; count: number }>;
+  errorBreakdown: Record<string, number>;
+  timeframe: string;
+}
+
+export interface ConversationHealthMetrics {
+  totalConversations: number;
+  activeConversations: number;
+  averageSatisfaction: number;
+  sentimentDistribution: Record<string, number>;
+  healthScore: number; // 0-100
+  issues: Array<{ conversationId: string; issue: string; severity: 'warning' | 'critical' }>;
+}
+
+export interface SystemAlert {
+  id: string;
+  type: 'api_key' | 'conversation' | 'ai_service' | 'system';
+  severity: 'warning' | 'critical';
+  message: string;
+  timestamp: number;
+  actionUrl?: string;
+}
+
 export const canEditSettings = (role: UserRole) => role === UserRole.ADMIN;
 export const canExportData = (role: UserRole) => role === UserRole.ADMIN;
 export const canSendMessages = (role: UserRole) => role === UserRole.ADMIN || role === UserRole.SALES;
+
+// Purchase Pattern Analysis Types
+export enum PurchaseCycle {
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+  QUARTERLY = 'quarterly',
+  SEASONAL = 'seasonal',
+  IRREGULAR = 'irregular'
+}
+
+export enum CustomerIntentType {
+  IMMINENT_ORDER = 'imminent_order',
+  REGULAR_CYCLE = 'regular_cycle',
+  DORMANT = 'dormant',
+  UPSELL_OPPORTUNITY = 'upsell_opportunity'
+}
+
+export interface PurchaseOrder {
+  id: string;
+  // Exporter Information
+  exporterName: string;
+  exporterAddress: string;
+  pinCode: string;
+  city: string;
+  state: string;
+  contactNo: string;
+  emailId: string;
+  
+  // Consignee Information
+  consigneeName: string;
+  probConsigneeName?: string;
+  consigneeAddress: string;
+  
+  // Shipping Information
+  portCode: string;
+  foreignPort: string;
+  foreignCountry: string;
+  indianPort: string;
+  mode: string;
+  shipmentStatus: string;
+  
+  // Product Information
+  hsCode: string;
+  chapter: string;
+  productDescription: string;
+  quantity: number;
+  unitQuantity: string;
+  
+  // Pricing Information
+  itemRateInFC: number;
+  currency: string;
+  totalValueInFC: number;
+  unitRateUSD: number;
+  exchangeRate: number;
+  totalValueInUSD: number;
+  unitRateInINR: number;
+  fob: number;
+  drawback?: number;
+  
+  // Temporal Information
+  month: number;
+  year: number;
+  orderDate: number; // Timestamp derived from month/year
+  
+  // Metadata
+  importedAt: number;
+  sourceFile?: string;
+}
+
+export interface PurchasePattern {
+  customerId: string; // Derived from contactNo or emailId
+  customerName: string;
+  productCategory: string;
+  productDescription: string;
+  averageQuantity: number;
+  averageValue: number;
+  purchaseFrequency: number; // Average days between purchases
+  lastPurchaseDate: number;
+  nextPredictedDate: number;
+  purchaseCycle: PurchaseCycle;
+  totalOrders: number;
+  totalSpend: number;
+  firstPurchaseDate: number;
+  relatedProducts?: string[]; // Products frequently bought together
+}
+
+export interface CustomerIntent {
+  customerId: string;
+  customerName: string;
+  contactNo?: string;
+  emailId?: string;
+  intentType: CustomerIntentType;
+  predictedProducts: Array<{
+    productDescription: string;
+    predictedQuantity: number;
+    confidence: number; // 0-1
+  }>;
+  predictedQuantities: Record<string, number>; // Product -> quantity
+  confidenceScore: number; // 0-1
+  recommendedMessage: string;
+  analysisSummary: string;
+  orderPrediction: string;
+  lastOrderDate?: number;
+  daysSinceLastOrder?: number;
+  typicalCycleDays?: number;
+}
+
+export interface PurchaseAnalysisResult {
+  analysis_summary: string;
+  order_prediction: string;
+  message_to_customer: string;
+}

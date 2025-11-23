@@ -1,0 +1,45 @@
+
+# Email Configuration Instructions
+
+## Your Email Account Details
+
+Email: Shreenathjimarketingassociate@outlook.com
+Password: vijayvargiya@24
+
+## Server Configuration
+
+### SMTP (Outgoing Mail Server)
+- Server: smtp-mail.outlook.com
+- Port: 587
+- Encryption: STARTTLS
+- Authentication: Required
+
+### IMAP (Incoming Mail Server)
+- Server: outlook.office365.com
+- Port: 993
+- Encryption: SSL/TLS
+- Authentication: Required
+
+## How to Configure in GlobalReach App
+
+1. Open GlobalReach application
+2. Go to Settings → Platforms → Connect Email
+3. Select "Custom" provider
+4. Click "Outlook.com" preset button (or fill manually)
+5. Enter:
+   - Email Address: Shreenathjimarketingassociate@outlook.com
+   - SMTP Host: smtp-mail.outlook.com
+   - SMTP Port: 587
+   - IMAP Host: outlook.office365.com
+   - IMAP Port: 993
+   - Password: vijayvargiya@24
+6. Click "Test & Connect"
+
+## Quick Copy-Paste Configuration
+
+Email Address: Shreenathjimarketingassociate@outlook.com
+SMTP Host: smtp-mail.outlook.com
+SMTP Port: 587
+IMAP Host: outlook.office365.com
+IMAP Port: 993
+Password: vijayvargiya@24

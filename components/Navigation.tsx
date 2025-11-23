@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
-import { Zap, LayoutDashboard, Upload, Settings, LogOut, Menu, X, HelpCircle, Calendar, Megaphone, BarChart3 } from 'lucide-react';
+import { Zap, LayoutDashboard, Upload, Settings, LogOut, Menu, X, HelpCircle, Calendar, Megaphone, BarChart3, Shield } from 'lucide-react';
 import { User, UserRole, Language } from '../types';
 import { canEditSettings } from '../types';
 import { t } from '../services/i18n';
+import { hasAdminAccess } from '../services/permissionService';
 
 interface NavigationProps {
   user: User;
@@ -14,6 +15,7 @@ interface NavigationProps {
   setShowImportModal: (v: boolean) => void;
   setShowSettingsModal: (v: boolean) => void;
   setShowHelpModal: (v: boolean) => void;
+  setShowAdminDashboard?: (v: boolean) => void;
   onLogout: () => void;
   language: Language;
 }
@@ -27,6 +29,7 @@ const Navigation: React.FC<NavigationProps> = ({
   setShowImportModal, 
   setShowSettingsModal, 
   setShowHelpModal,
+  setShowAdminDashboard,
   onLogout,
   language
 }) => {
@@ -76,6 +79,15 @@ const Navigation: React.FC<NavigationProps> = ({
           title={t('import', language)}
           className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
           <Upload className="w-6 h-6" />
+        </button>
+      )}
+
+      {hasAdminAccess(user) && setShowAdminDashboard && (
+        <button 
+          onClick={() => { setShowAdminDashboard(true); setIsMobileMenuOpen(false); }} 
+          title="Admin Monitoring"
+          className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
+          <Shield className="w-6 h-6" />
         </button>
       )}
       

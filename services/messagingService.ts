@@ -1,7 +1,8 @@
 
 import { Channel, MessageStatus, PlatformConnection } from '../types';
 import { WhatsAppService } from './whatsappService';
-import { EmailService } from './emailService';
+// EmailService is imported dynamically to avoid bundling Node.js modules
+// import { EmailService } from './emailService';
 import { WeChatService } from './wechatService';
 import { loadPlatformConnections } from './securityService';
 
@@ -121,6 +122,7 @@ export const MessagingService = {
 
     // Use real Email API if connected
     if (channel === Channel.EMAIL) {
+      const { EmailService } = await import('./emailService');
       const emailConn = await EmailService.getEmailConnection();
       
       if (emailConn?.emailCredentials) {

@@ -1,5 +1,7 @@
 
-import { EmailService, EmailMessage } from './emailService';
+// EmailService is imported dynamically to avoid bundling Node.js modules
+// Types can be imported statically as they're erased at runtime
+import type { EmailMessage } from './emailService';
 import { Channel } from '../types';
 import { PlatformService } from './platformService';
 
@@ -38,6 +40,7 @@ export const EmailIngestionService = {
 
     const poll = async () => {
       try {
+        const { EmailService } = await import('./emailService');
         const connection = await EmailService.getEmailConnection();
         if (!connection?.emailCredentials) {
           console.warn('[EmailIngestion] No email connection found');
@@ -67,9 +70,18 @@ export const EmailIngestionService = {
               }
             }
           }
+        } else if (!result.success) {
+          // Handle errors with exponential backoff
+          console.warn('[EmailIngestion] Polling failed:', result.error);
+          // In production, implement exponential backoff here
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('[EmailIngestion] Polling error:', error);
+        // Rate limit handling - increase interval on rate limit errors
+        if (error.message?.includes('rate limit') || error.message?.includes('quota')) {
+          console.warn('[EmailIngestion] Rate limited, will retry with longer interval');
+          // Could implement dynamic interval adjustment here
+        }
       }
     };
 
@@ -93,6 +105,7 @@ export const EmailIngestionService = {
    */
   startIMAPIdle: async () => {
     try {
+      const { EmailService } = await import('./emailService');
       const connection = await EmailService.getEmailConnection();
       if (!connection?.emailCredentials || connection.emailCredentials.provider !== 'imap') {
         console.warn('[EmailIngestion] IMAP IDLE requires IMAP provider');
@@ -143,6 +156,7 @@ export const EmailIngestionService = {
    */
   fetchAndProcess: async (maxResults: number = 10, query?: string) => {
     try {
+      const { EmailService } = await import('./emailService');
       const connection = await EmailService.getEmailConnection();
       if (!connection?.emailCredentials) {
         return { success: false, error: 'Email not connected' };
@@ -178,6 +192,7 @@ export const EmailIngestionService = {
    */
   initialize: async () => {
     try {
+      const { EmailService } = await import('./emailService');
       const connection = await EmailService.getEmailConnection();
       if (!connection?.emailCredentials) {
         console.log('[EmailIngestion] No email connection, skipping initialization');
@@ -186,9 +201,14 @@ export const EmailIngestionService = {
 
       const credentials = connection.emailCredentials;
 
-      // Gmail: Use polling (webhooks require Pub/Sub setup which is more complex)
+      // Gmail: Use polling with exponential backoff on errors
       if (credentials.provider === 'gmail') {
         console.log('[EmailIngestion] Starting Gmail polling');
+        await EmailIngestionService.startPolling(5); // Poll every 5 minutes
+      }
+      // Outlook: Use polling (similar to Gmail)
+      else if (credentials.provider === 'outlook') {
+        console.log('[EmailIngestion] Starting Outlook polling');
         await EmailIngestionService.startPolling(5); // Poll every 5 minutes
       }
       // IMAP: Use IDLE if available, fallback to polling

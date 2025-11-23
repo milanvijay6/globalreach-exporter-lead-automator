@@ -66,24 +66,30 @@ let serverInstance;
 
 function startServer(startingPort) {
   const appServer = express();
-
+  
+  // Get network binding configuration
+  const networkBinding = getConfig('networkBinding', '0.0.0.0'); // Default to all interfaces
+  
   // Middleware
   appServer.use(express.json());
   appServer.use(express.urlencoded({ extended: true }));
   // WeChat uses XML, so we need to handle text/xml separately in the route
 
-  // Static Files
+  // Static Files (only in production mode when build exists with index.html)
   // This points to 'electron/build'
   const buildPath = path.join(__dirname, 'build');
+  const indexPath = path.join(buildPath, 'index.html');
+  // Only consider it production if build directory AND index.html both exist
+  const isDev = !fs.existsSync(buildPath) || !fs.existsSync(indexPath) || process.env.NODE_ENV === 'development';
   
-  // Check if build exists
-  if (!fs.existsSync(buildPath)) {
-    logger.error(`CRITICAL: Build directory not found at ${buildPath}. Run 'npm run build:react' first.`);
+  if (!isDev && fs.existsSync(buildPath) && fs.existsSync(indexPath)) {
+    // Production: Serve static files from build directory
+    logger.info(`Production mode: Serving static files from: ${buildPath}`);
+    appServer.use(express.static(buildPath));
   } else {
-    logger.info(`Serving static files from: ${buildPath}`);
+    // Development: Don't serve static files, Vite dev server handles that
+    logger.info(`Development mode: Static files will be served by Vite dev server`);
   }
-
-  appServer.use(express.static(buildPath));
 
   // Webhook Routes
   // WhatsApp Webhook Verification (GET)
@@ -206,26 +212,206 @@ function startServer(startingPort) {
     }
   });
 
-  // Fallback for React Router
+  // OAuth Callback Routes
+  appServer.get('/auth/oauth/callback', async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+      
+      if (error) {
+        logger.error('OAuth callback error:', error);
+        if (mainWindow) {
+          mainWindow.webContents.send('oauth-callback', {
+            success: false,
+            error: error,
+            provider: null,
+          });
+        }
+        return res.send(`
+          <html>
+            <body>
+              <h2>Authentication Failed</h2>
+              <p>Error: ${error}</p>
+              <p>You can close this window and try again.</p>
+              <script>setTimeout(() => window.close(), 3000);</script>
+            </body>
+          </html>
+        `);
+      }
+
+      if (!code || !state) {
+        logger.warn('OAuth callback missing code or state');
+        return res.send(`
+          <html>
+            <body>
+              <h2>Authentication Error</h2>
+              <p>Missing authorization code or state parameter.</p>
+              <p>You can close this window and try again.</p>
+              <script>setTimeout(() => window.close(), 3000);</script>
+            </body>
+          </html>
+        `);
+      }
+
+      logger.info('OAuth callback received', { hasCode: !!code, hasState: !!state });
+
+      // Parse state to determine provider
+      let provider = 'gmail';
+      try {
+        const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
+        provider = stateData.provider || 'gmail';
+      } catch {
+        // Default to gmail if state parsing fails
+      }
+
+      // Send to renderer process
+      if (mainWindow) {
+        mainWindow.webContents.send('oauth-callback', {
+          success: true,
+          code: code,
+          state: state,
+          provider: provider,
+        });
+      }
+
+      res.send(`
+        <html>
+          <body>
+            <h2>Authentication Successful</h2>
+            <p>You can close this window and return to the application.</p>
+            <script>setTimeout(() => window.close(), 2000);</script>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      logger.error('OAuth callback handler error:', err);
+      res.send(`
+        <html>
+          <body>
+            <h2>Authentication Error</h2>
+            <p>An error occurred processing the authentication.</p>
+            <p>You can close this window and try again.</p>
+            <script>setTimeout(() => window.close(), 3000);</script>
+          </body>
+        </html>
+      `);
+    }
+  });
+
+  // Magic Link Callback Route
+  appServer.get('/auth/magic-link/callback', async (req, res) => {
+    try {
+      const { token, email } = req.query;
+      
+      if (!token) {
+        logger.warn('Magic link callback missing token');
+        return res.send(`
+          <html>
+            <body>
+              <h2>Invalid Link</h2>
+              <p>Missing authentication token.</p>
+              <p>You can close this window.</p>
+              <script>setTimeout(() => window.close(), 3000);</script>
+            </body>
+          </html>
+        `);
+      }
+
+      logger.info('Magic link callback received', { hasToken: !!token, email });
+
+      // Send to renderer process
+      if (mainWindow) {
+        mainWindow.webContents.send('magic-link-callback', {
+          token: token,
+          email: email,
+        });
+      }
+
+      res.send(`
+        <html>
+          <body>
+            <h2>Processing Authentication</h2>
+            <p>Please return to the application.</p>
+            <script>setTimeout(() => window.close(), 2000);</script>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      logger.error('Magic link callback handler error:', err);
+      res.send(`
+        <html>
+          <body>
+            <h2>Authentication Error</h2>
+            <p>An error occurred processing the magic link.</p>
+            <p>You can close this window and try again.</p>
+            <script>setTimeout(() => window.close(), 3000);</script>
+          </body>
+        </html>
+      `);
+    }
+  });
+
+  // Fallback for React Router (only in production mode)
   appServer.get('*', (req, res) => {
     if (req.path.startsWith('/webhooks/')) return res.sendStatus(404);
+    if (req.path.startsWith('/auth/')) return res.sendStatus(404);
     
-    const indexPath = path.join(buildPath, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
+    // Re-check isDev in case build was created after server started
+    const currentBuildPath = path.join(__dirname, 'build');
+    const currentIndexPath = path.join(currentBuildPath, 'index.html');
+    // Only consider it production if both build directory AND index.html exist
+    const currentIsDev = !fs.existsSync(currentBuildPath) || !fs.existsSync(currentIndexPath) || process.env.NODE_ENV === 'development';
+    
+    // Only serve index.html in production mode when build exists
+    if (!currentIsDev && fs.existsSync(currentBuildPath) && fs.existsSync(currentIndexPath)) {
+      res.sendFile(currentIndexPath);
     } else {
-      const errorMsg = `Application not built. Expected index.html at: ${indexPath}`;
-      logger.error(errorMsg);
-      res.status(404).send(errorMsg);
+      // Development mode: Don't serve fallback, Vite dev server handles routing
+      // Just return 404 silently - don't show error message
+      logger.debug(`Development mode: Request to ${req.path} - handled by Vite dev server`);
+      res.sendStatus(404);
     }
   });
 
   return new Promise((resolve, reject) => {
     const tryListen = (port) => {
-      const server = appServer.listen(port, '127.0.0.1', () => {
-        logger.info(`Local backend running on http://localhost:${port}`);
+      const server = appServer.listen(port, networkBinding, () => {
+        const os = require('os');
+        const networkInterfaces = os.networkInterfaces();
+        const addresses = [];
+        
+        // Get localhost
+        addresses.push(`http://localhost:${port}`);
+        if (networkBinding === '0.0.0.0') {
+          // Get network IPs
+          for (const [name, interfaces] of Object.entries(networkInterfaces)) {
+            if (!interfaces) continue;
+            for (const iface of interfaces) {
+              if (iface.family === 'IPv4' && !iface.internal) {
+                addresses.push(`http://${iface.address}:${port}`);
+              }
+            }
+          }
+        }
+        
+        logger.info(`Backend server running on:`);
+        addresses.forEach(addr => logger.info(`  - ${addr}`));
+        
+        // Configure firewall if needed
+        const firewallConfigured = getConfig('firewallConfigured', false);
+        if (!firewallConfigured && networkBinding === '0.0.0.0') {
+          try {
+            const { execSync } = require('child_process');
+            execSync(`netsh advfirewall firewall add rule name="GlobalReach" dir=in action=allow protocol=TCP localport=${port}`, { stdio: 'pipe' });
+            setConfig('firewallConfigured', true);
+            logger.info('Firewall rule configured');
+          } catch (err) {
+            logger.warn('Failed to configure firewall rule (may require admin):', err.message);
+          }
+        }
+        
         setConfig('serverPort', port);
-        resolve({ server, port });
+        setConfig('serverAddresses', addresses);
+        resolve({ server, port, addresses });
       }).on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
           logger.warn(`Port ${port} in use, trying ${port + 1}`);
@@ -243,7 +429,14 @@ function startServer(startingPort) {
 let mainWindow;
 
 async function createWindow() {
-  // 1. Start Express Server
+  // Check if we're in development mode (Vite dev server) or production (built files)
+  const buildPath = path.join(__dirname, 'build');
+  const indexPath = path.join(buildPath, 'index.html');
+  // Only consider it production if build directory AND index.html both exist
+  const isDev = !fs.existsSync(buildPath) || !fs.existsSync(indexPath) || process.env.NODE_ENV === 'development';
+  const vitePort = 3000; // Match vite.config.ts server port
+  
+  // 1. Start Express Server (for webhooks and API, always needed)
   let port = DEFAULT_PORT;
   try {
     const result = await startServer(DEFAULT_PORT);
@@ -263,17 +456,111 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      sandbox: true
+      sandbox: true,
+      webSecurity: true
+    },
+    show: false // Don't show until ready
+  });
+
+  // Show window when ready to prevent white screen flash
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    // Open DevTools for debugging (both dev and production)
+    mainWindow.webContents.openDevTools();
+  });
+
+  // 3. Load from Vite Dev Server (development) or Local Express Server (production)
+  let url;
+  if (isDev) {
+    // Development: Use Vite dev server (port 3000 from vite.config.ts)
+    url = `http://localhost:${vitePort}`;
+    logger.info(`Development mode: Loading Electron window from Vite dev server: ${url}`);
+    logger.info(`Note: Make sure to run 'npm run dev' in a separate terminal`);
+  } else {
+    // Production: Use local Express server serving built files
+    url = `http://localhost:${port}`;
+    logger.info(`Production mode: Loading Electron window from: ${url}`);
+    
+    // Wait a moment for server to be fully ready
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  // Add error handlers
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    logger.error('Failed to load URL', { errorCode, errorDescription, validatedURL, isMainFrame });
+    console.error('Failed to load:', { errorCode, errorDescription, validatedURL, isMainFrame });
+    if (isMainFrame) {
+      if (isDev) {
+        dialog.showErrorBox('Load Error', `Failed to load application at ${url}.\n\nError: ${errorDescription}\n\nMake sure Vite dev server is running:\nnpm run dev`);
+      } else {
+        dialog.showErrorBox('Load Error', `Failed to load application at ${url}\n\nError: ${errorDescription}\n\nPlease check:\n1. Server is running on port ${port}\n2. Build files exist in electron/build\n3. Check console for errors`);
+      }
+    }
+  });
+  
+  // Log console errors from renderer
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level >= 2) { // Error or warning
+      logger.error(`[Renderer ${level}] ${message}`, { line, sourceId });
+      console.error(`[Renderer ${level}] ${message}`);
     }
   });
 
-  // 3. Load from Local Express Server
-  const url = `http://localhost:${port}`;
-  logger.info(`Loading Electron window from: ${url}`);
-  
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    logger.info(`[Console ${level}] ${message}`, { line, sourceId });
+    console.log(`[Console ${level}] ${message}`);
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    logger.info('Page finished loading');
+    console.log('Page finished loading successfully');
+  });
+
+  mainWindow.webContents.on('dom-ready', () => {
+    logger.info('DOM ready');
+    console.log('DOM is ready');
+  });
+
+  // Catch uncaught exceptions in the renderer
+  mainWindow.webContents.on('unresponsive', () => {
+    logger.warn('Renderer process became unresponsive');
+    console.warn('Renderer process became unresponsive');
+  });
+
+  mainWindow.webContents.on('responsive', () => {
+    logger.info('Renderer process became responsive again');
+    console.log('Renderer process became responsive again');
+  });
+
+  // Catch uncaught exceptions in the renderer
+  mainWindow.webContents.on('unresponsive', () => {
+    logger.warn('Renderer process became unresponsive');
+    console.warn('Renderer process became unresponsive');
+  });
+
+  mainWindow.webContents.on('responsive', () => {
+    logger.info('Renderer process became responsive again');
+    console.log('Renderer process became responsive again');
+  });
+
+  // Catch renderer process crashes
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    logger.error('Renderer process crashed', details);
+    console.error('Renderer process crashed:', details);
+    dialog.showErrorBox('Application Error', 'The application has crashed. Please restart the app.');
+  });
+
+  // Load the URL
+  logger.info(`Attempting to load: ${url}`);
+  console.log(`Attempting to load: ${url}`);
   mainWindow.loadURL(url).catch(err => {
     logger.error('Failed to load URL', err);
-    dialog.showErrorBox('Load Error', `Failed to load application at ${url}`);
+    console.error('Failed to load URL:', err);
+    if (isDev) {
+      dialog.showErrorBox('Load Error', `Failed to load application at ${url}.\n\nMake sure Vite dev server is running:\nnpm run dev`);
+    } else {
+      dialog.showErrorBox('Load Error', `Failed to load application at ${url}`);
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -283,6 +570,46 @@ async function createWindow() {
 }
 
 // --- APP LIFECYCLE ---
+// Register custom protocol handler for deep links
+if (!app.isDefaultProtocolClient('globalreach')) {
+  app.setAsDefaultProtocolClient('globalreach');
+}
+
+// Handle deep links (macOS)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (mainWindow) {
+    mainWindow.webContents.send('deep-link', url);
+  } else {
+    // Store for when window is ready
+    app.once('ready', () => {
+      if (mainWindow) {
+        mainWindow.webContents.send('deep-link', url);
+      }
+    });
+  }
+});
+
+// Handle deep links (Windows - second-instance)
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine) => {
+    // Focus main window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    
+    // Check for deep link in command line
+    const url = commandLine.find(arg => arg.startsWith('globalreach://'));
+    if (url && mainWindow) {
+      mainWindow.webContents.send('deep-link', url);
+    }
+  });
+}
+
 app.whenReady().then(() => {
   createWindow();
 
@@ -296,6 +623,32 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
   if (serverInstance) serverInstance.close();
+});
+
+// Enhanced auto-update handlers
+autoUpdater.on('checking-for-update', () => {
+  logger.info('Checking for updates...');
+});
+
+autoUpdater.on('update-available', (info) => {
+  logger.info('Update available:', info.version);
+});
+
+autoUpdater.on('update-not-available', () => {
+  logger.info('No updates available');
+});
+
+autoUpdater.on('error', (err) => {
+  logger.error('Update error:', err);
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  logger.info(`Update download progress: ${Math.round(progressObj.percent)}%`);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  logger.info('Update downloaded:', info.version);
+  // Don't auto-install, let user decide through UI
 });
 
 // --- IPC HANDLERS ---

@@ -1,5 +1,7 @@
 
-import { EmailService, SendEmailOptions } from './emailService';
+// EmailService is imported dynamically to avoid bundling Node.js modules
+// Types can be imported statically as they're erased at runtime
+import type { SendEmailOptions } from './emailService';
 import { Importer, AppTemplates, Channel } from '../types';
 
 /**
@@ -188,6 +190,7 @@ export const EmailSendingService = {
     const recipients = Array.isArray(to) ? to : [to];
 
     // Validate recipients
+    const { EmailService } = await import('./emailService');
     for (const email of recipients) {
       const validation = EmailService.validateEmail(email);
       if (!validation.valid) {
@@ -243,6 +246,7 @@ export const EmailSendingService = {
   ): Promise<{ success: boolean; messageId?: string; error?: string }> => {
     try {
       // Get email connection
+      const { EmailService } = await import('./emailService');
       const connection = await EmailService.getEmailConnection();
       if (!connection?.emailCredentials) {
         return { success: false, error: 'Email not connected. Please connect your email account in Settings.' };
@@ -271,14 +275,19 @@ export const EmailSendingService = {
         return { success: false, error: validation.errors.join('; ') };
       }
 
-      // Prepare email options
+      // Prepare email options with threading support
       const emailOptions: SendEmailOptions = {
         to: importer.contactDetail,
         subject,
         text: bodyContent,
         inReplyTo: options.inReplyTo,
-        references: options.references,
+        references: options.references || (options.inReplyTo ? [options.inReplyTo] : undefined),
       };
+      
+      // Ensure proper threading headers
+      if (options.inReplyTo && !emailOptions.references) {
+        emailOptions.references = [options.inReplyTo];
+      }
 
       // Apply HTML template if requested
       if (options.useHTML !== false) {
@@ -298,6 +307,7 @@ export const EmailSendingService = {
       } else if (credentials.provider === 'smtp' || credentials.provider === 'imap') {
         return await EmailService.sendViaSMTP(credentials, emailOptions);
       }
+      // EmailService already imported above
 
       return { success: false, error: 'Unsupported email provider' };
     } catch (error: any) {

@@ -13,6 +13,7 @@ import SetupWizard from './components/SetupWizard';
 import HelpModal from './components/HelpModal';
 import CampaignManager from './components/CampaignManager';
 import CalendarView from './components/CalendarView';
+import AdminMonitoringDashboard from './components/AdminMonitoringDashboard';
 
 import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, canExportData, canSendMessages, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
 import { generateIntroMessage, generateAgentReply, analyzeLeadQuality, simulateImporterResponse, generateSalesForecast } from './services/geminiService';
@@ -89,6 +90,7 @@ const App: React.FC = () => {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showReportConfig, setShowReportConfig] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState<boolean>(false);
   const [templates, setTemplates] = useState<AppTemplates>(DEFAULT_TEMPLATES);
   const [reportConfig, setReportConfig] = useState<ReportConfig>(DEFAULT_REPORT_CONFIG);
   const [notificationConfig, setNotificationConfig] = useState<NotificationConfig>(DEFAULT_NOTIFICATIONS);
@@ -154,6 +156,65 @@ const App: React.FC = () => {
   useEffect(() => {
     if (importers.length > 0) StorageService.saveImporters(importers);
   }, [importers]);
+
+  // Deep Link Handling for Magic Links and OAuth
+  useEffect(() => {
+    if (!(window as any).electronAPI) return;
+
+    const handleDeepLink = async (event: any, url: string) => {
+      try {
+        const { LinkHandlerService } = await import('./services/linkHandlerService');
+        const { AuthLogService } = await import('./services/authLogService');
+        
+        AuthLogService.logLinkClick({
+          source: 'app',
+          url: url.substring(0, 200),
+          type: url.includes('magic-link') ? 'magic-link' : url.includes('oauth') ? 'oauth' : 'unknown',
+          success: false, // Will update on completion
+        });
+
+        const result = await LinkHandlerService.handleLoginLink(url);
+        
+        if (result.valid && result.parsed) {
+          AuthLogService.logLinkClick({
+            source: 'app',
+            url: url.substring(0, 200),
+            type: result.parsed.type,
+            success: true,
+          });
+          
+          // Route to appropriate handler
+          if (result.parsed.type === 'magic-link' && result.parsed.token) {
+            // Process magic link
+            if ((window as any).electronAPI) {
+              (window as any).electronAPI.handleDeepLink(url);
+            }
+          } else if (result.parsed.type === 'oauth' && result.parsed.code) {
+            // OAuth callback will be handled by PlatformConnectModal
+            if ((window as any).electronAPI) {
+              (window as any).electronAPI.handleDeepLink(url);
+            }
+          }
+        } else {
+          AuthLogService.logLinkClick({
+            source: 'app',
+            url: url.substring(0, 200),
+            type: 'unknown',
+            success: false,
+            error: result.error,
+          });
+        }
+      } catch (error: any) {
+        console.error('[App] Deep link handling error:', error);
+      }
+    };
+
+    (window as any).electronAPI.onDeepLink?.(handleDeepLink);
+    
+    return () => {
+      // Cleanup if needed
+    };
+  }, []);
 
   // Email Ingestion Setup
   useEffect(() => {
@@ -850,7 +911,8 @@ const App: React.FC = () => {
             onSave={setTemplates} 
             language={language} 
             setLanguage={setLanguage} 
-            userRole={user.role} 
+            userRole={user.role}
+            user={user} 
             connectedPlatforms={connectedPlatforms} 
             onUpdateConnection={handlePlatformUpdate} 
             notificationConfig={notificationConfig} 
@@ -860,6 +922,35 @@ const App: React.FC = () => {
         />
         <ReportConfigModal isOpen={showReportConfig} onClose={() => setShowReportConfig(false)} config={reportConfig} onSave={setReportConfig} />
         <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />
+        
+        {/* Admin Monitoring Dashboard Modal */}
+        {user && showAdminDashboard && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col">
+              <div className="flex justify-between items-center p-6 border-b border-slate-200">
+                <h2 className="text-2xl font-bold text-slate-800">Admin Monitoring Dashboard</h2>
+                <button
+                  onClick={() => setShowAdminDashboard(false)}
+                  className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                <AdminMonitoringDashboard
+                  user={user}
+                  importers={importers}
+                  onNavigateToSettings={() => {
+                    setShowAdminDashboard(false);
+                    setShowSettingsModal(true);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
       <Navigation 
         user={user} 
@@ -869,7 +960,8 @@ const App: React.FC = () => {
         setShowAnalytics={setShowAnalytics} 
         setShowImportModal={setShowImportModal} 
         setShowSettingsModal={setShowSettingsModal}
-        setShowHelpModal={setShowHelpModal} 
+        setShowHelpModal={setShowHelpModal}
+        setShowAdminDashboard={setShowAdminDashboard}
         onLogout={handleLogout} 
         language={language} 
       />
