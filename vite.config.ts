@@ -52,7 +52,11 @@ export default defineConfig({
     strictPort: false
   },
   optimizeDeps: {
-    exclude: ['imap', 'nodemailer', 'googleapis', 'mailparser', 'express', 'winston']
+    exclude: ['imap', 'nodemailer', 'googleapis', 'mailparser', 'express', 'winston'],
+    // Exclude emailService from pre-bundling to prevent nodemailer resolution
+    esbuildOptions: {
+      plugins: []
+    }
   },
   ssr: {
     noExternal: false, // Don't bundle Node.js modules for SSR

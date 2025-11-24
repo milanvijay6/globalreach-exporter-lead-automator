@@ -1,7 +1,6 @@
 
-// EmailService is imported dynamically to avoid bundling Node.js modules
-// Types can be imported statically as they're erased at runtime
-import type { SendEmailOptions } from './emailService';
+// Use types from emailTypes instead of emailService to avoid Vite analyzing emailService.ts
+import type { SendEmailOptions } from './emailTypes';
 import { Importer, AppTemplates, Channel } from '../types';
 
 /**
@@ -245,9 +244,9 @@ export const EmailSendingService = {
     } = {}
   ): Promise<{ success: boolean; messageId?: string; error?: string }> => {
     try {
-      // Get email connection
-      const { EmailService } = await import('./emailService');
-      const connection = await EmailService.getEmailConnection();
+      // Get email connection via IPC
+      const { EmailIPCService } = await import('./emailIPCService');
+      const connection = await EmailIPCService.getEmailConnection();
       if (!connection?.emailCredentials) {
         return { success: false, error: 'Email not connected. Please connect your email account in Settings.' };
       }
@@ -300,14 +299,13 @@ export const EmailSendingService = {
         );
       }
 
-      // Send via appropriate provider
+      // Send via appropriate provider using IPC
       const credentials = connection.emailCredentials;
       if (credentials.provider === 'gmail') {
-        return await EmailService.sendViaGmail(credentials, emailOptions);
-      } else if (credentials.provider === 'smtp' || credentials.provider === 'imap') {
-        return await EmailService.sendViaSMTP(credentials, emailOptions);
+        return await EmailIPCService.sendViaGmail(credentials, emailOptions);
+      } else if (credentials.provider === 'smtp' || credentials.provider === 'imap' || credentials.provider === 'outlook') {
+        return await EmailIPCService.sendViaSMTP(credentials, emailOptions);
       }
-      // EmailService already imported above
 
       return { success: false, error: 'Unsupported email provider' };
     } catch (error: any) {

@@ -1,5 +1,5 @@
 
-import { EmailMessage } from './emailService';
+import type { EmailMessage } from './emailTypes';
 import { analyzeLeadQuality, AnalysisResult } from './geminiService';
 import { LeadStatus, SentimentData, EmotionData } from '../types';
 

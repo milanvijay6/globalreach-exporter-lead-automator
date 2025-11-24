@@ -50,5 +50,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDeepLink: (callback) => {
     ipcRenderer.on('deep-link', (event, url) => callback(event, url));
   },
-  removeDeepLink: () => ipcRenderer.removeAllListeners('deep-link')
+  removeDeepLink: () => ipcRenderer.removeAllListeners('deep-link'),
+  
+  // Email
+  testEmailConnection: (credentials) => ipcRenderer.invoke('email-test-connection', credentials),
+  sendEmailSMTP: (credentials, options) => ipcRenderer.invoke('email-send-smtp', credentials, options),
+  sendEmailGmail: (credentials, options) => ipcRenderer.invoke('email-send-gmail', credentials, options),
+  readEmailsIMAP: (credentials, maxResults) => ipcRenderer.invoke('email-read-imap', credentials, maxResults),
+  readEmailsGmail: (credentials, maxResults, query) => ipcRenderer.invoke('email-read-gmail', credentials, maxResults, query),
+  getEmailConnection: () => ipcRenderer.invoke('email-get-connection')
 });

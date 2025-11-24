@@ -1,5 +1,5 @@
 
-import { EmailMessage } from './emailService';
+import type { EmailMessage } from './emailTypes';
 import { PlatformService } from './platformService';
 
 export interface EmailMetrics {

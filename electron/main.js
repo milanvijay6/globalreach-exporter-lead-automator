@@ -738,3 +738,248 @@ ipcMain.handle('get-log-path', () => path.join(logDir, 'combined.log'));
 ipcMain.on('log-message', (event, level, message, data) => {
   logger.log(level, message, data);
 });
+
+// Load EmailService from main process
+const EmailService = require('./services/emailService');
+
+// Helper function to load platform connections from main process
+// Uses the same secure storage mechanism as securityService
+function loadPlatformConnectionsFromMain() {
+  try {
+    const STORAGE_KEY_PLATFORMS = 'globalreach_platforms';
+    if (safeStorage.isEncryptionAvailable()) {
+      const hex = getConfig(`secure_${STORAGE_KEY_PLATFORMS}`);
+      if (hex) {
+        try {
+          const buffer = Buffer.from(hex, 'hex');
+          const decrypted = safeStorage.decryptString(buffer);
+          return JSON.parse(decrypted);
+        } catch (e) {
+          logger.error('Decryption failed for platform connections:', e);
+        }
+      }
+    } else {
+      // Fallback to unencrypted storage
+      const stored = getConfig(STORAGE_KEY_PLATFORMS);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    }
+  } catch (err) {
+    logger.error('Error loading platform connections:', err);
+  }
+  return [];
+}
+
+// Helper function to save platform connections from main process
+function savePlatformConnectionsToMain(connections) {
+  try {
+    const STORAGE_KEY_PLATFORMS = 'globalreach_platforms';
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(JSON.stringify(connections));
+      setConfig(`secure_${STORAGE_KEY_PLATFORMS}`, encrypted.toString('hex'));
+    } else {
+      // Fallback to unencrypted storage
+      setConfig(STORAGE_KEY_PLATFORMS, JSON.stringify(connections));
+    }
+    return true;
+  } catch (err) {
+    logger.error('Error saving platform connections:', err);
+    return false;
+  }
+}
+
+// Helper function to get email connection
+function getEmailConnectionFromMain() {
+  const connections = loadPlatformConnectionsFromMain();
+  const emailConnection = connections.find(conn => 
+    (conn.channel === 'EMAIL' || conn.channel === 'email') && 
+    (conn.status === 'Connected' || conn.status === 'connected') && 
+    conn.emailCredentials
+  ) || null;
+  return emailConnection;
+}
+
+// Email connection test handler (runs in main process where Node.js modules are available)
+ipcMain.handle('email-test-connection', async (event, credentials) => {
+  try {
+    logger.info('Email test connection requested:', { 
+      provider: credentials?.provider,
+      smtpHost: credentials?.smtpHost,
+      username: credentials?.username ? credentials.username.substring(0, 3) + '***' : 'missing'
+    });
+
+    if (!credentials) {
+      return { success: false, error: 'No credentials provided' };
+    }
+
+    const result = await EmailService.testConnection(credentials, getConfig);
+    
+    // Enhance error messages from EmailService if needed
+    if (!result.success && result.error) {
+      let errorMessage = result.error;
+      
+      if (result.error.includes('ECONNREFUSED')) {
+        errorMessage = 'Connection refused. Please check if the SMTP host and port are correct.';
+      } else if (result.error.includes('ETIMEDOUT')) {
+        errorMessage = 'Connection timeout. Please check your internet connection and firewall settings.';
+      } else if (result.error.includes('ENOTFOUND')) {
+        errorMessage = `SMTP host not found: ${credentials?.smtpHost || 'unknown'}. Please check the hostname.`;
+      } else if (result.error.includes('authentication') || result.error.includes('535')) {
+        errorMessage = 'Authentication failed. Please check your username/email and password. For Gmail/Outlook with 2FA, use an App Password.';
+      } else if (result.error.includes('554')) {
+        errorMessage = 'SMTP server rejected the connection. Please check your server settings.';
+      }
+      
+      return { success: false, error: errorMessage };
+    }
+    
+    return result;
+  } catch (error) {
+    logger.error('Email test connection error:', {
+      message: error.message,
+      code: error.code,
+      responseCode: error.responseCode,
+      stack: error.stack
+    });
+    
+    let errorMessage = error.message || 'Connection test failed';
+    
+    if (error.code === 'ECONNREFUSED') {
+      errorMessage = 'Connection refused. Please check if the SMTP host and port are correct.';
+    } else if (error.code === 'ETIMEDOUT') {
+      errorMessage = 'Connection timeout. Please check your internet connection and firewall settings.';
+    } else if (error.code === 'ENOTFOUND') {
+      errorMessage = `SMTP host not found: ${credentials?.smtpHost || 'unknown'}. Please check the hostname.`;
+    } else if (error.responseCode === 535 || error.message?.includes('authentication')) {
+      errorMessage = 'Authentication failed. Please check your username/email and password. For Gmail/Outlook with 2FA, use an App Password.';
+    } else if (error.responseCode === 554) {
+      errorMessage = 'SMTP server rejected the connection. Please check your server settings.';
+    }
+    
+    return { 
+      success: false, 
+      error: errorMessage 
+    };
+  }
+});
+
+// Email send via SMTP handler
+ipcMain.handle('email-send-smtp', async (event, credentials, options) => {
+  try {
+    logger.info('Email send via SMTP requested:', {
+      provider: credentials?.provider,
+      smtpHost: credentials?.smtpHost,
+      to: options?.to
+    });
+
+    if (!credentials || !options) {
+      return { success: false, error: 'Invalid parameters' };
+    }
+
+    const result = await EmailService.sendViaSMTP(credentials, options);
+    return result;
+  } catch (error) {
+    logger.error('Email send SMTP error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to send email via SMTP' 
+    };
+  }
+});
+
+// Email send via Gmail API handler
+ipcMain.handle('email-send-gmail', async (event, credentials, options) => {
+  try {
+    logger.info('Email send via Gmail requested:', {
+      to: options?.to
+    });
+
+    if (!credentials || !options) {
+      return { success: false, error: 'Invalid parameters' };
+    }
+
+    const result = await EmailService.sendViaGmail(
+      credentials, 
+      options, 
+      getConfig, 
+      loadPlatformConnectionsFromMain, 
+      savePlatformConnectionsToMain
+    );
+    return result;
+  } catch (error) {
+    logger.error('Email send Gmail error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to send email via Gmail' 
+    };
+  }
+});
+
+// Email read via IMAP handler
+ipcMain.handle('email-read-imap', async (event, credentials, maxResults = 10) => {
+  try {
+    logger.info('Email read via IMAP requested:', {
+      provider: credentials?.provider,
+      imapHost: credentials?.imapHost,
+      maxResults
+    });
+
+    if (!credentials) {
+      return { success: false, error: 'No credentials provided' };
+    }
+
+    const result = await EmailService.readViaIMAP(credentials, maxResults);
+    return result;
+  } catch (error) {
+    logger.error('Email read IMAP error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to read emails via IMAP' 
+    };
+  }
+});
+
+// Email read via Gmail API handler
+ipcMain.handle('email-read-gmail', async (event, credentials, maxResults = 10, query) => {
+  try {
+    logger.info('Email read via Gmail requested:', {
+      maxResults,
+      query
+    });
+
+    if (!credentials) {
+      return { success: false, error: 'No credentials provided' };
+    }
+
+    const result = await EmailService.readViaGmail(
+      credentials, 
+      maxResults, 
+      query, 
+      getConfig, 
+      loadPlatformConnectionsFromMain, 
+      savePlatformConnectionsToMain
+    );
+    return result;
+  } catch (error) {
+    logger.error('Email read Gmail error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to read emails via Gmail' 
+    };
+  }
+});
+
+// Get email connection handler
+ipcMain.handle('email-get-connection', async (event) => {
+  try {
+    const connection = getEmailConnectionFromMain();
+    return { success: true, connection };
+  } catch (error) {
+    logger.error('Email get connection error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to get email connection' 
+    };
+  }
+});

@@ -122,8 +122,8 @@ export const MessagingService = {
 
     // Use real Email API if connected
     if (channel === Channel.EMAIL) {
-      const { EmailService } = await import('./emailService');
-      const emailConn = await EmailService.getEmailConnection();
+      const { EmailIPCService } = await import('./emailIPCService');
+      const emailConn = await EmailIPCService.getEmailConnection();
       
       if (emailConn?.emailCredentials) {
         // Notify SENT status immediately

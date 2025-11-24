@@ -923,8 +923,8 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                         throw new Error('Please fill in IMAP Host and IMAP Port for reading emails');
                       }
 
-                      // Test SMTP connection
-                      const creds: EmailCredentials = {
+                      // Test SMTP connection using IPC (runs in main process where nodemailer is available)
+                      const creds = {
                         provider: 'imap', // Use 'imap' to support both sending and reading
                         smtpHost: phoneNumberId,
                         smtpPort: parseInt(businessAccountId) || 587,
@@ -933,8 +933,15 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                         username: accessToken,
                         password: webhookVerifyToken,
                       };
-                      const { EmailService } = await import('../services/emailService');
-                      const result = await EmailService.testConnection(creds);
+                      
+                      // Use IPC service wrapper to avoid importing emailService.ts (which causes nodemailer resolution errors)
+                      const { EmailIPCService } = await import('../services/emailIPCService');
+                      const result = await EmailIPCService.testConnection(creds);
+                      
+                      if (!result) {
+                        throw new Error('No response from connection test. Please try again.');
+                      }
+                      
                       if (result.success) {
                         // Connect
                         const connection: PlatformConnection = {
@@ -943,18 +950,22 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                           accountName: accessToken,
                           connectedAt: Date.now(),
                           provider: 'custom',
-                          emailCredentials: creds,
+                          emailCredentials: creds as EmailCredentials,
                         };
                         onLink(connection);
                         setStep('success');
                         setTimeout(() => onClose(), 2000);
                       } else {
                         setStep('credentials');
-                        setErrorMessage(result.error || 'Connection test failed');
+                        setErrorMessage(result.error || 'Connection test failed. Please check your credentials and server settings.');
                       }
                     } catch (error: any) {
+                      console.error('Email connection test error:', error);
                       setStep('credentials');
-                      setErrorMessage(error.message || 'Connection test failed');
+                      const errorMsg = error.message || error.toString() || 'Connection test failed';
+                      setErrorMessage(errorMsg.includes('nodemailer') || errorMsg.includes('module specifier') 
+                        ? 'Internal error: Please restart the application and try again.' 
+                        : errorMsg);
                     }
                   }}
                   className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"

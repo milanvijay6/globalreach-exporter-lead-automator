@@ -1,7 +1,6 @@
 
-// EmailService is imported dynamically to avoid bundling Node.js modules
-// Types can be imported statically as they're erased at runtime
-import type { EmailMessage } from './emailService';
+// Use types from emailTypes instead of emailService to avoid Vite analyzing emailService.ts
+import type { EmailMessage } from './emailTypes';
 import { Channel } from '../types';
 import { PlatformService } from './platformService';
 
@@ -40,8 +39,8 @@ export const EmailIngestionService = {
 
     const poll = async () => {
       try {
-        const { EmailService } = await import('./emailService');
-        const connection = await EmailService.getEmailConnection();
+        const { EmailIPCService } = await import('./emailIPCService');
+        const connection = await EmailIPCService.getEmailConnection();
         if (!connection?.emailCredentials) {
           console.warn('[EmailIngestion] No email connection found');
           return;
@@ -51,9 +50,9 @@ export const EmailIngestionService = {
         let result;
 
         if (credentials.provider === 'gmail') {
-          result = await EmailService.readViaGmail(credentials, 10, 'is:unread');
-        } else if (credentials.provider === 'imap') {
-          result = await EmailService.readViaIMAP(credentials, 10);
+          result = await EmailIPCService.readViaGmail(credentials, 10, 'is:unread');
+        } else if (credentials.provider === 'imap' || credentials.provider === 'outlook') {
+          result = await EmailIPCService.readViaIMAP(credentials, 10);
         } else {
           console.warn('[EmailIngestion] Polling not supported for provider:', credentials.provider);
           return;
@@ -105,8 +104,8 @@ export const EmailIngestionService = {
    */
   startIMAPIdle: async () => {
     try {
-      const { EmailService } = await import('./emailService');
-      const connection = await EmailService.getEmailConnection();
+      const { EmailIPCService } = await import('./emailIPCService');
+      const connection = await EmailIPCService.getEmailConnection();
       if (!connection?.emailCredentials || connection.emailCredentials.provider !== 'imap') {
         console.warn('[EmailIngestion] IMAP IDLE requires IMAP provider');
         return;
@@ -156,8 +155,8 @@ export const EmailIngestionService = {
    */
   fetchAndProcess: async (maxResults: number = 10, query?: string) => {
     try {
-      const { EmailService } = await import('./emailService');
-      const connection = await EmailService.getEmailConnection();
+      const { EmailIPCService } = await import('./emailIPCService');
+      const connection = await EmailIPCService.getEmailConnection();
       if (!connection?.emailCredentials) {
         return { success: false, error: 'Email not connected' };
       }
@@ -166,9 +165,9 @@ export const EmailIngestionService = {
       let result;
 
       if (credentials.provider === 'gmail') {
-        result = await EmailService.readViaGmail(credentials, maxResults, query);
-      } else if (credentials.provider === 'imap') {
-        result = await EmailService.readViaIMAP(credentials, maxResults);
+        result = await EmailIPCService.readViaGmail(credentials, maxResults, query);
+      } else if (credentials.provider === 'imap' || credentials.provider === 'outlook') {
+        result = await EmailIPCService.readViaIMAP(credentials, maxResults);
       } else {
         return { success: false, error: 'Provider not supported for reading' };
       }
@@ -192,8 +191,8 @@ export const EmailIngestionService = {
    */
   initialize: async () => {
     try {
-      const { EmailService } = await import('./emailService');
-      const connection = await EmailService.getEmailConnection();
+      const { EmailIPCService } = await import('./emailIPCService');
+      const connection = await EmailIPCService.getEmailConnection();
       if (!connection?.emailCredentials) {
         console.log('[EmailIngestion] No email connection, skipping initialization');
         return;
