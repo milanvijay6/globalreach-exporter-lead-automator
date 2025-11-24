@@ -178,6 +178,23 @@ export const EmailSendingService = {
   },
 
   /**
+   * Validates email address format
+   */
+  validateEmailAddress: (email: string): { valid: boolean; error?: string } => {
+    if (!email || typeof email !== 'string') {
+      return { valid: false, error: 'Email is required' };
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return { valid: false, error: 'Invalid email format' };
+    }
+    if (email.length > 254) {
+      return { valid: false, error: 'Email address too long' };
+    }
+    return { valid: true };
+  },
+
+  /**
    * Validates email before sending
    */
   validateBeforeSend: async (
@@ -189,9 +206,8 @@ export const EmailSendingService = {
     const recipients = Array.isArray(to) ? to : [to];
 
     // Validate recipients
-    const { EmailService } = await import('./emailService');
     for (const email of recipients) {
-      const validation = EmailService.validateEmail(email);
+      const validation = EmailSendingService.validateEmailAddress(email);
       if (!validation.valid) {
         errors.push(`Invalid email: ${email} - ${validation.error}`);
       }

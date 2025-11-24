@@ -36,6 +36,7 @@ export interface OAuthConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  tenantId?: string; // Optional tenant ID for Outlook/Microsoft (defaults to 'common')
 }
 
 export interface OAuthTokens {
@@ -145,6 +146,10 @@ export const OAuthService = {
         'offline_access',
       ].join(' ');
 
+      // Use tenant-specific endpoint if tenantId is provided, otherwise use 'common'
+      const tenantId = config.tenantId || 'common';
+      const authEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`;
+
       const params = new URLSearchParams({
         client_id: config.clientId,
         response_type: 'code',
@@ -155,9 +160,9 @@ export const OAuthService = {
         prompt: 'consent',
       });
 
-      const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
+      const authUrl = `${authEndpoint}?${params.toString()}`;
 
-      Logger.info('[OAuthService] Outlook OAuth URL generated', { email, hasState: !!state });
+      Logger.info('[OAuthService] Outlook OAuth URL generated', { email, hasState: !!state, tenantId });
       return { authUrl, state };
     } catch (error: any) {
       Logger.error('[OAuthService] Failed to initiate Outlook OAuth:', error);
@@ -235,7 +240,9 @@ export const OAuthService = {
     config: OAuthConfig
   ): Promise<OAuthTokens> => {
     try {
-      const tokenEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+      // Use tenant-specific endpoint if tenantId is provided, otherwise use 'common'
+      const tenantId = config.tenantId || 'common';
+      const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
       
       const response = await fetch(tokenEndpoint, {
         method: 'POST',
@@ -262,11 +269,12 @@ export const OAuthService = {
         throw new Error('No access token received');
       }
 
-      Logger.info('[OAuthService] Outlook tokens obtained successfully');
+      Logger.info('[OAuthService] Outlook tokens obtained successfully', { tenantId });
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
+        expiryDate: tokens.expires_in ? Date.now() + (tokens.expires_in * 1000) : undefined,
         tokenType: tokens.token_type,
         scope: tokens.scope,
       };
@@ -340,7 +348,9 @@ export const OAuthService = {
     config: OAuthConfig
   ): Promise<OAuthTokens> => {
     try {
-      const tokenEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+      // Use tenant-specific endpoint if tenantId is provided, otherwise use 'common'
+      const tenantId = config.tenantId || 'common';
+      const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
       
       const response = await fetch(tokenEndpoint, {
         method: 'POST',
@@ -362,11 +372,12 @@ export const OAuthService = {
 
       const tokens = await response.json();
 
-      Logger.info('[OAuthService] Outlook token refreshed successfully');
+      Logger.info('[OAuthService] Outlook token refreshed successfully', { tenantId });
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || refreshToken,
         expiresIn: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
+        expiryDate: tokens.expires_in ? Date.now() + (tokens.expires_in * 1000) : undefined,
         tokenType: tokens.token_type,
         scope: tokens.scope,
       };
@@ -398,6 +409,52 @@ export const OAuthService = {
       Logger.error('[OAuthService] Token revocation failed:', error);
       return false;
     }
+  },
+
+  /**
+   * Validates OAuth configuration
+   */
+  validateOAuthConfig: (
+    config: OAuthConfig,
+    provider: 'gmail' | 'outlook'
+  ): { valid: boolean; error?: string } => {
+    // Validate required fields
+    if (!config.clientId || config.clientId.trim() === '') {
+      return { valid: false, error: 'Client ID is required' };
+    }
+
+    if (!config.clientSecret || config.clientSecret.trim() === '') {
+      return { valid: false, error: 'Client Secret is required' };
+    }
+
+    if (!config.redirectUri || config.redirectUri.trim() === '') {
+      return { valid: false, error: 'Redirect URI is required' };
+    }
+
+    // Validate redirect URI format
+    try {
+      const url = new URL(config.redirectUri);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return { valid: false, error: 'Redirect URI must use http or https protocol' };
+      }
+    } catch (e) {
+      return { valid: false, error: 'Redirect URI is not a valid URL' };
+    }
+
+    // For Outlook, validate tenant ID format if provided
+    if (provider === 'outlook' && config.tenantId && config.tenantId !== 'common') {
+      // Check if it's a valid GUID format (optional)
+      const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const validTenantIds = ['common', 'organizations', 'consumers'];
+      if (!validTenantIds.includes(config.tenantId) && !guidPattern.test(config.tenantId)) {
+        return { 
+          valid: false, 
+          error: 'Tenant ID must be "common", "organizations", "consumers", or a valid GUID' 
+        };
+      }
+    }
+
+    return { valid: true };
   },
 };
 

@@ -12,11 +12,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'electron/build'),
     emptyOutDir: true,
-    // Disable source maps in production for security and smaller bundle size
-    sourcemap: process.env.NODE_ENV !== 'production',
-    minify: 'esbuild',
-    target: 'es2015',
-    chunkSizeWarningLimit: 1000,
+    sourcemap: true,
     rollupOptions: {
       external: [
         'imap',
@@ -57,17 +53,16 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['imap', 'nodemailer', 'googleapis', 'mailparser', 'express', 'winston'],
-    // Exclude emailService from pre-bundling to prevent nodemailer resolution
     esbuildOptions: {
       plugins: []
     }
   },
   ssr: {
-    noExternal: false, // Don't bundle Node.js modules for SSR
+    noExternal: false,
     external: ['nodemailer', 'imap', 'googleapis', 'mailparser', 'express', 'winston']
   },
   define: {
-    // Prevent bundling of Node.js modules
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
   }
 });
+

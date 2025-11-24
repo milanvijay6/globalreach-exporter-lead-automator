@@ -404,28 +404,166 @@ const EmailService = {
       } else if (credentials.provider === 'smtp' || credentials.provider === 'imap' || credentials.provider === 'outlook') {
         // Test SMTP connection (for Outlook SMTP/IMAP or custom SMTP)
         if (!credentials.smtpHost || !credentials.username || !credentials.password) {
-          return { success: false, error: 'SMTP configuration incomplete' };
+          return { success: false, error: 'SMTP configuration incomplete. Please fill in all required fields.' };
         }
 
+        // Detect if this is an Outlook account
+        const isOutlook = credentials.username?.includes('@outlook.com') || 
+                         credentials.username?.includes('@hotmail.com') ||
+                         credentials.username?.includes('@live.com') ||
+                         credentials.smtpHost?.includes('outlook');
+        
+        // Clean up credentials - remove any whitespace from password
+        const cleanPassword = credentials.password ? credentials.password.trim() : '';
+        const cleanUsername = credentials.username ? credentials.username.trim() : '';
+        
+        console.log('[EmailService] Testing connection:', {
+          host: credentials.smtpHost,
+          port: credentials.smtpPort || 587,
+          username: cleanUsername.substring(0, 3) + '***',
+          passwordLength: cleanPassword.length,
+          isOutlook
+        });
+        
         const transporter = nodemailer.createTransport({
           host: credentials.smtpHost,
           port: credentials.smtpPort || 587,
-          secure: credentials.smtpPort === 465,
+          secure: credentials.smtpPort === 465, // true for 465, false for other ports
           auth: {
-            user: credentials.username,
-            pass: credentials.password,
+            user: cleanUsername,
+            pass: cleanPassword,
           },
-          connectionTimeout: 10000,
-          greetingTimeout: 5000,
+          // Outlook.com specific settings
+          requireTLS: !(credentials.smtpPort === 465), // Don't require TLS if using SSL port
+          tls: {
+            rejectUnauthorized: false // Allow self-signed certificates (needed for some servers)
+          },
+          connectionTimeout: 20000, // Increased timeout
+          greetingTimeout: 10000,
+          socketTimeout: 20000,
+          // Enable debug logging to see what's happening
+          debug: false,
+          logger: false,
         });
 
-        await transporter.verify();
-        transporter.close();
-        return { success: true };
+        try {
+          // Verify connection
+          const verified = await transporter.verify();
+          console.log('[EmailService] Connection verified successfully');
+          transporter.close();
+          return { success: true };
+        } catch (verifyError) {
+          console.error('[EmailService] Verification failed:', {
+            code: verifyError.code,
+            responseCode: verifyError.responseCode,
+            response: verifyError.response,
+            command: verifyError.command,
+            message: verifyError.message
+          });
+          transporter.close();
+          throw verifyError;
+        }
       }
       return { success: false, error: 'Unsupported provider' };
     } catch (error) {
-      return { success: false, error: error.message || 'Connection test failed' };
+      console.error('[EmailService] Connection test error:', {
+        code: error.code,
+        responseCode: error.responseCode,
+        response: error.response,
+        command: error.command,
+        message: error.message,
+        stack: error.stack?.substring(0, 500)
+      });
+      
+      // Provide user-friendly error messages based on error type
+      let errorMessage = 'Connection test failed';
+      
+      // Check for basic authentication disabled error (Outlook.com/Office365)
+      const isBasicAuthDisabled = error.message?.includes('basic authentication is disabled') ||
+                                  error.response?.includes('basic authentication is disabled') ||
+                                  (error.responseCode === 535 && error.message?.includes('5.7.139'));
+      
+      if (isBasicAuthDisabled) {
+        errorMessage = '❌ Basic Authentication is Disabled\n\n';
+        errorMessage += 'Your Outlook.com account has basic authentication (username/password) disabled by Microsoft for security.\n\n';
+        errorMessage += 'SOLUTION: You must use OAuth 2.0 authentication instead of SMTP/IMAP.\n\n';
+        errorMessage += 'To fix this:\n';
+        errorMessage += '1. Go back and select "Sign in with Microsoft" instead of "IMAP/SMTP"\n';
+        errorMessage += '2. This will use secure OAuth 2.0 authentication\n';
+        errorMessage += '3. You\'ll sign in through Microsoft\'s secure login page\n';
+        errorMessage += '\nNote: App Passwords only work when basic authentication is enabled. ';
+        errorMessage += 'Since it\'s disabled for your account, you must use OAuth.\n';
+        return { success: false, error: errorMessage };
+      }
+      
+      // Authentication errors - check multiple indicators
+      const isAuthError = error.responseCode === 535 || 
+                         error.code === 'EAUTH' || 
+                         error.response === '535' ||
+                         error.responseCode === 534 ||
+                         error.code === 'EENVELOPE' ||
+                         error.message?.toLowerCase().includes('authentication') || 
+                         error.message?.toLowerCase().includes('invalid login') ||
+                         error.message?.toLowerCase().includes('username and password') ||
+                         error.message?.toLowerCase().includes('invalid credentials') ||
+                         error.message?.toLowerCase().includes('authentication failed') ||
+                         error.message?.toLowerCase().includes('535 5.7') ||
+                         error.command === 'AUTH PLAIN' ||
+                         error.command === 'AUTH LOGIN';
+      
+      if (isAuthError) {
+        const isOutlook = credentials.username?.includes('@outlook.com') || 
+                         credentials.username?.includes('@hotmail.com') ||
+                         credentials.username?.includes('@live.com') ||
+                         credentials.smtpHost?.includes('outlook');
+        
+        const isGmail = credentials.username?.includes('@gmail.com') || 
+                       credentials.smtpHost?.includes('gmail');
+        
+        errorMessage = 'Authentication failed. Please verify:\n\n';
+        errorMessage += '1. Email address is correct: ' + (credentials.username || 'not provided') + '\n';
+        errorMessage += '2. App Password is correct (copy it carefully, no extra spaces)\n';
+        errorMessage += '3. You\'re using the App Password, not your regular password\n';
+        
+        if (isOutlook) {
+          errorMessage += '\nOutlook.com Troubleshooting:\n';
+          errorMessage += '• Ensure SMTP host is exactly: smtp-mail.outlook.com\n';
+          errorMessage += '• Ensure SMTP port is: 587 (not 465)\n';
+          errorMessage += '• Copy your App Password exactly as generated (16 characters, no spaces)\n';
+          errorMessage += '• Make sure the App Password was created in the last 30 days\n';
+          errorMessage += '• Try generating a new App Password if this one doesn\'t work\n';
+          errorMessage += '• Verify IMAP is enabled: outlook.office365.com:993\n';
+          errorMessage += '\n⚠️ If basic authentication is disabled on your account, use "Sign in with Microsoft" (OAuth) instead.\n';
+        } else if (isGmail) {
+          errorMessage += '\nGmail Troubleshooting:\n';
+          errorMessage += '• Use an App Password from myaccount.google.com/security\n';
+          errorMessage += '• Ensure SMTP host is: smtp.gmail.com and port is: 587\n';
+          errorMessage += '• Copy App Password exactly (16 characters, no spaces)\n';
+        } else {
+          errorMessage += '\nGeneral Troubleshooting:\n';
+          errorMessage += '• Verify SMTP host and port settings\n';
+          errorMessage += '• Check if your provider requires App Passwords\n';
+          errorMessage += '• Try port 587 (STARTTLS) or port 465 (SSL)\n';
+        }
+      }
+      // Connection errors
+      else if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'EHOSTUNREACH') {
+        errorMessage = 'Cannot connect to email server. Please check: 1) Your internet connection, 2) SMTP host and port settings, 3) Firewall/antivirus settings.';
+      }
+      // SSL/TLS errors
+      else if (error.code === 'EPROTO' || error.code === 'ESOCKET' || error.message?.includes('SSL') || error.message?.includes('TLS')) {
+        errorMessage = 'SSL/TLS connection error. Try changing the port: Use 587 for STARTTLS or 465 for SSL, or check if your server requires different security settings.';
+      }
+      // Server errors
+      else if (error.responseCode === 550 || error.message?.includes('quota') || error.message?.includes('limit')) {
+        errorMessage = 'Email quota exceeded or account limit reached. Please try again later or contact your email provider.';
+      }
+      // Generic error with message
+      else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      return { success: false, error: errorMessage };
     }
   },
 };

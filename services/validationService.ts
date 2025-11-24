@@ -128,43 +128,6 @@ export const validateApiKey = (
   };
 };
 
-/**
- * Sanitizes input based on type
- */
-export const sanitizeInput = (
-  input: string,
-  type: 'label' | 'notes' | 'key'
-): string => {
-  if (!input) return '';
-  
-  let sanitized = input.trim();
-  
-  switch (type) {
-    case 'label':
-      // Labels: allow alphanumeric, spaces, hyphens, underscores
-      sanitized = sanitized.replace(/[^a-zA-Z0-9\s\-_]/g, '');
-      // Limit length
-      sanitized = sanitized.substring(0, 100);
-      break;
-      
-    case 'notes':
-      // Notes: allow most characters but remove script tags
-      sanitized = sanitized.replace(/<script[^>]*>.*?<\/script>/gi, '');
-      sanitized = sanitized.replace(/javascript:/gi, '');
-      sanitized = sanitized.replace(/on\w+\s*=/gi, '');
-      // Limit length
-      sanitized = sanitized.substring(0, 1000);
-      break;
-      
-    case 'key':
-      // Keys: remove whitespace and control characters
-      sanitized = sanitized.replace(/\s/g, '');
-      sanitized = sanitized.replace(/[\x00-\x1F\x7F]/g, '');
-      break;
-  }
-  
-  return sanitized;
-};
 
 /**
  * Validates email address format

@@ -41,7 +41,8 @@ function prepareBuild() {
 function buildReact() {
   console.log('Building React application...');
   try {
-    execSync('npm run build:react', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
+    // Use npx vite build directly to avoid Windows NODE_OPTIONS issue
+    execSync('npx vite build', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
     console.log('React app built successfully.');
   } catch (error) {
     console.error('Failed to build React app:', error.message);

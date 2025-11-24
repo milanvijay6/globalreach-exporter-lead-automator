@@ -43,7 +43,11 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
   // Email OAuth/Magic Link state
   const [emailAddress, setEmailAddress] = useState('');
   const [magicLinkToken, setMagicLinkToken] = useState('');
-  const [oauthConfig, setOauthConfig] = useState<{ clientId: string; clientSecret: string; redirectUri: string } | null>(null);
+  const [oauthConfig, setOauthConfig] = useState<{ 
+    outlook?: { clientId: string; clientSecret: string; tenantId?: string };
+    gmail?: { clientId: string; clientSecret: string };
+    redirectUri?: string;
+  } | null>(null);
   const [authStep, setAuthStep] = useState<AuthStep>(AuthStep.IDLE);
   const [showAuthProgress, setShowAuthProgress] = useState(false);
   
@@ -64,14 +68,55 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
     if (isOpen) {
       if (channel === Channel.EMAIL) {
         setStep('provider-select');
-        // Reset email fields
-        setEmailAddress('');
-        setAccessToken('');
-        setPhoneNumberId('');
-        setBusinessAccountId('');
-        setWebhookVerifyToken('');
-        setImapHost('');
-        setImapPort('');
+        
+        // Check for existing email connection and auto-fill
+        const loadEmailCredentials = async () => {
+          try {
+            // Check if email is already connected
+            const { EmailIPCService } = await import('../services/emailIPCService');
+            const existingConnection = await EmailIPCService.getEmailConnection();
+            
+            if (existingConnection && existingConnection.emailCredentials) {
+              // Load existing credentials for reconnection
+              const creds = existingConnection.emailCredentials;
+              setEmailAddress(creds.username || '');
+              setAccessToken(creds.username || ''); // Reusing for email
+              setPhoneNumberId(creds.smtpHost || ''); // SMTP host
+              setBusinessAccountId(String(creds.smtpPort || '')); // SMTP port
+              setWebhookVerifyToken(''); // Don't auto-fill password for security (user needs to re-enter)
+              setImapHost(creds.imapHost || '');
+              setImapPort(String(creds.imapPort || ''));
+            } else {
+              // Auto-fill with default credentials if no connection exists
+              const { getDefaultEmailCredentials } = await import('../services/emailConfig');
+              const defaultCreds = getDefaultEmailCredentials();
+              
+              setEmailAddress(defaultCreds.username || '');
+              setAccessToken(defaultCreds.username || ''); // Reusing for email
+              setPhoneNumberId(defaultCreds.smtpHost || '');
+              setBusinessAccountId(String(defaultCreds.smtpPort || ''));
+              setWebhookVerifyToken(defaultCreds.password || ''); // Auto-fill App Password
+              setImapHost(defaultCreds.imapHost || '');
+              setImapPort(String(defaultCreds.imapPort || ''));
+              
+              // Automatically set emailProvider to 'custom' to show the form with pre-filled credentials
+              setEmailProvider('custom');
+              setStep('credentials');
+            }
+          } catch (error) {
+            console.error('Failed to load email credentials:', error);
+            // Reset email fields on error
+            setEmailAddress('');
+            setAccessToken('');
+            setPhoneNumberId('');
+            setBusinessAccountId('');
+            setWebhookVerifyToken('');
+            setImapHost('');
+            setImapPort('');
+          }
+        };
+        
+        loadEmailCredentials();
       } else if (channel === Channel.WHATSAPP) {
         setStep('credentials');
         loadExistingCredentials();
@@ -300,20 +345,23 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
   useEffect(() => {
     const loadOAuthConfig = async () => {
       try {
-        // In production, load from secure storage or settings
-        const config = await (window as any).electronAPI?.getConfig('oauthConfig');
-        if (config) {
-          const parsedConfig = JSON.parse(config);
+        // Load OAuth configuration from settings
+        const configStr = await (window as any).electronAPI?.getConfig('oauthConfig');
+        if (configStr) {
+          const parsedConfig = JSON.parse(configStr);
+          
           // Ensure redirect URI is set - get from server port or use default
           if (!parsedConfig.redirectUri) {
             const { PlatformService } = await import('../services/platformService');
             const port = await PlatformService.getAppConfig('serverPort', 4000);
             parsedConfig.redirectUri = `http://localhost:${port}/auth/oauth/callback`;
           }
+          
           setOauthConfig(parsedConfig);
         }
       } catch (e) {
         // Config not set yet
+        console.error('Failed to load OAuth config:', e);
       }
     };
     if (isOpen && channel === Channel.EMAIL) {
@@ -340,26 +388,41 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
           });
 
           if (!oauthConfig) {
-            throw new Error('OAuth configuration not found. Please configure OAuth credentials in Settings.');
+            throw new Error('OAuth configuration not found. Please configure OAuth credentials in Settings > Integrations > OAuth Configuration.');
           }
+
+          const provider = data.provider || 'gmail';
+          const providerConfig = provider === 'outlook' ? oauthConfig.outlook : oauthConfig.gmail;
+          
+          if (!providerConfig || !providerConfig.clientId || !providerConfig.clientSecret) {
+            throw new Error(`${provider === 'outlook' ? 'Outlook' : 'Gmail'} OAuth configuration not found. Please configure OAuth credentials in Settings > Integrations > OAuth Configuration.`);
+          }
+
+          // Build OAuth config object for the service
+          const serviceConfig = {
+            clientId: providerConfig.clientId,
+            clientSecret: providerConfig.clientSecret,
+            redirectUri: oauthConfig.redirectUri || `http://localhost:${await (await import('../services/platformService')).PlatformService.getAppConfig('serverPort', 4000)}/auth/oauth/callback`,
+            tenantId: provider === 'outlook' ? (providerConfig as any).tenantId || 'common' : undefined
+          };
 
           const { OAuthService } = await import('../services/oauthService');
           const tokens = await OAuthService.handleOAuthCallback(
-            data.provider || 'gmail',
+            provider,
             data.code,
             data.state,
-            oauthConfig
+            serviceConfig
           );
 
           // Store credentials with expiry and redirect URI
           const credentials: EmailCredentials = {
-            provider: data.provider || 'gmail',
+            provider: provider as 'gmail' | 'outlook',
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             tokenExpiryDate: tokens.expiryDate || (tokens.expiresIn ? Date.now() + tokens.expiresIn : undefined),
-            oauthClientId: oauthConfig.clientId,
-            oauthClientSecret: oauthConfig.clientSecret,
-            redirectUri: oauthConfig.redirectUri, // Store the redirect URI used
+            oauthClientId: providerConfig.clientId,
+            oauthClientSecret: providerConfig.clientSecret,
+            redirectUri: serviceConfig.redirectUri,
           };
 
           const { EmailAuthService } = await import('../services/emailAuthService');
@@ -472,32 +535,48 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         // OAuth flow
         if (!oauthConfig) {
           setStep('credentials');
-          setErrorMessage('OAuth configuration required. Please configure OAuth credentials in Settings > API Keys. You can also use manual SMTP/IMAP credentials as an alternative.');
+          setErrorMessage('OAuth configuration required. Please configure OAuth credentials in Settings > Integrations > OAuth Configuration. You can also use manual SMTP/IMAP credentials as an alternative.');
           return;
         }
 
-        // Validate OAuth config before starting
-        if (!oauthConfig.clientId || !oauthConfig.clientSecret) {
+        const oauthProvider = provider === 'google' ? 'gmail' : 'outlook';
+        const providerConfig = oauthProvider === 'outlook' ? oauthConfig.outlook : oauthConfig.gmail;
+
+        // Validate provider-specific OAuth config
+        if (!providerConfig || !providerConfig.clientId || !providerConfig.clientSecret) {
           setStep('credentials');
-          setErrorMessage('Invalid OAuth configuration. Please ensure Client ID and Client Secret are set in Settings. You can use manual SMTP/IMAP credentials as an alternative.');
+          setErrorMessage(`${oauthProvider === 'outlook' ? 'Outlook' : 'Gmail'} OAuth configuration not found. Please configure ${oauthProvider === 'outlook' ? 'Outlook' : 'Gmail'} Client ID and Client Secret in Settings > Integrations > OAuth Configuration. You can also use manual SMTP/IMAP credentials as an alternative.`);
           return;
         }
 
-        // Validate redirect URI is configured
-        if (!oauthConfig.redirectUri) {
-          const { PlatformService } = await import('../services/platformService');
-          const port = await PlatformService.getAppConfig('serverPort', 4000);
-          oauthConfig.redirectUri = `http://localhost:${port}/auth/oauth/callback`;
+        // Build OAuth config for the service
+        const { PlatformService } = await import('../services/platformService');
+        const port = await PlatformService.getAppConfig('serverPort', 4000);
+        const redirectUri = oauthConfig.redirectUri || `http://localhost:${port}/auth/oauth/callback`;
+        
+        const serviceConfig = {
+          clientId: providerConfig.clientId,
+          clientSecret: providerConfig.clientSecret,
+          redirectUri: redirectUri,
+          tenantId: oauthProvider === 'outlook' ? (providerConfig as any).tenantId || 'common' : undefined
+        };
+
+        // Validate config using OAuth service
+        const { OAuthService } = await import('../services/oauthService');
+        const validation = OAuthService.validateOAuthConfig(serviceConfig, oauthProvider);
+        if (!validation.valid) {
+          setStep('credentials');
+          setErrorMessage(`Invalid OAuth configuration: ${validation.error}. Please check your settings in Settings > Integrations > OAuth Configuration.`);
+          return;
         }
 
         setAuthStep(AuthStep.INITIATING);
         setShowAuthProgress(true);
 
         try {
-          const oauthProvider = provider === 'google' ? 'gmail' : 'outlook';
           const result = await (window as any).electronAPI?.initiateOAuth(
             oauthProvider,
-            oauthConfig,
+            serviceConfig,
             emailAddress
           );
 
@@ -753,7 +832,36 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                 <p className="text-xs text-slate-600 mb-3">
                   Enter your email server credentials. For Gmail, use app-specific password.
                 </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                  <p className="text-xs text-amber-800 font-medium mb-1">⚠️ Important Notice</p>
+                  <p className="text-xs text-amber-700">
+                    Some Outlook.com accounts have basic authentication disabled by Microsoft. 
+                    If you get "basic authentication is disabled" error, use <strong>"Sign in with Microsoft"</strong> (OAuth) instead.
+                  </p>
+                </div>
                 
+                {/* Auto-filled credentials notice */}
+                {(accessToken || phoneNumberId || imapHost) && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-blue-800 font-medium">
+                        {webhookVerifyToken ? 'Default credentials auto-filled' : 'Existing credentials loaded'}
+                      </p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        {webhookVerifyToken 
+                          ? 'Default Outlook credentials have been pre-filled. You can modify them if needed.'
+                          : 'Your existing email credentials have been loaded. Password is required for reconnection.'}
+                      </p>
+                      {(accessToken?.includes('@outlook.com') || accessToken?.includes('@hotmail.com')) && (
+                        <p className="text-xs text-amber-700 mt-2 font-medium">
+                          ⚠️ Note: Some Outlook.com accounts require App Passwords even without 2FA enabled. If authentication fails, try using an App Password.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Preset Configuration Buttons */}
                 <div className="flex flex-wrap gap-2 mt-3">
                   <button
@@ -811,7 +919,9 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
               {errorMessage && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-800">{errorMessage}</p>
+                  <div className="flex-1">
+                    <p className="text-sm text-red-800 whitespace-pre-line leading-relaxed">{errorMessage}</p>
+                  </div>
                 </div>
               )}
 
@@ -866,9 +976,38 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                     placeholder="Your email password or app password"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
-                  <p className="text-xs text-slate-500 mt-1">
-                    For Gmail/Outlook with 2FA, use an App Password instead of your regular password
-                  </p>
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-slate-600">
+                      <strong className="text-amber-700">⚠️ Important:</strong> For accounts with 2-Step Verification (2FA), you <strong>must</strong> use an App Password, not your regular password.
+                    </p>
+                    <details className="text-xs bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
+                      <summary className="px-3 py-2 cursor-pointer font-semibold text-blue-800 hover:bg-blue-100 transition-colors">
+                        📖 How to create an App Password (Click to expand)
+                      </summary>
+                      <div className="px-3 pb-3 pt-2 space-y-2 text-blue-700 border-t border-blue-200">
+                        <div>
+                          <p className="font-semibold mb-1">For Outlook/Hotmail/Live accounts:</p>
+                          <ol className="list-decimal list-inside space-y-0.5 ml-1 text-xs">
+                            <li>Go to <a href="https://account.microsoft.com/security" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">account.microsoft.com/security</a></li>
+                            <li>Click on <strong>"Advanced security options"</strong></li>
+                            <li>Scroll down to <strong>"App passwords"</strong> section</li>
+                            <li>Click <strong>"Create a new app password"</strong></li>
+                            <li>Copy the generated password and paste it here</li>
+                          </ol>
+                        </div>
+                        <div>
+                          <p className="font-semibold mb-1">For Gmail accounts:</p>
+                          <ol className="list-decimal list-inside space-y-0.5 ml-1 text-xs">
+                            <li>Go to <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">myaccount.google.com/security</a></li>
+                            <li>Under "Signing in to Google", click <strong>"2-Step Verification"</strong></li>
+                            <li>Scroll down and click <strong>"App passwords"</strong></li>
+                            <li>Select "Mail" and "Other (Custom name)" and enter "GlobalReach"</li>
+                            <li>Click "Generate" and copy the 16-character password</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-200">
@@ -924,14 +1063,25 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                       }
 
                       // Test SMTP connection using IPC (runs in main process where nodemailer is available)
-                      const creds = {
-                        provider: 'imap', // Use 'imap' to support both sending and reading
-                        smtpHost: phoneNumberId,
+                      // Detect provider from email address for better error handling
+                      const emailDomain = accessToken.split('@')[1]?.toLowerCase();
+                      let detectedProvider: 'gmail' | 'outlook' | 'imap' = 'imap';
+                      if (emailDomain === 'gmail.com' || emailDomain === 'googlemail.com') {
+                        detectedProvider = 'gmail';
+                      } else if (emailDomain === 'outlook.com' || emailDomain === 'hotmail.com' || emailDomain === 'live.com' || emailDomain?.endsWith('.office365.com')) {
+                        detectedProvider = 'outlook';
+                      }
+                      
+                      // Use 'imap' provider for SMTP/IMAP connections (even for Outlook)
+                      // This ensures we use SMTP authentication, not OAuth
+                      const creds: EmailCredentials = {
+                        provider: 'imap' as const, // Always use 'imap' for SMTP/IMAP connections
+                        smtpHost: phoneNumberId.trim(),
                         smtpPort: parseInt(businessAccountId) || 587,
-                        imapHost: imapHost,
+                        imapHost: imapHost.trim(),
                         imapPort: parseInt(imapPort) || 993,
-                        username: accessToken,
-                        password: webhookVerifyToken,
+                        username: accessToken.trim(),
+                        password: webhookVerifyToken.trim(), // Trim any whitespace from App Password
                       };
                       
                       // Use IPC service wrapper to avoid importing emailService.ts (which causes nodemailer resolution errors)
@@ -957,7 +1107,11 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                         setTimeout(() => onClose(), 2000);
                       } else {
                         setStep('credentials');
-                        setErrorMessage(result.error || 'Connection test failed. Please check your credentials and server settings.');
+                        // Display enhanced error message with actionable guidance
+                        let errorMsg = result.error || 'Connection test failed. Please check your credentials and server settings.';
+                        
+                        // Preserve line breaks from the error message for better formatting
+                        setErrorMessage(errorMsg);
                       }
                     } catch (error: any) {
                       console.error('Email connection test error:', error);

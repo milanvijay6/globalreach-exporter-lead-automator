@@ -76,6 +76,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationInsight | null>(null);
 
+  // OAuth Configuration State
+  const [outlookClientId, setOutlookClientId] = useState<string>('');
+  const [outlookClientSecret, setOutlookClientSecret] = useState<string>('');
+  const [outlookTenantId, setOutlookTenantId] = useState<string>('common');
+  const [gmailClientId, setGmailClientId] = useState<string>('');
+  const [gmailClientSecret, setGmailClientSecret] = useState<string>('');
+  const [showOutlookSecret, setShowOutlookSecret] = useState<boolean>(false);
+  const [showGmailSecret, setShowGmailSecret] = useState<boolean>(false);
+  const [oauthSaveStatus, setOauthSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [oauthSaveMessage, setOauthSaveMessage] = useState<string>('');
+
   useEffect(() => {
     setLocalTemplates(templates);
     if (notificationConfig) setLocalNotifications(notificationConfig);
@@ -95,6 +106,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             
             const path = await Logger.getLogFilePath();
             setLogPath(path || 'Unavailable (Web Mode)');
+
+            // Load OAuth configuration
+            try {
+              const oauthConfigStr = await (window as any).electronAPI?.getConfig('oauthConfig');
+              if (oauthConfigStr) {
+                const oauthConfig = JSON.parse(oauthConfigStr);
+                if (oauthConfig.outlook) {
+                  setOutlookClientId(oauthConfig.outlook.clientId || '');
+                  setOutlookClientSecret(oauthConfig.outlook.clientSecret || '');
+                  setOutlookTenantId(oauthConfig.outlook.tenantId || 'common');
+                }
+                if (oauthConfig.gmail) {
+                  setGmailClientId(oauthConfig.gmail.clientId || '');
+                  setGmailClientSecret(oauthConfig.gmail.clientSecret || '');
+                }
+              }
+            } catch (e) {
+              console.error('Failed to load OAuth config:', e);
+            }
         };
         loadSystem();
     }
@@ -569,6 +599,209 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     );
                 })}
+
+                {/* OAuth Configuration Section */}
+                <div className="mt-8 pt-8 border-t border-slate-200">
+                  <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Lock className="w-4 h-4" /> OAuth Configuration
+                  </h3>
+                  <p className="text-xs text-slate-600 mb-4">
+                    Configure OAuth credentials for email providers. Required for "Sign in with Microsoft" and "Sign in with Google" options.
+                    <span className="text-indigo-600 hover:underline ml-1 cursor-pointer" onClick={() => window.open('https://docs.microsoft.com/en-us/azure/active-directory/develop/', '_blank')}>View setup guide</span>
+                  </p>
+
+                  {/* Outlook OAuth Configuration */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <h4 className="text-xs font-bold text-blue-900 mb-3 flex items-center gap-2">
+                      <Mail className="w-4 h-4" /> Outlook / Microsoft
+                    </h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 block mb-1">
+                          Client (Application) ID <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={outlookClientId}
+                          onChange={(e) => setOutlookClientId(e.target.value)}
+                          placeholder="12345678-1234-1234-1234-123456789012"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 block mb-1">
+                          Client Secret <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showOutlookSecret ? "text" : "password"}
+                            value={outlookClientSecret}
+                            onChange={(e) => setOutlookClientSecret(e.target.value)}
+                            placeholder="Enter client secret"
+                            className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowOutlookSecret(!showOutlookSecret)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 text-xs"
+                          >
+                            {showOutlookSecret ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 block mb-1">
+                          Tenant ID <span className="text-slate-400">(optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={outlookTenantId}
+                          onChange={(e) => setOutlookTenantId(e.target.value)}
+                          placeholder="common"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          Use "common" for personal accounts, or your Directory (Tenant) ID for organizational accounts
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Gmail OAuth Configuration */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <h4 className="text-xs font-bold text-red-900 mb-3 flex items-center gap-2">
+                      <Mail className="w-4 h-4" /> Gmail / Google
+                    </h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 block mb-1">
+                          Client ID <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={gmailClientId}
+                          onChange={(e) => setGmailClientId(e.target.value)}
+                          placeholder="your-gmail-client-id.apps.googleusercontent.com"
+                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 block mb-1">
+                          Client Secret <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showGmailSecret ? "text" : "password"}
+                            value={gmailClientSecret}
+                            onChange={(e) => setGmailClientSecret(e.target.value)}
+                            placeholder="Enter client secret"
+                            className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowGmailSecret(!showGmailSecret)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 text-xs"
+                          >
+                            {showGmailSecret ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Redirect URI Display */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
+                    <label className="text-xs font-medium text-slate-700 block mb-1">
+                      Redirect URI (auto-generated)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`http://localhost:${serverPort}/auth/oauth/callback`}
+                        className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-mono"
+                      />
+                      <button
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.value = `http://localhost:${serverPort}/auth/oauth/callback`;
+                          document.body.appendChild(input);
+                          input.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(input);
+                          alert('Redirect URI copied to clipboard!');
+                        }}
+                        className="px-3 py-2 text-xs bg-slate-600 text-white rounded-lg hover:bg-slate-700"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Configure this exact URI in Azure AD (for Outlook) or Google Cloud Console (for Gmail)
+                    </p>
+                  </div>
+
+                  {/* Save Button and Status */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        // Validate required fields
+                        if (!outlookClientId || !outlookClientSecret) {
+                          setOauthSaveStatus('error');
+                          setOauthSaveMessage('Outlook Client ID and Client Secret are required');
+                          setTimeout(() => {
+                            setOauthSaveStatus('idle');
+                            setOauthSaveMessage('');
+                          }, 3000);
+                          return;
+                        }
+
+                        setOauthSaveStatus('saving');
+                        try {
+                          const oauthConfig = {
+                            outlook: {
+                              clientId: outlookClientId,
+                              clientSecret: outlookClientSecret,
+                              tenantId: outlookTenantId || 'common'
+                            },
+                            gmail: {
+                              clientId: gmailClientId,
+                              clientSecret: gmailClientSecret
+                            },
+                            redirectUri: `http://localhost:${serverPort}/auth/oauth/callback`
+                          };
+
+                          await (window as any).electronAPI?.setConfig('oauthConfig', JSON.stringify(oauthConfig));
+                          setOauthSaveStatus('success');
+                          setOauthSaveMessage('OAuth configuration saved successfully!');
+                          Logger.info('OAuth configuration saved');
+                          
+                          setTimeout(() => {
+                            setOauthSaveStatus('idle');
+                            setOauthSaveMessage('');
+                          }, 3000);
+                        } catch (error: any) {
+                          setOauthSaveStatus('error');
+                          setOauthSaveMessage(`Failed to save: ${error.message}`);
+                          Logger.error('Failed to save OAuth config:', error);
+                          setTimeout(() => {
+                            setOauthSaveStatus('idle');
+                            setOauthSaveMessage('');
+                          }, 5000);
+                        }
+                      }}
+                      disabled={oauthSaveStatus === 'saving'}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {oauthSaveStatus === 'saving' ? 'Saving...' : 'Save OAuth Configuration'}
+                    </button>
+                    {oauthSaveMessage && (
+                      <span className={`text-xs font-medium ${oauthSaveStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                        {oauthSaveMessage}
+                      </span>
+                    )}
+                  </div>
+                </div>
             </div>
           )}
 

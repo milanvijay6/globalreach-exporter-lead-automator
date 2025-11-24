@@ -387,18 +387,3 @@ export const checkSuspiciousActivity = (ip: string): boolean => {
   
   return false;
 };
-
-/**
- * Generates CSRF token
- */
-export const generateCSRFToken = (): string => {
-  const crypto = require('crypto');
-  return crypto.randomBytes(32).toString('hex');
-};
-
-/**
- * Validates CSRF token
- */
-export const validateCSRFToken = (token: string, sessionToken: string): boolean => {
-  return token === sessionToken && token.length === 64;
-};

@@ -127,6 +127,57 @@ const App: React.FC = () => {
                 const savedPlatforms = await loadPlatformConnections();
                 if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
 
+                // Auto-connect email if not already connected
+                const autoConnectEnabled = await PlatformService.getAppConfig('autoConnectEmail', true);
+                if (autoConnectEnabled) {
+                    try {
+                        const { EmailIPCService } = await import('./services/emailIPCService');
+                        const existingEmailConnection = await EmailIPCService.getEmailConnection();
+                        
+                        if (!existingEmailConnection || !existingEmailConnection.emailCredentials) {
+                            console.log('[App] No email connection found, attempting auto-connect...');
+                            
+                            // Import default credentials
+                            const { getDefaultEmailCredentials } = await import('./services/emailConfig');
+                            const defaultCredentials = getDefaultEmailCredentials();
+                            
+                            // Test connection first
+                            const testResult = await EmailIPCService.testConnection(defaultCredentials);
+                            
+                            if (testResult.success) {
+                                console.log('[App] Email connection test successful, storing credentials...');
+                                
+                                // Store credentials securely
+                                const { EmailAuthService } = await import('./services/emailAuthService');
+                                const { Channel, PlatformStatus } = await import('./types');
+                                
+                                const emailConnection = await EmailAuthService.storeCredentialsSecurely(
+                                    defaultCredentials,
+                                    {
+                                        channel: Channel.EMAIL,
+                                        status: PlatformStatus.CONNECTED,
+                                    }
+                                );
+                                
+                                // Update connected platforms state
+                                setConnectedPlatforms(prev => {
+                                    const filtered = prev.filter(p => p.channel !== Channel.EMAIL);
+                                    return [...filtered, emailConnection];
+                                });
+                                
+                                console.log('[App] Email auto-connected successfully');
+                            } else {
+                                console.warn('[App] Email auto-connect failed:', testResult.error);
+                            }
+                        } else {
+                            console.log('[App] Email already connected, skipping auto-connect');
+                        }
+                    } catch (error: any) {
+                        // Non-blocking: log error but don't prevent app startup
+                        console.error('[App] Email auto-connect error (non-blocking):', error);
+                    }
+                }
+
                 const savedImporters = StorageService.loadImporters();
                 if (savedImporters && savedImporters.length > 0) {
                     setImporters(savedImporters);

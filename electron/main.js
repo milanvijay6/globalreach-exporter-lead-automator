@@ -9,7 +9,11 @@ const { autoUpdater } = require('electron-updater');
 // --- CONFIGURATION ---
 const DEFAULT_PORT = 4000;
 const CONFIG_FILE_NAME = 'config.json';
-const BACKUP_ENCRYPTION_KEY = crypto.scryptSync('shreenathji_secret', 'salt', 32);
+
+// Encryption key configuration - use environment variables in production
+// WARNING: In production, set ENCRYPTION_KEY_SECRET and ENCRYPTION_KEY_SALT environment variables for security
+const ENCRYPTION_SECRET = process.env.ENCRYPTION_KEY_SECRET || 'shreenathji_secret';
+const ENCRYPTION_SALT = process.env.ENCRYPTION_KEY_SALT || 'salt';
 
 // --- LOGGER SETUP ---
 const logDir = path.join(app.getPath('userData'), 'logs');
@@ -29,6 +33,14 @@ const logger = winston.createLogger({
     new winston.transports.Console({ format: winston.format.simple() })
   ]
 });
+
+// Generate encryption key after logger is initialized
+const BACKUP_ENCRYPTION_KEY = crypto.scryptSync(ENCRYPTION_SECRET, ENCRYPTION_SALT, 32);
+
+// Warn if using default encryption key in production
+if (process.env.NODE_ENV === 'production' && (!process.env.ENCRYPTION_KEY_SECRET || !process.env.ENCRYPTION_KEY_SALT)) {
+  logger.warn('[Config] WARNING: Using default encryption key. Set ENCRYPTION_KEY_SECRET and ENCRYPTION_KEY_SALT environment variables for production security.');
+}
 
 // --- SIMPLE CONFIG STORE ---
 const configPath = path.join(app.getPath('userData'), CONFIG_FILE_NAME);
@@ -813,27 +825,24 @@ ipcMain.handle('email-test-connection', async (event, credentials) => {
       return { success: false, error: 'No credentials provided' };
     }
 
+    // Validate credentials structure
+    if (!credentials.username || !credentials.password) {
+      return { success: false, error: 'Username and password are required' };
+    }
+
+    if (!credentials.smtpHost) {
+      return { success: false, error: 'SMTP host is required' };
+    }
+
     const result = await EmailService.testConnection(credentials, getConfig);
     
-    // Enhance error messages from EmailService if needed
-    if (!result.success && result.error) {
-      let errorMessage = result.error;
-      
-      if (result.error.includes('ECONNREFUSED')) {
-        errorMessage = 'Connection refused. Please check if the SMTP host and port are correct.';
-      } else if (result.error.includes('ETIMEDOUT')) {
-        errorMessage = 'Connection timeout. Please check your internet connection and firewall settings.';
-      } else if (result.error.includes('ENOTFOUND')) {
-        errorMessage = `SMTP host not found: ${credentials?.smtpHost || 'unknown'}. Please check the hostname.`;
-      } else if (result.error.includes('authentication') || result.error.includes('535')) {
-        errorMessage = 'Authentication failed. Please check your username/email and password. For Gmail/Outlook with 2FA, use an App Password.';
-      } else if (result.error.includes('554')) {
-        errorMessage = 'SMTP server rejected the connection. Please check your server settings.';
-      }
-      
-      return { success: false, error: errorMessage };
+    if (result.success) {
+      logger.info('Email connection test successful');
+    } else {
+      logger.warn('Email connection test failed:', result.error?.substring(0, 200));
     }
     
+    // Return the error message from EmailService which should already be user-friendly
     return result;
   } catch (error) {
     logger.error('Email test connection error:', {
@@ -981,5 +990,96 @@ ipcMain.handle('email-get-connection', async (event) => {
       success: false, 
       error: error.message || 'Failed to get email connection' 
     };
+  }
+});
+
+// OAuth IPC Handlers
+ipcMain.handle('oauth-initiate', async (event, { provider, config, email }) => {
+  try {
+    logger.info('OAuth initiation requested', { provider, email, hasConfig: !!config });
+    
+    let authUrl, state;
+    const crypto = require('crypto');
+    
+    if (provider === 'gmail') {
+      // Gmail OAuth should be handled via renderer process OAuth service
+      throw new Error('Gmail OAuth initiation should use renderer process OAuth service');
+    } else if (provider === 'outlook') {
+      // Generate state for Outlook
+      const nonce = crypto.randomBytes(32).toString('hex');
+      const stateObj = {
+        provider: 'outlook',
+        nonce,
+        timestamp: Date.now(),
+        email
+      };
+      state = Buffer.from(JSON.stringify(stateObj)).toString('base64url');
+      
+      // Build Outlook OAuth URL
+      const tenantId = config.tenantId || 'common';
+      const scopes = [
+        'https://graph.microsoft.com/Mail.Send',
+        'https://graph.microsoft.com/Mail.Read',
+        'https://graph.microsoft.com/User.Read',
+        'offline_access',
+      ].join(' ');
+      
+      const params = new URLSearchParams({
+        client_id: config.clientId,
+        response_type: 'code',
+        redirect_uri: config.redirectUri,
+        response_mode: 'query',
+        scope: scopes,
+        state,
+        prompt: 'consent',
+      });
+      
+      authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
+    } else {
+      throw new Error(`Unsupported OAuth provider: ${provider}`);
+    }
+    
+    // Open OAuth URL in default browser
+    await shell.openExternal(authUrl);
+    
+    logger.info('OAuth URL opened in browser', { provider, hasState: !!state });
+    
+    return { success: true, state };
+  } catch (error) {
+    logger.error('OAuth initiation failed', error);
+    return { success: false, error: error.message || 'Failed to initiate OAuth' };
+  }
+});
+
+ipcMain.handle('oauth-exchange', async (event, { provider, code, state, config }) => {
+  try {
+    logger.info('OAuth code exchange requested', { provider, hasCode: !!code, hasState: !!state });
+    // Code exchange is handled in renderer process via OAuthService
+    return { success: false, error: 'OAuth code exchange should be handled in renderer process via OAuthService' };
+  } catch (error) {
+    logger.error('OAuth code exchange failed', error);
+    return { success: false, error: error.message || 'Failed to exchange OAuth code' };
+  }
+});
+
+ipcMain.handle('oauth-refresh', async (event, { provider, refreshToken, config }) => {
+  try {
+    logger.info('OAuth token refresh requested', { provider });
+    // Token refresh is handled in renderer process via OAuthService
+    return { success: false, error: 'OAuth token refresh should be handled in renderer process via OAuthService' };
+  } catch (error) {
+    logger.error('OAuth token refresh failed', error);
+    return { success: false, error: error.message || 'Failed to refresh OAuth token' };
+  }
+});
+
+ipcMain.handle('oauth-revoke', async (event, { provider, token, config }) => {
+  try {
+    logger.info('OAuth token revocation requested', { provider });
+    // Token revocation is handled in renderer process via OAuthService
+    return { success: false, error: 'OAuth token revocation should be handled in renderer process via OAuthService' };
+  } catch (error) {
+    logger.error('OAuth token revocation failed', error);
+    return { success: false, error: error.message || 'Failed to revoke OAuth token' };
   }
 });

@@ -1,9 +1,10 @@
 
-import React, { useState } from 'react';
-import { CheckCircle, Key, Link as LinkIcon, Globe, Shield, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, Key, Link as LinkIcon, Globe, Shield, ChevronRight, Loader2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react';
 import { PlatformService } from '../services/platformService';
 import { PlatformConnection, Channel, PlatformStatus } from '../types';
 import PlatformConnectModal from './PlatformConnectModal';
+import { loadPlatformConnections } from '../services/securityService';
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -31,6 +32,21 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Load existing platform connections on mount
+  useEffect(() => {
+    const loadExistingConnections = async () => {
+      try {
+        const existingConnections = await loadPlatformConnections();
+        if (existingConnections.length > 0) {
+          setConnections(existingConnections);
+        }
+      } catch (error) {
+        console.error('Failed to load existing connections:', error);
+      }
+    };
+    loadExistingConnections();
+  }, []);
+
   const validateStep = (): boolean => {
       setError(null);
       
@@ -42,16 +58,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
       }
       
       if (currentStep === 2) { // Accounts
-          if (connections.length === 0) {
-              setError("We recommend connecting at least one platform (Email, WhatsApp, or WeChat) to get started.");
-              // Warning only? Or block? Let's block for better setup experience in a wizard context.
-              // Or allow skip with a strict warning.
-              // For now, let's allow but show the error as a dismissible warning if needed, but here we return false to enforce.
-              // Actually, strictly enforcing might be annoying if they just want to test. Let's allow but maybe alert.
-              // Let's just clear error and return true, but rely on UI cues.
-              // Re-decision: Let's require at least one to ensure the app is useful.
-              return false; 
-          }
+          // Allow proceeding even if no connections (user can skip)
+          // Clear any previous errors - platform connection is optional
+          setError(null);
+          // Always allow skipping this step
+          return true;
       }
 
       if (currentStep === 3) { // Webhooks
@@ -104,7 +115,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   };
 
   const handleLink = (conn: PlatformConnection) => {
-    setConnections(prev => [...prev.filter(c => c.channel !== conn.channel), conn]);
+    // Replace existing connection for same channel (supports reconnection)
+    setConnections(prev => {
+      const filtered = prev.filter(c => c.channel !== conn.channel);
+      return [...filtered, conn];
+    });
     setError(null); // Clear "no accounts" error if resolved
   };
 
@@ -154,16 +169,32 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           <div className="space-y-6 py-4 animate-in slide-in-from-right duration-300">
             <div className="flex justify-between items-center">
                 <p className="text-sm text-slate-600">
-                Link your messaging accounts. You can add more later in Settings.
+                Link your messaging accounts. This step is optional - you can skip and configure later in Settings.
                 </p>
                 <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500 font-bold">
                     {connections.length} Linked
                 </span>
             </div>
             
+            {connections.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-amber-800 font-medium">
+                    Optional Step
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    We recommend connecting at least one platform (Email, WhatsApp, or WeChat) to get started. 
+                    You can skip this step now and configure platforms later in Settings.
+                  </p>
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-3">
               {[Channel.WHATSAPP, Channel.WECHAT, Channel.EMAIL].map(channel => {
-                const isConnected = connections.some(c => c.channel === channel && c.status === PlatformStatus.CONNECTED);
+                const existingConnection = connections.find(c => c.channel === channel);
+                const isConnected = existingConnection && existingConnection.status === PlatformStatus.CONNECTED;
                 return (
                   <div key={channel} className={`flex items-center justify-between p-4 border rounded-xl transition-all ${isConnected ? 'bg-green-50 border-green-200 shadow-sm' : 'bg-white border-slate-200 hover:border-indigo-200'}`}>
                     <div className="flex items-center gap-4">
@@ -172,13 +203,22 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                       </div>
                       <div>
                         <h4 className="font-bold text-slate-800">{channel}</h4>
-                        <p className="text-xs text-slate-500">{isConnected ? 'Connected Securely' : 'Not configured'}</p>
+                        <p className="text-xs text-slate-500">
+                          {isConnected 
+                            ? (channel === Channel.EMAIL 
+                                ? 'Connected - Click Reconnect to update credentials' 
+                                : 'Connected Securely')
+                            : 'Not configured'}
+                        </p>
                       </div>
                     </div>
                     {isConnected ? (
-                      <div className="flex items-center gap-2 text-green-600 font-medium text-sm bg-white px-3 py-1 rounded-full border border-green-100">
-                          <CheckCircle className="w-4 h-4" /> Linked
-                      </div>
+                      <button
+                        onClick={() => openConnectModal(channel)}
+                        className="flex items-center gap-2 px-4 py-2 text-xs bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 font-medium transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" /> {channel === Channel.EMAIL ? 'Reconnect' : 'Update'}
+                      </button>
                     ) : (
                       <button 
                         onClick={() => openConnectModal(channel)}
@@ -301,15 +341,33 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
            >
              Back
            </button>
-           <button 
-             onClick={handleNext}
-             disabled={isSaving}
-             className="flex items-center gap-2 px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-80"
-           >
-             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-             {currentStep === steps.length - 1 ? 'Finish Setup' : 'Next Step'}
-             {!isSaving && currentStep !== steps.length - 1 && <ChevronRight className="w-4 h-4" />}
-           </button>
+           
+           <div className="flex items-center gap-3">
+             {/* Skip button for Accounts step (step 2) */}
+             {currentStep === 2 && (
+               <button
+                 onClick={() => {
+                   setError(null);
+                   setCurrentStep(prev => prev + 1);
+                 }}
+                 className="flex items-center gap-2 px-5 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-lg transition-colors border border-slate-300 hover:border-slate-400 hover:text-slate-800"
+                 title="Skip connecting accounts and configure them later in Settings"
+               >
+                 <ArrowRight className="w-4 h-4" />
+                 Skip for now
+               </button>
+             )}
+             
+             <button 
+               onClick={handleNext}
+               disabled={isSaving}
+               className="flex items-center gap-2 px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-80"
+             >
+               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+               {currentStep === steps.length - 1 ? 'Finish Setup' : 'Next Step'}
+               {!isSaving && currentStep !== steps.length - 1 && <ChevronRight className="w-4 h-4" />}
+             </button>
+           </div>
         </div>
       </div>
     </div>

@@ -1,14 +1,27 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 
-// Global error handler
+// Global error handler - logs to console in development, to error service in production
 window.addEventListener('error', (event) => {
-  console.error('Global error:', event.error);
+  if (process.env.NODE_ENV === 'production') {
+    // In production, send to error tracking service
+    console.error('[GlobalError]', event.error);
+    // TODO: Send to error tracking service (e.g., Sentry)
+  } else {
+    console.error('Global error:', event.error);
+  }
 });
 
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled promise rejection:', event.reason);
+  if (process.env.NODE_ENV === 'production') {
+    // In production, send to error tracking service
+    console.error('[UnhandledRejection]', event.reason);
+    // TODO: Send to error tracking service (e.g., Sentry)
+  } else {
+    console.error('Unhandled promise rejection:', event.reason);
+  }
 });
 
 const rootElement = document.getElementById('root');
@@ -17,12 +30,14 @@ if (!rootElement) {
 }
 
 try {
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
 } catch (error) {
   console.error('Failed to render React app:', error);
   rootElement.innerHTML = `
