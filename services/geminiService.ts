@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { Importer, Message, LeadStatus, AnalysisResult, SalesForecast, Channel, AppTemplates, OptimizationInsight, StrategicInsight, TrainingModule, ApiKeyProvider } from "../types";
+import { Importer, Message, LeadStatus, AnalysisResult, SalesForecast, Channel, AppTemplates, OptimizationInsight, StrategicInsight, TrainingModule, ApiKeyProvider, Product } from "../types";
 import { checkRateLimit } from "./securityService";
 import { getPrimaryKey, getDecryptedKeyValue, onKeyChange } from "./apiKeyService";
 import { selectBestKey, recordUsage } from "./apiKeyOptimizer";
@@ -108,14 +108,70 @@ const replacePlaceholders = (template: string, values: Record<string, string>) =
 };
 
 /**
+ * Gets company context for AI prompts
+ */
+const getCompanyContext = async (): Promise<string> => {
+  try {
+    const { CompanyConfigService } = await import('./companyConfigService');
+    const company = await CompanyConfigService.getCompanyDetails();
+    if (!company) return '';
+    
+    return `
+      Company: ${company.companyName}
+      Contact: ${company.contactPersonName}${company.contactPersonTitle ? ` (${company.contactPersonTitle})` : ''}
+      Phone: ${company.phone}
+      Email: ${company.email}
+      ${company.websiteUrl ? `Website: ${company.websiteUrl}` : ''}
+    `;
+  } catch (error) {
+    console.warn('[GeminiService] Failed to load company details:', error);
+    return '';
+  }
+};
+
+/**
+ * Gets relevant products for AI context
+ */
+const getRelevantProducts = async (context: string): Promise<Product[]> => {
+  try {
+    const { ProductCatalogService } = await import('./productCatalogService');
+    const allProducts = await ProductCatalogService.getProducts();
+    
+    // Simple keyword matching - in production, could use AI to find relevant products
+    const keywords = context.toLowerCase().split(/\s+/);
+    return allProducts.filter(product => {
+      const searchText = `${product.name} ${product.category} ${product.shortDescription} ${product.tags.join(' ')}`.toLowerCase();
+      return keywords.some(keyword => searchText.includes(keyword));
+    }).slice(0, 5); // Limit to 5 most relevant
+  } catch (error) {
+    console.warn('[GeminiService] Failed to load products:', error);
+    return [];
+  }
+};
+
+/**
+ * Gets product pricing for AI context
+ */
+const getProductPricing = async (productId: string, tier?: string): Promise<number | null> => {
+  try {
+    const { ProductPricingService } = await import('./productPricingService');
+    return await ProductPricingService.getPriceForProduct(productId, tier as any);
+  } catch (error) {
+    console.warn('[GeminiService] Failed to load pricing:', error);
+    return null;
+  }
+};
+
+/**
  * Generates the initial introductory message based on a customizable template.
  * Adapts format based on target channel (Email vs Chat).
  * Now enhanced with lead research for deeper personalization.
+ * Automatically loads company and product data from services.
  */
 export const generateIntroMessage = async (
   importer: Importer, 
-  myCompany: string, 
-  myProduct: string,
+  myCompany: string | null = null, 
+  myProduct: string | null = null,
   template: string,
   targetChannel: Channel,
   useResearch: boolean = true
@@ -124,6 +180,23 @@ export const generateIntroMessage = async (
   if (!checkRateLimit()) {
     return "Error: Rate limit exceeded. Please wait a moment.";
   }
+
+  // Load company details if not provided
+  let companyName = myCompany;
+  let companyContext = '';
+  if (!companyName) {
+    companyContext = await getCompanyContext();
+    const company = await (await import('./companyConfigService')).CompanyConfigService.getCompanyDetails();
+    companyName = company?.companyName || 'Our Company';
+  } else {
+    companyContext = await getCompanyContext();
+  }
+
+  // Get relevant products
+  const relevantProducts = await getRelevantProducts(importer.productsImported);
+  const productList = relevantProducts.length > 0
+    ? relevantProducts.map(p => `- ${p.name} (${p.category}): ${p.shortDescription}`).join('\n')
+    : myProduct || 'Our products';
 
   // Get lead research if enabled
   let researchContext = '';
@@ -149,8 +222,8 @@ export const generateIntroMessage = async (
     companyName: importer.companyName,
     country: importer.country,
     productCategory: importer.productsImported, // Using imports as category proxy
-    myProduct: myProduct,
-    myCompany: myCompany
+    myProduct: productList,
+    myCompany: companyName
   });
 
   const prompt = `
@@ -215,11 +288,12 @@ export const generateIntroMessage = async (
 /**
  * Generates a context-aware reply to the importer using custom instructions and retained context.
  * Uses cross-channel history to maintain continuity.
+ * Automatically loads company and product data from services.
  */
 export const generateAgentReply = async (
   importer: Importer, 
   history: Message[], 
-  myCompany: string, 
+  myCompany: string | null = null, 
   systemInstructionTemplate: string,
   targetChannel: Channel
 ): Promise<string> => {
@@ -227,6 +301,19 @@ export const generateAgentReply = async (
   if (!checkRateLimit()) {
     return "Error: Rate limit exceeded. Please wait a moment.";
   }
+
+  // Load company details if not provided
+  let companyName = myCompany;
+  if (!companyName) {
+    const company = await (await import('./companyConfigService')).CompanyConfigService.getCompanyDetails();
+    companyName = company?.companyName || 'Our Company';
+  }
+
+  // Get relevant products for context
+  const relevantProducts = await getRelevantProducts(importer.productsImported || '');
+  const productContext = relevantProducts.length > 0
+    ? `\nAvailable Products:\n${relevantProducts.map(p => `- ${p.name}: ${p.shortDescription}`).join('\n')}`
+    : '';
 
   // Include Channel in history for context awareness
   const conversation = history.map(m => `[${m.channel}] ${m.sender.toUpperCase()}: ${m.content}`).join('\n');
@@ -236,10 +323,11 @@ export const generateAgentReply = async (
     Context Summary: ${importer.conversationSummary || 'Starting conversation.'}
     Identified Interest: ${importer.interestShownIn || 'Not yet identified.'}
     Next Goal: ${importer.nextStep || 'Qualify lead.'}
+    ${productContext}
   `;
 
   const filledInstruction = replacePlaceholders(systemInstructionTemplate, {
-    myCompany: myCompany
+    myCompany: companyName
   });
 
   const prompt = `
@@ -673,12 +761,13 @@ export const simulateImporterResponse = async (importer: Importer, history: Mess
 
 export const generateCampaignMessage = async (
   importer: Importer, 
-  myCompany: string, 
-  myProduct: string,
+  myCompany: string | null = null, 
+  myProduct: string | null = null,
   stepTemplate: string,
   targetChannel: Channel
 ): Promise<string> => {
    // Reuse intro generator logic but for campaigns (which use same template engine)
+   // Now automatically loads company/product data from services
    return generateIntroMessage(importer, myCompany, myProduct, stepTemplate, targetChannel);
 };
 

@@ -30,6 +30,7 @@ const Navigation: React.FC<NavigationProps> = ({
   setShowSettingsModal, 
   setShowHelpModal,
   setShowAdminDashboard,
+  setShowOwnerAdmin,
   onLogout,
   language
 }) => {
@@ -90,6 +91,16 @@ const Navigation: React.FC<NavigationProps> = ({
           <Shield className="w-6 h-6" />
         </button>
       )}
+
+      {(user.role === 'Owner' || user.email?.toLowerCase() === 'milanvijay24@gmail.com') && setShowOwnerAdmin && (
+        <button 
+          onClick={() => { setShowOwnerAdmin(true); setIsMobileMenuOpen(false); }} 
+          title="Owner Admin"
+          className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
+          <Shield className="w-6 h-6" />
+        </button>
+      )}
+
       
       <button 
         onClick={() => { setShowSettingsModal(true); setIsMobileMenuOpen(false); }} 

@@ -47,6 +47,14 @@ export const logAdminAction = async (
     
     // Also log to console/logger for immediate visibility
     Logger.info(`[AUDIT] ${user.name} (${user.id}) performed ${action} on ${resource}`, details);
+
+    // Sync to GitHub if enabled (non-blocking)
+    try {
+      const { githubSyncService } = await import('./githubSyncService');
+      await githubSyncService.syncAuditLog(auditAction);
+    } catch (error) {
+      // Silently fail - GitHub sync shouldn't block audit logging
+    }
   } catch (error) {
     Logger.error('[AuditService] Failed to log admin action:', error);
     // Don't throw - audit logging should not break the application

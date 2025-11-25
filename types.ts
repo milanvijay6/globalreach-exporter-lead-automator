@@ -18,6 +18,7 @@ export enum LeadStatus {
 }
 
 export enum UserRole {
+  OWNER = 'Owner',
   ADMIN = 'Admin',
   SALES = 'Sales',
   VIEWER = 'Viewer'
@@ -31,7 +32,8 @@ export enum Permission {
   API_KEY_MANAGE = 'API_KEY_MANAGE',
   SETTINGS_MANAGE = 'SETTINGS_MANAGE',
   DATA_EXPORT = 'DATA_EXPORT',
-  AUDIT_VIEW = 'AUDIT_VIEW'
+  AUDIT_VIEW = 'AUDIT_VIEW',
+  COMPANY_CONFIG_MANAGE = 'COMPANY_CONFIG_MANAGE'
 }
 
 export enum PlatformStatus {
@@ -130,6 +132,40 @@ export interface User {
   mfaEnabled?: boolean;
   mfaSecret?: string; // Encrypted
   lastMfaVerified?: number;
+  email: string; // Login ID
+  mobile?: string;
+  passwordHash: string; // Hashed password (never plain text)
+  pinHash?: string; // Hashed 4-digit PIN
+  status: 'pending' | 'active' | 'rejected' | 'suspended';
+  approvedBy?: string; // User ID who approved
+  approvedAt?: number;
+  createdBy?: string; // User ID who created (for admin-created users)
+  createdAt: number;
+  lastLogin?: number;
+  failedLoginAttempts?: number;
+  lockoutUntil?: number;
+}
+
+export interface PendingUser {
+  id: string;
+  name: string;
+  email: string;
+  mobile?: string;
+  requestedRole: UserRole;
+  requestedAt: number;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+}
+
+export interface OwnerCredentials {
+  email: string;
+  passwordHash: string; // Stored in encrypted config + env
+}
+
+export interface PinVerification {
+  userId: string;
+  verifiedAt: number;
+  expiresAt: number;
 }
 
 export interface AuthSession {
@@ -726,4 +762,52 @@ export interface PurchaseAnalysisResult {
   analysis_summary: string;
   order_prediction: string;
   message_to_customer: string;
+}
+
+// Company Details Configuration
+export interface CompanyDetails {
+  id: string;
+  companyName: string;
+  phone: string; // WhatsApp/primary phone
+  websiteUrl?: string;
+  email: string;
+  contactPersonName: string;
+  contactPersonTitle?: string; // Owner/Director/Manager
+  logoUrl?: string; // Path to uploaded logo
+  registrationDocuments?: string[]; // Paths to uploaded documents
+  certificates?: string[]; // Paths to uploaded certificates
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Products Catalog
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  shortDescription: string;
+  fullDescription?: string;
+  tags: string[]; // Keywords for AI search
+  specifications?: Record<string, string>; // e.g., { weight: "500g", packaging: "Box" }
+  imageUrl?: string;
+  active: boolean; // Can disable without deleting
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Product Pricing
+export interface ProductPrice {
+  id: string;
+  productId: string; // Link to Product
+  productName: string; // Denormalized for quick access
+  unitOfMeasure: string; // kg, piece, box, packet, MT, etc.
+  basePrice: number;
+  wholesalePrice?: number;
+  retailPrice?: number;
+  specialCustomerPrice?: number;
+  currency: string; // USD, EUR, INR, etc.
+  effectiveDate: number; // When price became effective
+  lastUpdated: number;
+  notes?: string;
+  active: boolean;
 }

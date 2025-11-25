@@ -10,7 +10,7 @@ window.addEventListener('error', (event) => {
     console.error('[GlobalError]', event.error);
     // TODO: Send to error tracking service (e.g., Sentry)
   } else {
-    console.error('Global error:', event.error);
+  console.error('Global error:', event.error);
   }
 });
 
@@ -20,7 +20,7 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('[UnhandledRejection]', event.reason);
     // TODO: Send to error tracking service (e.g., Sentry)
   } else {
-    console.error('Unhandled promise rejection:', event.reason);
+  console.error('Unhandled promise rejection:', event.reason);
   }
 });
 
@@ -30,14 +30,14 @@ if (!rootElement) {
 }
 
 try {
-  const root = ReactDOM.createRoot(rootElement);
-  root.render(
-    <React.StrictMode>
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
       <ErrorBoundary>
-        <App />
+    <App />
       </ErrorBoundary>
-    </React.StrictMode>
-  );
+  </React.StrictMode>
+);
 } catch (error) {
   console.error('Failed to render React app:', error);
   rootElement.innerHTML = `

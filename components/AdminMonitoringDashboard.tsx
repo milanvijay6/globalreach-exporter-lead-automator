@@ -18,6 +18,9 @@ import {
   FileText,
   Search,
   Filter,
+  Key,
+  Plus,
+  AlertCircle,
 } from 'lucide-react';
 import { User, Importer, SystemHealth, AiInteractionMetrics, ConversationHealthMetrics, SystemAlert } from '../types';
 import {
@@ -33,6 +36,10 @@ import {
 import { hasAdminAccess } from '../services/permissionService';
 import ApiKeyUsageDashboard from './ApiKeyUsageDashboard';
 import AdminActionLog from './AdminActionLog';
+import { createApiKey } from '../services/apiKeyService';
+import { ApiKeyProvider } from '../types';
+import { validateApiKey, sanitizeInput } from '../services/validationService';
+import { Logger } from '../services/loggerService';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 interface AdminMonitoringDashboardProps {
@@ -63,6 +70,15 @@ const AdminMonitoringDashboard: React.FC<AdminMonitoringDashboardProps> = ({
   const [leadResearchStats, setLeadResearchStats] = useState<any>(null);
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [recentAuditActions, setRecentAuditActions] = useState<number>(0);
+  
+  // Quick API Key Add Form State
+  const [showQuickAddKey, setShowQuickAddKey] = useState(true); // Default to visible for easier access
+  const [quickKeyProvider, setQuickKeyProvider] = useState<ApiKeyProvider>(ApiKeyProvider.GEMINI);
+  const [quickKeyValue, setQuickKeyValue] = useState('');
+  const [quickKeyLabel, setQuickKeyLabel] = useState('');
+  const [quickKeyError, setQuickKeyError] = useState('');
+  const [quickKeyLoading, setQuickKeyLoading] = useState(false);
+  const [quickKeySuccess, setQuickKeySuccess] = useState(false);
 
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -147,6 +163,59 @@ const AdminMonitoringDashboard: React.FC<AdminMonitoringDashboardProps> = ({
     a.download = `admin-dashboard-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleQuickAddKey = async () => {
+    setQuickKeyError('');
+    setQuickKeySuccess(false);
+
+    // Validate
+    if (!quickKeyLabel.trim()) {
+      setQuickKeyError('Label is required');
+      return;
+    }
+
+    const validation = validateApiKey(quickKeyProvider, quickKeyValue);
+    if (!validation.isValid) {
+      setQuickKeyError(validation.errors.join(', '));
+      return;
+    }
+
+    try {
+      setQuickKeyLoading(true);
+      
+      // Sanitize inputs
+      const sanitizedLabel = sanitizeInput(quickKeyLabel, 'label');
+      const sanitizedValue = sanitizeInput(quickKeyValue, 'key');
+      
+      await createApiKey(
+        quickKeyProvider,
+        sanitizedValue,
+        sanitizedLabel,
+        user
+      );
+      
+      setQuickKeySuccess(true);
+      setQuickKeyValue('');
+      setQuickKeyLabel('');
+      setQuickKeyError('');
+      
+      Logger.info('[AdminDashboard] API key added successfully');
+      
+      // Switch to api-keys tab to show the newly added key
+      setTimeout(() => {
+        setActiveTab('api-keys');
+        setShowQuickAddKey(false);
+        setQuickKeySuccess(false);
+      }, 1500);
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Failed to add API key. Please check the console for details.';
+      setQuickKeyError(errorMessage);
+      Logger.error('[AdminDashboard] Failed to add API key:', error);
+      console.error('[AdminDashboard] API Key Add Error:', error);
+    } finally {
+      setQuickKeyLoading(false);
+    }
   };
 
   const getHealthColor = (health: 'healthy' | 'warning' | 'critical') => {
@@ -339,6 +408,110 @@ const AdminMonitoringDashboard: React.FC<AdminMonitoringDashboardProps> = ({
       <div className="mt-6">
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Quick Add API Key */}
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                  <Key className="w-5 h-5 text-indigo-600" />
+                  Quick Add API Key
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowQuickAddKey(!showQuickAddKey);
+                    setQuickKeyError('');
+                    setQuickKeySuccess(false);
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  {showQuickAddKey ? 'Cancel' : 'Add API Key'}
+                </button>
+              </div>
+              
+              {showQuickAddKey && (
+                <div className="space-y-3 mt-4 pt-4 border-t border-indigo-200">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Provider
+                      </label>
+                      <select
+                        value={quickKeyProvider}
+                        onChange={(e) => setQuickKeyProvider(e.target.value as ApiKeyProvider)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {Object.values(ApiKeyProvider).map((provider) => (
+                          <option key={provider} value={provider}>
+                            {provider.replace('_', ' ')}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Label <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={quickKeyLabel}
+                        onChange={(e) => setQuickKeyLabel(e.target.value)}
+                        placeholder="e.g., Production Gemini Key"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      API Key Value <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={quickKeyValue}
+                      onChange={(e) => setQuickKeyValue(e.target.value)}
+                      placeholder="Enter your API key"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {quickKeyError && (
+                    <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 p-3 rounded border border-red-200">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-medium">Error adding API key:</p>
+                        <p className="text-xs mt-1">{quickKeyError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {quickKeySuccess && (
+                    <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded border border-green-200">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>API key added successfully! Redirecting to API Keys tab...</span>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleQuickAddKey}
+                    disabled={quickKeyLoading || !quickKeyValue.trim() || !quickKeyLabel.trim()}
+                    className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {quickKeyLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Add API Key
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* System Health Status */}
             {systemHealth && (
               <div className="bg-white border border-slate-200 rounded-lg p-6">

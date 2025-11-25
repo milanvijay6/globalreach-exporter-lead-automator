@@ -16,6 +16,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.SETTINGS_MANAGE,
     Permission.DATA_EXPORT,
     Permission.AUDIT_VIEW,
+    Permission.COMPANY_CONFIG_MANAGE,
   ],
   [UserRole.SALES]: [
     Permission.READ,
@@ -110,4 +111,25 @@ export const canWrite = (user: User): boolean => {
  */
 export const canRead = (user: User): boolean => {
   return checkPermission(user, Permission.READ) || user.role !== undefined; // All users can read
+};
+
+/**
+ * Checks if a user can manage company configuration
+ */
+export const canManageCompanyConfig = (user: User): boolean => {
+  return checkPermission(user, Permission.COMPANY_CONFIG_MANAGE) || hasAdminAccess(user);
+};
+
+/**
+ * Checks if a user can manage products
+ */
+export const canManageProducts = (user: User): boolean => {
+  return checkPermission(user, Permission.COMPANY_CONFIG_MANAGE) || hasAdminAccess(user);
+};
+
+/**
+ * Checks if a user can manage pricing
+ */
+export const canManagePricing = (user: User): boolean => {
+  return checkPermission(user, Permission.COMPANY_CONFIG_MANAGE) || hasAdminAccess(user);
 };

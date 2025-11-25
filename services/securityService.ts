@@ -387,3 +387,86 @@ export const checkSuspiciousActivity = (ip: string): boolean => {
   
   return false;
 };
+
+/**
+ * Validates password strength
+ */
+export const validatePasswordStrength = (password: string): { valid: boolean; errors: string[]; strength: 'weak' | 'medium' | 'strong' } => {
+  const errors: string[] = [];
+  let strength: 'weak' | 'medium' | 'strong' = 'weak';
+  let score = 0;
+
+  if (password.length < 8) {
+    errors.push('Password must be at least 8 characters long');
+  } else {
+    score++;
+  }
+
+  if (!/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter');
+  } else {
+    score++;
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter');
+  } else {
+    score++;
+  }
+
+  if (!/[0-9]/.test(password)) {
+    errors.push('Password must contain at least one number');
+  } else {
+    score++;
+  }
+
+  if (!/[^a-zA-Z0-9]/.test(password)) {
+    errors.push('Password must contain at least one special character');
+  } else {
+    score++;
+  }
+
+  if (password.length >= 12) {
+    score++;
+  }
+
+  if (score >= 5) {
+    strength = 'strong';
+  } else if (score >= 3) {
+    strength = 'medium';
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    strength,
+  };
+};
+
+/**
+ * Generates a secure random password
+ */
+export const generateSecurePassword = (length: number = 16): string => {
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  
+  return Array.from(array)
+    .map(x => charset[x % charset.length])
+    .join('');
+};
+
+/**
+ * Checks if password was recently used (password history)
+ */
+export const checkPasswordHistory = async (userId: string, newPassword: string): Promise<boolean> => {
+  try {
+    // In a full implementation, this would check against stored password hashes
+    // For now, we'll just return true (password not in history)
+    // This would require storing password history hashes
+    return true;
+  } catch (error) {
+    Logger.error('[SecurityService] Failed to check password history:', error);
+    return true; // Fail open
+  }
+};

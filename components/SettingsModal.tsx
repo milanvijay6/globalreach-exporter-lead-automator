@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, RefreshCcw, Globe, Shield, Link as LinkIcon, CheckCircle, AlertCircle, Mail, Smartphone, Monitor, LogOut, Lock, Bell, MessageSquare, Server, Download, Cpu, Radio, Network, Database, Upload, FileText, Terminal, Activity, PlayCircle, Zap, Brain, Sparkles, ThumbsUp, ThumbsDown, Trash2 } from 'lucide-react';
+import { X, Save, RefreshCcw, Globe, Shield, Link as LinkIcon, CheckCircle, AlertCircle, Mail, Smartphone, Monitor, LogOut, Lock, Bell, MessageSquare, Server, Download, Cpu, Radio, Network, Database, Upload, FileText, Terminal, Activity, PlayCircle, Zap, Brain, Sparkles, ThumbsUp, ThumbsDown, Trash2, Building2, Package, DollarSign, Users } from 'lucide-react';
 import { AppTemplates, DEFAULT_TEMPLATES, Language, UserRole, PlatformConnection, Channel, PlatformStatus, AuthSession, NotificationConfig, DEFAULT_NOTIFICATIONS, Importer, OptimizationInsight, User } from '../types';
 import { t } from '../services/i18n';
 import PlatformConnectModal from './PlatformConnectModal';
@@ -16,6 +16,11 @@ import AdminMonitoringDashboard from './AdminMonitoringDashboard';
 import { hasAdminAccess, canViewAuditLogs } from '../services/permissionService';
 import ResourceSettings from './ResourceSettings';
 import SystemStatus from './SystemStatus';
+import CompanyDetailsPanel from './CompanyDetailsPanel';
+import ProductsCatalogPanel from './ProductsCatalogPanel';
+import ProductPricingPanel from './ProductPricingPanel';
+import SecurityPinPanel from './SecurityPinPanel';
+import UserManagementPanel from './UserManagementPanel';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -52,7 +57,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localTemplates, setLocalTemplates] = useState<AppTemplates>(templates);
   const [localNotifications, setLocalNotifications] = useState<NotificationConfig>(notificationConfig);
-  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users'>('general');
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   
@@ -351,16 +356,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex border-b border-slate-200 px-6 gap-6 overflow-x-auto scrollbar-hide">
-            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => (
+            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && (user.role === 'Admin' || user.role === 'Owner') ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => {
+                const tabIcons: Record<string, any> = {
+                    'company': Building2,
+                    'products': Package,
+                    'pricing': DollarSign,
+                    'users': Users,
+                };
+                const Icon = tabIcons[tab];
+                return (
                 <button 
                     key={tab}
                     onClick={() => setActiveTab(tab as any)} 
-                    className={`py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap capitalize
+                        className={`py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap capitalize flex items-center gap-2
                         ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
+                        {Icon && <Icon className="w-4 h-4" />}
                     {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab}
                 </button>
-            ))}
+                );
+            })}
         </div>
 
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
@@ -857,6 +872,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                    </div>
                  )}
 
+                 {/* PIN Management */}
+                 {user && (
+                   <div>
+                     <SecurityPinPanel user={user} />
+                   </div>
+                 )}
+
                  {/* Active Sessions */}
                  <div>
                      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><Monitor className="w-4 h-4" /> Active Sessions</h3>
@@ -1139,6 +1161,34 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 importers={importers || []}
                 onNavigateToSettings={() => setActiveTab('tuning')}
               />
+            </div>
+          )}
+
+          {/* COMPANY DETAILS */}
+          {activeTab === 'company' && (
+            <div>
+              <CompanyDetailsPanel user={user} />
+            </div>
+          )}
+
+          {/* PRODUCTS CATALOG */}
+          {activeTab === 'products' && (
+            <div>
+              <ProductsCatalogPanel user={user} />
+            </div>
+          )}
+
+          {/* PRODUCT PRICING */}
+          {activeTab === 'pricing' && (
+            <div>
+              <ProductPricingPanel user={user} />
+            </div>
+          )}
+
+          {/* USER MANAGEMENT */}
+          {activeTab === 'users' && user && (user.role === 'Admin' || user.role === 'Owner') && (
+            <div>
+              <UserManagementPanel user={user} />
             </div>
           )}
         </div>

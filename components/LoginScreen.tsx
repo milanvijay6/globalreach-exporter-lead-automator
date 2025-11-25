@@ -1,32 +1,65 @@
 
 import React, { useState } from 'react';
-import { UserRole, User } from '../types';
-import { Shield, UserCheck, Lock } from 'lucide-react';
+import { User } from '../types';
+import { AuthService } from '../services/authService';
+import { saveUserSession } from '../services/securityService';
+import { Shield, Mail, Lock, UserPlus } from 'lucide-react';
+import SignupScreen from './SignupScreen';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
-  const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.SALES);
-  const [name, setName] = useState('Demo User');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showSignup, setShowSignup] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    
-    // Simulate auth delay
-    setTimeout(() => {
-      onLogin({
-        id: `usr-${Date.now()}`,
-        name: name,
-        role: selectedRole,
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`
-      });
+
+    try {
+      const result = await AuthService.login(email, password);
+
+      if (result.success && result.user) {
+        // Save session
+        await saveUserSession(result.user);
+        
+        // Check if PIN is set (optional - user can proceed without PIN)
+        // PIN will be required later for sensitive actions
+        
+        // Check if account is locked
+        if (result.user.lockoutUntil && result.user.lockoutUntil > Date.now()) {
+          const minutesLeft = Math.ceil((result.user.lockoutUntil - Date.now()) / 60000);
+          setError(`Account is locked. Please try again in ${minutesLeft} minutes.`);
+          setLoading(false);
+          return;
+        }
+
+        // Redirect based on role
+        onLogin(result.user);
+      } else {
+        setError(result.error || 'Invalid email or password');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during login');
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
+
+  if (showSignup) {
+    return (
+      <SignupScreen
+        onBackToLogin={() => setShowSignup(false)}
+        onSignupSuccess={() => setShowSignup(false)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-full flex flex-col justify-center items-center bg-slate-100 px-4">
@@ -42,50 +75,49 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Full Name
+              Email
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <UserCheck className="h-5 w-5 text-slate-400" />
+                <Mail className="h-5 w-5 text-slate-400" />
               </div>
               <input
-                type="text"
+                type="email"
                 required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Enter your name"
+                placeholder="your.email@example.com"
+                autoComplete="email"
               />
             </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Select Role (Demo)
+              Password
             </label>
-            <div className="grid grid-cols-3 gap-3">
-              {Object.values(UserRole).map((role) => (
-                <button
-                  key={role}
-                  type="button"
-                  onClick={() => setSelectedRole(role)}
-                  className={`
-                    py-2 px-2 text-sm font-medium rounded-lg border transition-all
-                    ${selectedRole === role 
-                      ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-1 ring-indigo-500' 
-                      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}
-                  `}
-                >
-                  {role}
-                </button>
-              ))}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Lock className="h-5 w-5 text-slate-400" />
+              </div>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                placeholder="Enter your password"
+                autoComplete="current-password"
+              />
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {selectedRole === UserRole.ADMIN && 'Full access to settings, exports, and user management.'}
-              {selectedRole === UserRole.SALES && 'Can chat with leads and run campaigns.'}
-              {selectedRole === UserRole.VIEWER && 'Read-only access to dashboard and chats.'}
-            </p>
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
 
           <button
             type="submit"
@@ -104,9 +136,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             )}
           </button>
         </form>
+
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => setShowSignup(true)}
+            className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center justify-center gap-1 mx-auto"
+          >
+            <UserPlus className="w-4 h-4" /> New User Signup
+          </button>
+        </div>
         
-        <div className="mt-6 text-center text-xs text-slate-400">
-          Secured by Client-Side Auth Simulation
+        <div className="mt-4 text-center text-xs text-slate-400">
+          Secure Authentication
         </div>
       </div>
     </div>

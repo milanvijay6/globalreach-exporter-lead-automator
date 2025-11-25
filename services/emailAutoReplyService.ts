@@ -3,6 +3,9 @@ import { EmailMessage, EmailClassification } from './emailClassificationService'
 import { EmailSendingService } from './emailSendingService';
 import { generateAgentReply } from './geminiService';
 import { Importer, AppTemplates, Channel, Message } from '../types';
+import { CompanyConfigService } from './companyConfigService';
+import { ProductCatalogService } from './productCatalogService';
+import { ProductPricingService } from './productPricingService';
 
 export interface AutoReplyOptions {
   requireApproval?: boolean; // Supervised mode
@@ -83,6 +86,7 @@ export const EmailAutoReplyService = {
 
   /**
    * Generates an AI-powered reply
+   * Now includes company details, product recommendations, and pricing
    */
   generateReply: async (
     message: EmailMessage,
@@ -91,6 +95,32 @@ export const EmailAutoReplyService = {
     templates: AppTemplates,
     conversationHistory: Message[] = []
   ): Promise<{ reply: string; subject: string }> => {
+    // Load company details
+    const company = await CompanyConfigService.getCompanyDetails();
+    const companyName = company?.companyName || 'Our Company';
+    
+    // Get relevant products
+    const allProducts = await ProductCatalogService.getProducts();
+    const relevantProducts = allProducts
+      .filter(p => {
+        const searchText = `${p.name} ${p.category} ${p.tags.join(' ')}`.toLowerCase();
+        const messageText = (message.body.text || '').toLowerCase();
+        return searchText.includes(messageText.split(/\s+/)[0]) || messageText.includes(p.category.toLowerCase());
+      })
+      .slice(0, 3);
+
+    // Get pricing for relevant products
+    let pricingInfo = '';
+    for (const product of relevantProducts) {
+      const price = await ProductPricingService.getPriceByProductId(product.id);
+      if (price && price.active) {
+        pricingInfo += `\n${product.name}: ${price.currency} ${price.basePrice.toFixed(2)}/${price.unitOfMeasure}`;
+        if (price.wholesalePrice) {
+          pricingInfo += ` (Wholesale: ${price.currency} ${price.wholesalePrice.toFixed(2)})`;
+        }
+      }
+    }
+
     // Convert email to message format for geminiService
     const emailAsMessage: Message = {
       id: message.id,
@@ -102,14 +132,24 @@ export const EmailAutoReplyService = {
 
     const fullHistory = [...conversationHistory, emailAsMessage];
 
-    // Generate reply using existing geminiService
+    // Generate reply using geminiService (now automatically loads company/product data)
     const replyContent = await generateAgentReply(
       importer,
       fullHistory,
-      'Global Exports',
+      companyName,
       templates.agentSystemInstruction,
       Channel.EMAIL
     );
+
+    // Enhance reply with product recommendations and pricing if relevant
+    let enhancedReply = replyContent;
+    if (relevantProducts.length > 0 && (classification.category === 'inquiry' || classification.category === 'quote_request')) {
+      enhancedReply += `\n\nRecommended Products:\n${relevantProducts.map(p => `- ${p.name}: ${p.shortDescription}`).join('\n')}`;
+      if (pricingInfo) {
+        enhancedReply += `\n\nPricing Information:${pricingInfo}`;
+      }
+      enhancedReply += `\n\nFor detailed quotes and samples, please let us know your quantity requirements.`;
+    }
 
     // Generate subject (reply to original or new)
     const subject = message.subject.startsWith('Re:') || message.subject.startsWith('RE:')
@@ -117,7 +157,7 @@ export const EmailAutoReplyService = {
       : `Re: ${message.subject}`;
 
     return {
-      reply: replyContent,
+      reply: enhancedReply,
       subject,
     };
   },

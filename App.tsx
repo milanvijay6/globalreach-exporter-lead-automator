@@ -8,6 +8,10 @@ import SettingsModal from './components/SettingsModal';
 import ReportConfigModal from './components/ReportConfigModal';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import LoginScreen from './components/LoginScreen';
+import PinLockScreen from './components/PinLockScreen';
+import OwnerAdminPanel from './components/OwnerAdminPanel';
+import { PinService } from './services/pinService';
+import { OwnerAuthService } from './services/ownerAuthService';
 import Navigation from './components/Navigation';
 import SetupWizard from './components/SetupWizard';
 import HelpModal from './components/HelpModal';
@@ -99,6 +103,8 @@ const App: React.FC = () => {
   const [isForecasting, setIsForecasting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showOwnerAdmin, setShowOwnerAdmin] = useState(false);
+  const [showSourceCodeViewer, setShowSourceCodeViewer] = useState(false);
   
   // isSetupComplete is null initially to represent "loading" state
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
@@ -123,6 +129,10 @@ const App: React.FC = () => {
                 if (savedUser) {
                     setUser(savedUser);
                     logSecurityEvent('SESSION_RESTORE', savedUser.id, 'Restored from secure storage');
+                    
+                    // Load PIN verifications
+                    const { PinService } = await import('./services/pinService');
+                    await PinService.loadPinVerifications();
                 }
                 const savedPlatforms = await loadPlatformConnections();
                 if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
@@ -551,10 +561,11 @@ const App: React.FC = () => {
                                       setTimeout(async () => {
                                           try {
                                               const { generateAgentReply } = await import('./services/geminiService');
+                                              // generateAgentReply now automatically loads company/product data from services
                                               const reply = await generateAgentReply(
                                                   updatedImporter,
                                                   updatedImporter.chatHistory,
-                                                  "Global Exports",
+                                                  null,
                                                   templates.agentSystemInstruction,
                                                   Channel.WHATSAPP
                                               );
@@ -664,10 +675,17 @@ const App: React.FC = () => {
     window.addEventListener('mousemove', resetTimer);
     window.addEventListener('keydown', resetTimer);
     window.addEventListener('click', resetTimer);
-    const interval = setInterval(() => {
-        if (Date.now() - lastActivity > LOCK_TIMEOUT_MS && !isLocked) {
-            setIsLocked(true);
-            logSecurityEvent('SESSION_LOCK', user.id, 'Inactivity timeout');
+    const interval = setInterval(async () => {
+        if (user && Date.now() - lastActivity > LOCK_TIMEOUT_MS && !isLocked) {
+            // Only lock if PIN is set
+            if (user.pinHash) {
+                const { PinService } = await import('./services/pinService');
+                // Only lock if PIN verification has expired
+                if (!PinService.isPinVerified(user.id)) {
+                    setIsLocked(true);
+                    logSecurityEvent('SESSION_LOCK', user.id, 'Inactivity timeout');
+                }
+            }
         }
     }, 10000);
     return () => {
@@ -740,10 +758,14 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
-  const handleLogin = (loggedInUser: User) => {
+  const handleLogin = async (loggedInUser: User) => {
     setUser(loggedInUser);
     saveUserSession(loggedInUser);
     logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
+    
+    // Load PIN verifications
+    const { PinService } = await import('./services/pinService');
+    await PinService.loadPinVerifications();
   };
 
   const handleLogout = () => {
@@ -838,7 +860,8 @@ const App: React.FC = () => {
     if (importer) {
         let channel = importer.preferredChannel;
         if (importer.channelSelectionMode !== 'manual') channel = getOptimalChannel(importer.validation);
-        const msgText = await generateIntroMessage(importer, "Global Exports", "Agri-Products", templates.introTemplate, channel);
+        // generateIntroMessage now automatically loads company/product data from services
+        const msgText = await generateIntroMessage(importer, null, null, templates.introTemplate, channel);
         if (msgText.startsWith("Error:")) alert(msgText);
         else {
              await sendMessage(importer, msgText, channel);
@@ -855,7 +878,8 @@ const App: React.FC = () => {
     if (importer) {
         let channel = importer.preferredChannel;
         if (importer.channelSelectionMode !== 'manual') channel = getOptimalChannel(importer.validation);
-        const reply = await generateAgentReply(importer, importer.chatHistory, "Global Exports", templates.agentSystemInstruction, channel);
+        // generateAgentReply now automatically loads company/product data from services
+        const reply = await generateAgentReply(importer, importer.chatHistory, null, templates.agentSystemInstruction, channel);
         if (reply.startsWith("Error:")) alert(reply);
         else await sendMessage(importer, reply, channel);
     }
@@ -937,19 +961,45 @@ const App: React.FC = () => {
       return <SetupWizard onComplete={() => setIsSetupComplete(true)} />;
   }
 
-  // 3. Login Screen (Not Authenticated)
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
-
-  // 4. Locked State (Security Timeout)
-  if (isLocked) {
-      return (
-          <div className="fixed inset-0 bg-slate-900 z-[200] flex flex-col items-center justify-center text-white">
-              <Lock className="w-12 h-12 mb-4 text-red-500" />
-              <h2 className="text-xl font-bold mb-6">Session Locked</h2>
-              <button onClick={() => { setIsLocked(false); setLastActivity(Date.now()); }} className="px-6 py-2 bg-indigo-600 rounded-lg">Resume</button>
-          </div>
-      );
+  // 3. PIN Lock Screen
+  if (user && isLocked) {
+    return (
+      <PinLockScreen
+        isLocked={isLocked}
+        onUnlock={() => setIsLocked(false)}
+        inactivityTimeout={LOCK_TIMEOUT_MS}
+      />
+    );
   }
+
+  // 4. Owner Admin Panel
+  if (user && showOwnerAdmin) {
+    if (OwnerAuthService.isOwner(user)) {
+      return (
+        <div className="min-h-screen bg-slate-50 p-6">
+          <div className="max-w-7xl mx-auto">
+            <button
+              onClick={() => setShowOwnerAdmin(false)}
+              className="mb-4 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+            >
+              ← Back to App
+            </button>
+            <OwnerAdminPanel
+              user={user}
+              onSourceCodeAccess={() => setShowSourceCodeViewer(true)}
+            />
+            <SourceCodeViewer
+              isOpen={showSourceCodeViewer}
+              onClose={() => setShowSourceCodeViewer(false)}
+            />
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // 5. Login Screen (Not Authenticated)
+  if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   // 5. Main Application
   return (
@@ -1013,6 +1063,7 @@ const App: React.FC = () => {
         setShowSettingsModal={setShowSettingsModal}
         setShowHelpModal={setShowHelpModal}
         setShowAdminDashboard={setShowAdminDashboard}
+        setShowOwnerAdmin={setShowOwnerAdmin}
         onLogout={handleLogout} 
         language={language} 
       />

@@ -358,15 +358,15 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                </button>
              )}
              
-             <button 
-               onClick={handleNext}
-               disabled={isSaving}
-               className="flex items-center gap-2 px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-80"
-             >
-               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-               {currentStep === steps.length - 1 ? 'Finish Setup' : 'Next Step'}
-               {!isSaving && currentStep !== steps.length - 1 && <ChevronRight className="w-4 h-4" />}
-             </button>
+           <button 
+             onClick={handleNext}
+             disabled={isSaving}
+             className="flex items-center gap-2 px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-80"
+           >
+             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+             {currentStep === steps.length - 1 ? 'Finish Setup' : 'Next Step'}
+             {!isSaving && currentStep !== steps.length - 1 && <ChevronRight className="w-4 h-4" />}
+           </button>
            </div>
         </div>
       </div>

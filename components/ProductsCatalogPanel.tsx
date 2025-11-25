@@ -1,0 +1,317 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Plus, Edit, Trash2, Upload, Download, Package, Filter, X } from 'lucide-react';
+import { Product } from '../types';
+import { ProductCatalogService } from '../services/productCatalogService';
+import { canManageProducts } from '../services/permissionService';
+import { User } from '../types';
+import { Logger } from '../services/loggerService';
+import ProductFormModal from './ProductFormModal';
+
+interface ProductsCatalogPanelProps {
+  user?: User;
+}
+
+const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [showModal, setShowModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: boolean; imported: number; errors: string[] } | null>(null);
+
+  const canEdit = user ? canManageProducts(user) : false;
+
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const allProducts = await ProductCatalogService.getProducts();
+      setProducts(allProducts);
+    } catch (error) {
+      Logger.error('[ProductsCatalogPanel] Failed to load products:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      await loadProducts();
+      return;
+    }
+    const results = await ProductCatalogService.searchProducts(query);
+    setProducts(results);
+  };
+
+  const handleCategoryFilter = async (category: string) => {
+    setCategoryFilter(category);
+    if (category === 'all') {
+      await loadProducts();
+    } else {
+      const results = await ProductCatalogService.getProductsByCategory(category);
+      setProducts(results);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this product?')) return;
+    try {
+      await ProductCatalogService.deleteProduct(id);
+      await loadProducts();
+    } catch (error: any) {
+      alert(`Failed to delete product: ${error.message}`);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    try {
+      setImporting(true);
+      const result = await ProductCatalogService.importProductsFromFile(importFile);
+      setImportResult(result);
+      if (result.success) {
+        await loadProducts();
+        setTimeout(() => {
+          setShowImportModal(false);
+          setImportFile(null);
+          setImportResult(null);
+        }, 2000);
+      }
+    } catch (error: any) {
+      setImportResult({ success: false, imported: 0, errors: [error.message] });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleExport = async (format: 'json' | 'csv' = 'json') => {
+    try {
+      const data = await ProductCatalogService.exportProducts(format);
+      const blob = new Blob([data], { type: format === 'json' ? 'application/json' : 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `products_${Date.now()}.${format === 'json' ? 'json' : 'csv'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(`Failed to export: ${error.message}`);
+    }
+  };
+
+  const categories = Array.from(new Set(products.map(p => p.category)));
+
+  const filteredProducts = products.filter(p => {
+    if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="text-slate-500">Loading products...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <Package className="w-5 h-5" /> Products Catalog
+          </h3>
+          <p className="text-sm text-slate-500">Manage your product catalog for AI-powered messaging</p>
+        </div>
+        <div className="flex gap-2">
+          {canEdit && (
+            <>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50"
+              >
+                <Upload className="w-4 h-4" /> Import
+              </button>
+              <button
+                onClick={() => handleExport('csv')}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50"
+              >
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
+              <button
+                onClick={() => setShowModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Plus className="w-4 h-4" /> Add Product
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Search and Filter */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search products by name, category, tags..."
+            className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <div className="relative">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <select
+            value={categoryFilter}
+            onChange={(e) => handleCategoryFilter(e.target.value)}
+            className="pl-10 pr-8 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="all">All Categories</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Products Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredProducts.map(product => (
+          <div key={product.id} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex-1">
+                <h4 className="font-bold text-slate-800">{product.name}</h4>
+                <p className="text-xs text-slate-500 mt-1">{product.category}</p>
+              </div>
+              {!product.active && (
+                <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded">Inactive</span>
+              )}
+            </div>
+            <p className="text-sm text-slate-600 mb-3 line-clamp-2">{product.shortDescription}</p>
+            {product.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {product.tags.slice(0, 3).map((tag, i) => (
+                  <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded">
+                    {tag}
+                  </span>
+                ))}
+                {product.tags.length > 3 && (
+                  <span className="text-xs text-slate-500">+{product.tags.length - 3}</span>
+                )}
+              </div>
+            )}
+            {canEdit && (
+              <div className="flex gap-2 pt-2 border-t border-slate-200">
+                <button
+                  onClick={() => {
+                    setEditingProduct(product);
+                    setShowModal(true);
+                  }}
+                  className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
+                >
+                  <Edit className="w-3 h-3" /> Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(product.id)}
+                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center justify-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {filteredProducts.length === 0 && (
+        <div className="text-center py-12 text-slate-500">
+          <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
+          <p>No products found. {canEdit && 'Add your first product to get started.'}</p>
+        </div>
+      )}
+
+      {/* Product Form Modal */}
+      {showModal && (
+        <ProductFormModal
+          isOpen={showModal}
+          onClose={() => {
+            setShowModal(false);
+            setEditingProduct(null);
+          }}
+          product={editingProduct}
+          onSave={async () => {
+            await loadProducts();
+            setShowModal(false);
+            setEditingProduct(null);
+          }}
+        />
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800">Import Products</h3>
+              <button onClick={() => setShowImportModal(false)} className="p-2 hover:bg-slate-200 rounded-full">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Select File (Excel or CSV)
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+              {importResult && (
+                <div className={`p-3 rounded-lg ${importResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                  <p className={`text-sm ${importResult.success ? 'text-green-700' : 'text-red-700'}`}>
+                    {importResult.success
+                      ? `Successfully imported ${importResult.imported} products`
+                      : `Import failed: ${importResult.errors.join(', ')}`}
+                  </p>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImport}
+                  disabled={!importFile || importing}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-400"
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ProductsCatalogPanel;
+

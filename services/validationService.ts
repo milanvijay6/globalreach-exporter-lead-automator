@@ -1,4 +1,4 @@
-import { ApiKeyProvider, Channel, ValidationResult as ImporterValidationResult } from '../types';
+import { ApiKeyProvider, Channel, ValidationResult as ImporterValidationResult, CompanyDetails, Product, ProductPrice } from '../types';
 import { Logger } from './loggerService';
 
 /**
@@ -397,5 +397,149 @@ export const getInitialValidationState = (contactDetail?: string): ImporterValid
     whatsappAvailable: null,
     wechatAvailable: null,
     checkedAt: Date.now(),
+  };
+};
+
+/**
+ * Validates company details
+ */
+export const validateCompanyDetails = (details: Partial<CompanyDetails>): ValidationResult => {
+  const errors: string[] = [];
+
+  if (!details.companyName || details.companyName.trim().length === 0) {
+    errors.push('Company name is required');
+  }
+
+  if (!details.phone || details.phone.trim().length === 0) {
+    errors.push('Phone number is required');
+  } else {
+    const phoneResult = validatePhoneNumber(details.phone);
+    if (!phoneResult.isValid) {
+      errors.push(...phoneResult.errors);
+    }
+  }
+
+  if (!details.email || details.email.trim().length === 0) {
+    errors.push('Email is required');
+  } else {
+    const emailResult = validateEmail(details.email);
+    if (!emailResult.isValid) {
+      errors.push(...emailResult.errors);
+    }
+  }
+
+  if (!details.contactPersonName || details.contactPersonName.trim().length === 0) {
+    errors.push('Contact person name is required');
+  }
+
+  if (details.websiteUrl && details.websiteUrl.trim().length > 0) {
+    const urlResult = validateUrl(details.websiteUrl);
+    if (!urlResult.isValid) {
+      errors.push(...urlResult.errors);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
+ * Validates product data
+ */
+export const validateProduct = (product: Partial<Product>): ValidationResult => {
+  const errors: string[] = [];
+
+  if (!product.name || product.name.trim().length === 0) {
+    errors.push('Product name is required');
+  } else if (product.name.length > 200) {
+    errors.push('Product name must be less than 200 characters');
+  }
+
+  if (!product.category || product.category.trim().length === 0) {
+    errors.push('Product category is required');
+  }
+
+  if (!product.shortDescription || product.shortDescription.trim().length === 0) {
+    errors.push('Short description is required');
+  } else if (product.shortDescription.length > 500) {
+    errors.push('Short description must be less than 500 characters');
+  }
+
+  if (product.fullDescription && product.fullDescription.length > 5000) {
+    errors.push('Full description must be less than 5000 characters');
+  }
+
+  if (product.tags && product.tags.length > 20) {
+    errors.push('Maximum 20 tags allowed');
+  }
+
+  if (product.imageUrl && product.imageUrl.trim().length > 0) {
+    const urlResult = validateUrl(product.imageUrl);
+    if (!urlResult.isValid) {
+      errors.push('Invalid image URL format');
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+};
+
+/**
+ * Validates product price data
+ */
+export const validateProductPrice = (price: Partial<ProductPrice>): ValidationResult => {
+  const errors: string[] = [];
+
+  if (!price.productId || price.productId.trim().length === 0) {
+    errors.push('Product ID is required');
+  }
+
+  if (!price.unitOfMeasure || price.unitOfMeasure.trim().length === 0) {
+    errors.push('Unit of measure is required');
+  }
+
+  if (price.basePrice === undefined || price.basePrice === null) {
+    errors.push('Base price is required');
+  } else {
+    const basePriceResult = validateNumber(price.basePrice, 0);
+    if (!basePriceResult.isValid) {
+      errors.push('Base price must be a valid positive number');
+    }
+  }
+
+  if (price.wholesalePrice !== undefined && price.wholesalePrice !== null) {
+    const wholesaleResult = validateNumber(price.wholesalePrice, 0);
+    if (!wholesaleResult.isValid) {
+      errors.push('Wholesale price must be a valid positive number');
+    }
+  }
+
+  if (price.retailPrice !== undefined && price.retailPrice !== null) {
+    const retailResult = validateNumber(price.retailPrice, 0);
+    if (!retailResult.isValid) {
+      errors.push('Retail price must be a valid positive number');
+    }
+  }
+
+  if (price.specialCustomerPrice !== undefined && price.specialCustomerPrice !== null) {
+    const specialResult = validateNumber(price.specialCustomerPrice, 0);
+    if (!specialResult.isValid) {
+      errors.push('Special customer price must be a valid positive number');
+    }
+  }
+
+  if (!price.currency || price.currency.trim().length === 0) {
+    errors.push('Currency is required');
+  } else if (price.currency.length !== 3) {
+    errors.push('Currency must be a 3-letter code (e.g., USD, EUR, INR)');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
   };
 };
