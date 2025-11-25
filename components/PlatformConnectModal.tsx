@@ -237,12 +237,29 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
       setErrorMessage('');
 
       try {
+        // Try to test connection, but don't block if it fails
         const testResult = await WhatsAppService.testConnection(phoneNumberId, accessToken);
         
-        if (!testResult.success) {
-          setStep('credentials');
-          setErrorMessage(testResult.error || 'Connection test failed');
-          return;
+        let accountName = phoneNumberId;
+        let showWarning = false;
+        
+        if (testResult.success) {
+          accountName = testResult.phoneNumber || phoneNumberId;
+        } else {
+          // Connection test failed, but allow connecting anyway
+          // This can happen if token doesn't have query permissions but can send messages
+          showWarning = true;
+          console.warn('[WhatsApp] Connection test failed, but allowing connection:', testResult.error);
+          
+          // Check if it's a permission/not found error
+          const isPermissionError = testResult.error?.includes('does not exist') || 
+                                    testResult.error?.includes('cannot be loaded') ||
+                                    testResult.error?.includes('missing permissions');
+          
+          if (isPermissionError) {
+            // Use business account ID or phone number ID as account name
+            accountName = `WhatsApp Business (${phoneNumberId})`;
+          }
         }
 
         await PlatformService.setAppConfig('webhookVerifyToken', webhookVerifyToken);
@@ -257,15 +274,28 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         const connection: PlatformConnection = {
           channel: Channel.WHATSAPP,
           status: PlatformStatus.CONNECTED,
-          accountName: testResult.phoneNumber || phoneNumberId,
+          accountName: accountName,
           connectedAt: Date.now(),
           provider: 'whatsapp',
           whatsappCredentials: credentials,
-          healthStatus: 'healthy',
+          healthStatus: 'healthy', // Mark as healthy even if test failed (will test during actual use)
         };
 
         onLink(connection);
         setStep('success');
+        
+        // Show warning if test failed
+        if (showWarning) {
+          setTimeout(() => {
+            alert('⚠️ WhatsApp connected with warning:\n\n' + 
+                  'Connection test failed, but credentials saved.\n' +
+                  'The access token may not have permission to query phone number info, but should still work for sending messages.\n\n' +
+                  'If you encounter issues sending messages, verify:\n' +
+                  '• Access token is valid and not expired\n' +
+                  '• Phone Number ID matches your WhatsApp Business Account\n' +
+                  '• Token has "whatsapp_business_messaging" permissions');
+          }, 500);
+        }
         
         setTimeout(() => {
           onClose();

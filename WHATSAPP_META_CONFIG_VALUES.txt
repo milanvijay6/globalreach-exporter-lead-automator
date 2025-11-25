@@ -1,0 +1,72 @@
+============================================================
+📱 WHATSAPP WEBHOOK CONFIGURATION FOR META BUSINESS MANAGER
+============================================================
+
+✅ CONFIGURED AND READY TO USE
+
+🔗 CALLBACK URL (Webhook URL):
+   https://penelope-sacrarial-jacqueline.ngrok-free.dev/webhooks/whatsapp
+
+🔑 VERIFY TOKEN:
+   globalreach_secret_token
+
+============================================================
+STEP-BY-STEP INSTRUCTIONS
+============================================================
+
+1. Go to Meta Business Manager:
+   https://business.facebook.com
+
+2. Navigate to:
+   WhatsApp → Configuration → Webhooks
+
+3. Click "Edit" or "Configure"
+
+4. Enter Callback URL:
+   https://penelope-sacrarial-jacqueline.ngrok-free.dev/webhooks/whatsapp
+
+5. Enter Verify Token:
+   globalreach_secret_token
+
+6. Subscribe to webhook fields:
+   ✅ messages
+   ✅ message_status
+
+7. Click "Verify and Save"
+
+============================================================
+IMPORTANT NOTES
+============================================================
+
+⚠️  Keep ngrok running:
+   - The tunnel must stay active for Meta to send webhooks
+   - If you close ngrok, you'll need to restart it and update the URL
+   - Free ngrok URLs change each time you restart (paid accounts can have fixed URLs)
+
+💡 To keep ngrok running:
+   - Don't close the ngrok terminal window
+   - Or run it in background: ngrok http 4000 &
+
+📱 Update in App:
+   - The app is already configured with the tunnel URL
+   - If you restart the app, go to Settings → Integrations to see the webhook URL
+   - The webhook URL should show: https://penelope-sacrarial-jacqueline.ngrok-free.dev/webhooks/whatsapp
+
+🔄 If you need to restart ngrok:
+   1. Stop current ngrok process
+   2. Run: ngrok http 4000
+   3. Get new URL from ngrok dashboard (http://localhost:4040)
+   4. Run: node scripts/set-tunnel-url.js <new-ngrok-url>
+   5. Update Meta Business Manager with new URL
+
+============================================================
+TESTING
+============================================================
+
+To test if webhook is working:
+1. Send a message to your WhatsApp Business number
+2. Check app logs or chat interface for incoming message
+3. Verify message appears in the app
+
+============================================================
+
