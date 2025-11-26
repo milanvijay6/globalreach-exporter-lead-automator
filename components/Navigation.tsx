@@ -16,6 +16,7 @@ interface NavigationProps {
   setShowSettingsModal: (v: boolean) => void;
   setShowHelpModal: (v: boolean) => void;
   setShowAdminDashboard?: (v: boolean) => void;
+  setShowOwnerAdmin?: (v: boolean) => void;
   onLogout: () => void;
   language: Language;
 }

@@ -307,7 +307,7 @@ export const AuthService = {
       let owner = users.find(u => u.email.toLowerCase() === 'milanvijay24@gmail.com' || u.role === 'Owner');
 
       if (!owner) {
-        // Create owner user
+        // Create owner user with ALL permissions
         const passwordHash = await AuthService.hashPassword('vijayvargiya@24');
         owner = {
           id: 'owner-1',
@@ -317,9 +317,42 @@ export const AuthService = {
           passwordHash,
           status: 'active',
           createdAt: Date.now(),
-          permissions: [],
+          // Owner has ALL permissions
+          permissions: [
+            'READ',
+            'WRITE',
+            'DELETE',
+            'ADMIN_ACCESS',
+            'API_KEY_MANAGE',
+            'SETTINGS_MANAGE',
+            'DATA_EXPORT',
+            'AUDIT_VIEW',
+            'COMPANY_CONFIG_MANAGE',
+          ] as any[],
         };
         await UserService.createUser(owner);
+      } else {
+        // Ensure owner has correct role and all permissions
+        const allPermissions = [
+          'READ',
+          'WRITE',
+          'DELETE',
+          'ADMIN_ACCESS',
+          'API_KEY_MANAGE',
+          'SETTINGS_MANAGE',
+          'DATA_EXPORT',
+          'AUDIT_VIEW',
+          'COMPANY_CONFIG_MANAGE',
+        ] as any[];
+        
+        if (owner.role !== 'Owner' || !owner.permissions || owner.permissions.length !== allPermissions.length) {
+          owner.role = 'Owner' as any;
+          owner.permissions = allPermissions;
+          await UserService.updateUser(owner.id, { 
+            role: 'Owner' as any,
+            permissions: allPermissions 
+          });
+        }
       }
 
       return owner;

@@ -648,9 +648,9 @@ export interface SystemAlert {
   actionUrl?: string;
 }
 
-export const canEditSettings = (role: UserRole) => role === UserRole.ADMIN;
-export const canExportData = (role: UserRole) => role === UserRole.ADMIN;
-export const canSendMessages = (role: UserRole) => role === UserRole.ADMIN || role === UserRole.SALES;
+export const canEditSettings = (role: UserRole) => role === UserRole.ADMIN || role === UserRole.OWNER;
+export const canExportData = (role: UserRole) => role === UserRole.ADMIN || role === UserRole.OWNER;
+export const canSendMessages = (role: UserRole) => role === UserRole.ADMIN || role === UserRole.SALES || role === UserRole.OWNER;
 
 // Purchase Pattern Analysis Types
 export enum PurchaseCycle {

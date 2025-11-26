@@ -58,5 +58,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendEmailGmail: (credentials, options) => ipcRenderer.invoke('email-send-gmail', credentials, options),
   readEmailsIMAP: (credentials, maxResults) => ipcRenderer.invoke('email-read-imap', credentials, maxResults),
   readEmailsGmail: (credentials, maxResults, query) => ipcRenderer.invoke('email-read-gmail', credentials, maxResults, query),
-  getEmailConnection: () => ipcRenderer.invoke('email-get-connection')
+  getEmailConnection: () => ipcRenderer.invoke('email-get-connection'),
+  
+  // Window Management
+  reloadWindow: () => ipcRenderer.invoke('reload-window'),
+  reloadWindowIgnoringCache: () => ipcRenderer.invoke('reload-window-ignoring-cache')
 });

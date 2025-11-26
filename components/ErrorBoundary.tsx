@@ -31,13 +31,43 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // Log error to error reporting service in production
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[ErrorBoundary] Caught error:', error, errorInfo);
-      // TODO: Send to error tracking service (e.g., Sentry)
-    } else {
-      console.error('[ErrorBoundary] Development error:', error, errorInfo);
+    // Enhanced error logging with full details
+    const errorDetails = {
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      },
+      errorInfo: {
+        componentStack: errorInfo.componentStack,
+      },
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      url: window.location.href,
+    };
+    
+    console.error('=== ERROR BOUNDARY CAUGHT ERROR ===');
+    console.error('Error Name:', error.name);
+    console.error('Error Message:', error.message);
+    console.error('Full Error Object:', error);
+    console.error('Error Stack:', error.stack);
+    console.error('Component Stack:', errorInfo.componentStack);
+    console.error('Full Error Details:', errorDetails);
+    
+    // Special handling for infinite loop errors
+    if (error.message?.includes('Maximum update depth') || 
+        error.message?.includes('310')) {
+      console.error('🚨 INFINITE LOOP ERROR DETECTED 🚨');
+      console.error('This error indicates a component is updating state in a loop.');
+      console.error('Common causes:');
+      console.error('1. useEffect without proper dependencies');
+      console.error('2. State update that triggers another state update');
+      console.error('3. Event handler that causes re-renders');
+      console.error('Check the component stack above to find the problematic component.');
+      console.error('Component Stack:', errorInfo.componentStack);
     }
+    
+    console.error('===================================');
 
     this.setState({
       error,
@@ -98,15 +128,48 @@ class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {isDevelopment && this.state.errorInfo && (
-              <details className="mb-6">
+              <details className="mb-6" open>
                 <summary className="text-sm font-medium text-slate-700 cursor-pointer mb-2">
-                  Stack Trace (Development Only)
+                  Detailed Error Information (Development)
                 </summary>
-                <pre className="bg-slate-900 text-green-400 p-4 rounded-lg text-xs overflow-auto max-h-64 font-mono">
-                  {this.state.error?.stack}
-                  {'\n\n'}
-                  {this.state.errorInfo.componentStack}
-                </pre>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 mb-1">Error Message:</p>
+                    <pre className="bg-slate-900 text-red-400 p-3 rounded-lg text-xs overflow-auto font-mono">
+                      {this.state.error?.message || 'Unknown error'}
+                    </pre>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 mb-1">Stack Trace:</p>
+                    <pre className="bg-slate-900 text-green-400 p-3 rounded-lg text-xs overflow-auto max-h-64 font-mono">
+                      {this.state.error?.stack || 'No stack trace available'}
+                    </pre>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 mb-1">Component Stack (Where error occurred):</p>
+                    <pre className="bg-slate-900 text-yellow-400 p-3 rounded-lg text-xs overflow-auto max-h-64 font-mono">
+                      {this.state.errorInfo.componentStack || 'No component stack available'}
+                    </pre>
+                  </div>
+                  {this.state.error?.message?.includes('Maximum update depth') && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <p className="text-sm font-semibold text-red-800 mb-2">⚠️ Infinite Loop Detected</p>
+                      <p className="text-xs text-red-700 mb-2">
+                        This error indicates a component is updating state in an infinite loop.
+                      </p>
+                      <p className="text-xs text-red-700 mb-2">Common causes:</p>
+                      <ul className="text-xs text-red-700 list-disc list-inside space-y-1 ml-2">
+                        <li>useEffect without proper dependencies or missing cleanup</li>
+                        <li>State update that triggers another state update</li>
+                        <li>Event handler that causes re-renders</li>
+                        <li>Callback function recreated on every render</li>
+                      </ul>
+                      <p className="text-xs text-red-700 mt-2">
+                        Check the component stack above to identify the problematic component.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </details>
             )}
 

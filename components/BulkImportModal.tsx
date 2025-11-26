@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, startTransition } from 'react';
 import { X, Upload, AlertTriangle, CheckCircle, FileText, FileSpreadsheet, File, Loader2 } from 'lucide-react';
 import { Importer, LeadStatus, Channel } from '../types';
 import { getInitialValidationState, validateContactFormat } from '../services/validationService';
@@ -18,32 +18,164 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onIm
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [fileError, setFileError] = useState('');
+  const [componentError, setComponentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isImportingRef = useRef(false); // Prevent multiple simultaneous imports
 
+  // Safety check for required props
   if (!isOpen) return null;
+  
+  if (typeof onClose !== 'function') {
+    console.error('[BulkImportModal] onClose is not a function');
+    return null;
+  }
+  
+  if (typeof onImport !== 'function') {
+    console.error('[BulkImportModal] onImport is not a function');
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertTriangle className="w-6 h-6 text-red-600" />
+            <h2 className="text-xl font-bold text-slate-800">Configuration Error</h2>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-red-800">Import handler is not properly configured.</p>
+          </div>
+          <button
+            onClick={onClose || (() => {})}
+            className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  // Reset state when modal opens
+  // Error boundary wrapper
+  if (componentError) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertTriangle className="w-6 h-6 text-red-600" />
+            <h2 className="text-xl font-bold text-slate-800">Error Loading Import Modal</h2>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-red-800 mb-2">{componentError}</p>
+            <p className="text-xs text-red-600">Please check the console for more details.</p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setComponentError(null);
+                onClose();
+              }}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg transition-colors"
+            >
+              Close
+            </button>
+            <button
+              onClick={() => {
+                setComponentError(null);
+                window.location.reload();
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+            >
+              Reload App
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Reset state when modal opens (only when transitioning from closed to open)
+  const prevIsOpenRef = React.useRef(isOpen);
+  const isResettingRef = React.useRef(false);
+  const resetTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  
   React.useEffect(() => {
-    if (isOpen) {
-      setCsvText('');
-      setPreviewData([]);
-      setStep('input');
-      setSelectedFile(null);
-      setFileError('');
-      setImportMode('file');
+    // Clear any pending reset
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+      resetTimeoutRef.current = null;
     }
+    
+    // Prevent rapid re-execution
+    if (isResettingRef.current) {
+      console.log('[BulkImportModal] Already resetting, skipping');
+      return;
+    }
+    
+    console.log('[BulkImportModal] useEffect triggered', {
+      isOpen,
+      prevIsOpen: prevIsOpenRef.current,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Only reset when modal transitions from closed to open
+    if (isOpen && !prevIsOpenRef.current) {
+      console.log('[BulkImportModal] Modal opening, resetting state');
+      
+      // Set flag to prevent re-execution
+      isResettingRef.current = true;
+      
+      // Reset importing flag when modal opens
+      isImportingRef.current = false;
+      
+      // Use a debounced reset to prevent rapid state changes
+      resetTimeoutRef.current = setTimeout(() => {
+        // Batch all state updates together to prevent multiple re-renders
+        startTransition(() => {
+          setCsvText('');
+          setPreviewData([]);
+          setStep('input');
+          setSelectedFile(null);
+          setFileError('');
+          setImportMode('file');
+        });
+        
+        // Reset file input in next tick to avoid conflicts
+        requestAnimationFrame(() => {
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        });
+        
+        // Reset flag after state updates
+        setTimeout(() => {
+          isResettingRef.current = false;
+          resetTimeoutRef.current = null;
+        }, 200);
+      }, 50); // Small delay to debounce rapid changes
+    }
+    
+    // Update ref AFTER all checks to prevent loops
+    if (prevIsOpenRef.current !== isOpen) {
+      prevIsOpenRef.current = isOpen;
+    }
+    
+    // Cleanup function
+    return () => {
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+        resetTimeoutRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setSelectedFile(file);
-    setFileError('');
-    setIsProcessing(true);
-    setPreviewData([]);
-
     try {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setSelectedFile(file);
+      setFileError('');
+      setIsProcessing(true);
+      setPreviewData([]);
+
       const { FileImportService } = await import('../services/fileImportService');
       
       // Check file type
@@ -58,33 +190,52 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onIm
       }
 
       const result = await FileImportService.parseFile(file);
+      console.log('[BulkImport] File parse result:', { success: result.success, dataCount: result.data.length, errors: result.errors.length });
 
       if (result.success && result.data.length > 0) {
         setPreviewData(result.data);
         setStep('preview');
         if (result.errors.length > 0) {
           Logger.warn('[BulkImport] File parsed with warnings:', result.errors);
+          // Show warnings but don't block import
+          const warningMsg = `File parsed successfully with ${result.errors.length} warning(s). Check preview before importing.`;
+          setFileError(warningMsg);
+          setTimeout(() => setFileError(''), 5000); // Clear warning after 5 seconds
         }
       } else {
-        setFileError(result.errors.join('\n') || 'Failed to parse file. Please check the file format.');
+        const errorMsg = result.errors.length > 0 
+          ? result.errors.join('\n') 
+          : 'Failed to parse file. Please check the file format. Expected columns: Name, Company, Country, Contact, Product, Quantity, Price';
+        setFileError(errorMsg);
         setPreviewData([]);
+        console.error('[BulkImport] File parse failed:', errorMsg);
       }
     } catch (error: any) {
-      setFileError(error.message || 'Failed to process file. Please ensure the file format is correct.');
-      Logger.error('[BulkImport] File processing error:', error);
+      console.error('[BulkImport] File processing error:', error);
+      const errorMessage = error?.message || 'Failed to process file. Please ensure the file format is correct.';
+      setFileError(errorMessage);
+      try {
+        Logger.error('[BulkImport] File processing error:', error);
+      } catch (loggerError) {
+        console.error('[BulkImport] Logger error:', loggerError);
+      }
       setPreviewData([]);
-    } finally {
       setIsProcessing(false);
+      
+      // If it's a critical error, show it in the error state
+      if (error?.message?.includes('Cannot read') || error?.message?.includes('undefined')) {
+        setComponentError(`Failed to load import service: ${errorMessage}`);
+      }
     }
   };
 
   const parseCSV = async () => {
-    if (!csvText.trim()) return;
-
-    setIsProcessing(true);
-    setFileError('');
-
     try {
+      if (!csvText.trim()) return;
+
+      setIsProcessing(true);
+      setFileError('');
+
       // Use papaparse for better CSV parsing
       const Papa = await import('papaparse');
       
@@ -114,8 +265,22 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onIm
               const quantity = (cols[5] || '').toString().trim() || '-';
               const priceRange = (cols[6] || '').toString().trim() || '-';
 
-              const { channel } = validateContactFormat(contactDetail);
-              const validation = getInitialValidationState(contactDetail);
+              let channel = Channel.EMAIL;
+              let validation = { isValid: false, errors: ['Contact format not validated'], checkedAt: Date.now() };
+              
+              try {
+                const validationResult = validateContactFormat(contactDetail);
+                channel = validationResult.channel || Channel.EMAIL;
+              } catch (e) {
+                console.warn('[BulkImport] validateContactFormat error:', e);
+              }
+              
+              try {
+                validation = getInitialValidationState(contactDetail);
+              } catch (e) {
+                console.warn('[BulkImport] getInitialValidationState error:', e);
+                validation = { isValid: false, errors: ['Validation failed'], checkedAt: Date.now() };
+              }
 
               return {
                 id: `imported-${Date.now()}-${index}`,
@@ -139,6 +304,14 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onIm
               };
             });
 
+            if (parsed.length === 0) {
+              setFileError('No valid data found in CSV. Please check the format.');
+              setIsProcessing(false);
+              resolve();
+              return;
+            }
+            
+            console.log('[BulkImport] CSV parsed successfully:', parsed.length, 'leads');
             setPreviewData(parsed);
             setStep('preview');
             setIsProcessing(false);
@@ -152,18 +325,89 @@ const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onIm
         });
       });
     } catch (error: any) {
-      setFileError(error.message || 'Failed to parse CSV data');
-      Logger.error('[BulkImport] CSV parsing error:', error);
+      console.error('[BulkImport] CSV parsing error:', error);
+      const errorMessage = error?.message || 'Failed to parse CSV data';
+      setFileError(errorMessage);
+      try {
+        Logger.error('[BulkImport] CSV parsing error:', error);
+      } catch (loggerError) {
+        console.error('[BulkImport] Logger error:', loggerError);
+      }
       setIsProcessing(false);
+      
+      // If it's a critical error, show it in the error state
+      if (error?.message?.includes('Cannot read') || error?.message?.includes('undefined')) {
+        setComponentError(`Failed to parse CSV: ${errorMessage}`);
+      }
     }
   };
 
   const handleImport = () => {
-    onImport(previewData);
-    setCsvText('');
-    setPreviewData([]);
-    setStep('input');
-    onClose();
+    try {
+      // Prevent multiple simultaneous imports
+      if (isImportingRef.current) {
+        console.warn('[BulkImport] Import already in progress, ignoring duplicate call');
+        return;
+      }
+      
+      if (!previewData || previewData.length === 0) {
+        setFileError('No data to import. Please select a file or paste CSV data first.');
+        return;
+      }
+      
+      // Set importing flag immediately
+      isImportingRef.current = true;
+      
+      console.log('[BulkImport] Importing leads:', previewData.length);
+      
+      // Create a copy of the data to import BEFORE any state changes
+      const dataToImport = [...previewData];
+      
+      // Close modal FIRST to prevent any state conflicts
+      if (typeof onClose === 'function') {
+        onClose();
+      }
+      
+      // Reset state AFTER closing modal
+      setCsvText('');
+      setPreviewData([]);
+      setStep('input');
+      setSelectedFile(null);
+      setFileError('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      
+      // Use setTimeout with a longer delay to ensure modal is fully closed
+      // and all state updates have completed before calling onImport
+      setTimeout(() => {
+        try {
+          if (typeof onImport === 'function') {
+            // Call onImport with a try-catch to prevent any errors from propagating
+            try {
+              onImport(dataToImport);
+            } catch (importError: any) {
+              console.error('[BulkImport] onImport callback error:', importError);
+              // Error is logged but we don't show it since modal is closed
+            }
+          } else {
+            console.error('[BulkImport] onImport is not a function:', typeof onImport);
+          }
+        } catch (error: any) {
+          console.error('[BulkImport] Import error:', error);
+        } finally {
+          // Reset importing flag after a delay to allow state updates to complete
+          setTimeout(() => {
+            isImportingRef.current = false;
+            console.log('[BulkImport] Import flag reset');
+          }, 1000);
+        }
+      }, 300);
+    } catch (error: any) {
+      console.error('[BulkImport] handleImport error:', error);
+      setComponentError(`Failed to process import: ${error?.message || 'Unknown error'}`);
+      isImportingRef.current = false;
+    }
   };
 
   const validCount = previewData.filter(i => i.validation.isValid).length;

@@ -12,9 +12,9 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'electron/build'),
     emptyOutDir: true,
-    // Disable source maps in production for security and smaller bundle size
-    sourcemap: process.env.NODE_ENV !== 'production',
-    minify: 'esbuild',
+    // Always enable source maps for better error debugging
+    sourcemap: true,
+    minify: process.env.NODE_ENV === 'production' ? 'esbuild' : false,
     target: 'es2015',
     chunkSizeWarningLimit: 1000,
     rollupOptions: {

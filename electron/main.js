@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog, Menu } = require('electron');
 const path = require('path');
 const express = require('express');
 const fs = require('fs');
@@ -477,8 +477,39 @@ async function createWindow() {
   // Show window when ready to prevent white screen flash
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    // Open DevTools for debugging (both dev and production)
+    // Always open DevTools for debugging and error visibility
     mainWindow.webContents.openDevTools();
+    
+    // Inject error logging script for better error visibility
+    mainWindow.webContents.executeJavaScript(`
+      (function() {
+        // Override console.error to catch React errors
+        const originalError = console.error;
+        console.error = function(...args) {
+          if (args.some(arg => typeof arg === 'string' && (arg.includes('310') || arg.includes('Maximum update depth')))) {
+            console.group('🚨 REACT ERROR #310 - INFINITE LOOP');
+            console.error('Full error details:', ...args);
+            console.trace('Stack trace:');
+            console.groupEnd();
+          }
+          originalError.apply(console, args);
+        };
+        
+        // Log all React errors with full details
+        window.addEventListener('error', (e) => {
+          if (e.message && (e.message.includes('310') || e.message.includes('Maximum update depth'))) {
+            console.error('🚨 INFINITE LOOP ERROR:', {
+              message: e.message,
+              filename: e.filename,
+              lineno: e.lineno,
+              colno: e.colno,
+              error: e.error,
+              stack: e.error?.stack
+            });
+          }
+        });
+      })();
+    `).catch(err => logger.warn('Failed to inject error logging:', err));
   });
 
   // 3. Load from Vite Dev Server (development) or Local Express Server (production)
@@ -579,6 +610,41 @@ async function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  // Add keyboard shortcuts for reload
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Ctrl+R or F5 to reload
+    if ((input.control && input.key.toLowerCase() === 'r') || input.key === 'F5') {
+      event.preventDefault();
+      mainWindow.reload();
+    }
+    // Ctrl+Shift+R for hard reload
+    if (input.control && input.shift && input.key.toLowerCase() === 'r') {
+      event.preventDefault();
+      mainWindow.webContents.reloadIgnoringCache();
+    }
+  });
+
+  // Listen for Vite HMR updates in development
+  if (isDev) {
+    // Poll for Vite dev server changes (simple approach)
+    // In development, Vite's HMR should work, but we can also add a manual reload trigger
+    mainWindow.webContents.on('did-finish-load', () => {
+      // Inject a script to listen for Vite HMR updates
+      mainWindow.webContents.executeJavaScript(`
+        if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+          // Listen for Vite HMR updates
+          if (import.meta.hot) {
+            import.meta.hot.on('vite:beforeFullReload', () => {
+              console.log('[Electron] Vite full reload detected');
+            });
+          }
+        }
+      `).catch(() => {
+        // Ignore errors if script injection fails
+      });
+    });
+  }
 }
 
 // --- APP LIFECYCLE ---
@@ -622,7 +688,81 @@ if (!gotTheLock) {
   });
 }
 
+// Create application menu
+function createMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.reload();
+            }
+          }
+        },
+        {
+          label: 'Hard Reload',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.reloadIgnoringCache();
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Quit',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+          click: () => {
+            app.quit();
+          }
+        }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.toggleDevTools();
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.reload();
+            }
+          }
+        },
+        {
+          label: 'Hard Reload',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.reloadIgnoringCache();
+            }
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 app.whenReady().then(() => {
+  createMenu();
   createWindow();
 
   app.on('activate', () => {
@@ -704,6 +844,22 @@ ipcMain.handle('reset-app', async () => {
 });
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+
+ipcMain.handle('reload-window', () => {
+  if (mainWindow) {
+    mainWindow.reload();
+    return { success: true };
+  }
+  return { success: false, error: 'No window available' };
+});
+
+ipcMain.handle('reload-window-ignoring-cache', () => {
+  if (mainWindow) {
+    mainWindow.webContents.reloadIgnoringCache();
+    return { success: true };
+  }
+  return { success: false, error: 'No window available' };
+});
 
 ipcMain.handle('create-backup', async (event, dataString) => {
   const { canceled, filePath } = await dialog.showSaveDialog({

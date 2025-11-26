@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react';
 import { Download, Upload, Play, Zap, LayoutDashboard, Lock, Loader2 } from 'lucide-react';
 import ImporterList from './components/ImporterList';
 import ChatInterface from './components/ChatInterface';
@@ -18,6 +18,7 @@ import HelpModal from './components/HelpModal';
 import CampaignManager from './components/CampaignManager';
 import CalendarView from './components/CalendarView';
 import AdminMonitoringDashboard from './components/AdminMonitoringDashboard';
+import ErrorBoundary from './components/ErrorBoundary';
 
 import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, canExportData, canSendMessages, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
 import { generateIntroMessage, generateAgentReply, analyzeLeadQuality, simulateImporterResponse, generateSalesForecast } from './services/geminiService';
@@ -84,7 +85,50 @@ const App: React.FC = () => {
   const [isLocked, setIsLocked] = useState(false);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [connectedPlatforms, setConnectedPlatforms] = useState<PlatformConnection[]>([]);
-  const [importers, setImporters] = useState<Importer[]>([]);
+  const [importers, setImportersRaw] = useState<Importer[]>([]);
+  
+  // Circuit breaker refs - declare early
+  const setImportersCallCountRef = useRef(0);
+  const lastSetImportersTimeRef = useRef(0);
+  const setImportersBlockedRef = useRef(false);
+  
+  // Circuit breaker: Wrap setImporters to prevent recursive calls
+  const setImporters = useCallback((updater: Importer[] | ((prev: Importer[]) => Importer[])) => {
+    // If circuit breaker is tripped, block all calls
+    if (setImportersBlockedRef.current) {
+      console.warn('[App] ⚠️ setImporters blocked - circuit breaker tripped');
+      return;
+    }
+    
+    const now = Date.now();
+    setImportersCallCountRef.current += 1;
+    
+    // If called more than 5 times in 50ms, we're in a loop - trip circuit breaker
+    if (now - lastSetImportersTimeRef.current < 50) {
+      if (setImportersCallCountRef.current > 5) {
+        console.error('🚨 [App] CIRCUIT BREAKER TRIPPED: setImporters called too rapidly!', {
+          count: setImportersCallCountRef.current,
+          timeDiff: now - lastSetImportersTimeRef.current
+        });
+        console.trace('Stack trace:');
+        // Trip the circuit breaker
+        setImportersBlockedRef.current = true;
+        // Reset after 2 seconds
+        setTimeout(() => {
+          setImportersBlockedRef.current = false;
+          setImportersCallCountRef.current = 0;
+          console.log('[App] Circuit breaker reset');
+        }, 2000);
+        return; // Block the call
+      }
+    } else {
+      // Reset counter if enough time has passed
+      setImportersCallCountRef.current = 0;
+    }
+    
+    lastSetImportersTimeRef.current = now;
+    setImportersRaw(updater);
+  }, []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [importerTypingMap, setImporterTypingMap] = useState<Record<string, boolean>>({});
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -214,9 +258,116 @@ const App: React.FC = () => {
       return () => clearInterval(interval);
   }, [user, connectedPlatforms]);
 
+  // Save importers to storage (debounced to prevent excessive saves during rapid updates)
+  const importersRef = useRef(importers);
+  const lastSavedIdsRef = useRef<string>('');
+  const saveCallCountRef = useRef(0);
+  const saveCallTimesRef = useRef<number[]>([]);
+  importersRef.current = importers; // Always keep ref in sync
+  
+  // Prevent save during imports to avoid loops - declare these early
+  const importInProgressRef = useRef(false);
+  const importCallStackRef = useRef<string[]>([]);
+  const importDepthRef = useRef(0);
+  const isSavingRef = useRef(false);
+  const saveBlockedRef = useRef(false);
+  
   useEffect(() => {
-    if (importers.length > 0) StorageService.saveImporters(importers);
-  }, [importers]);
+    // Skip save if import is in progress or if save is blocked
+    if (importInProgressRef.current || saveBlockedRef.current || isSavingRef.current) {
+      console.log('[App] ⏸️ Skipping save - import in progress or save blocked', {
+        importInProgress: importInProgressRef.current,
+        saveBlocked: saveBlockedRef.current,
+        isSaving: isSavingRef.current
+      });
+      return;
+    }
+    
+    saveCallCountRef.current += 1;
+    const callNumber = saveCallCountRef.current;
+    const now = Date.now();
+    saveCallTimesRef.current.push(now);
+    
+    // Keep only last 10 call times
+    if (saveCallTimesRef.current.length > 10) {
+      saveCallTimesRef.current.shift();
+    }
+    
+    // Check for rapid calls (potential infinite loop)
+    if (saveCallTimesRef.current.length >= 3) {
+      const recentCalls = saveCallTimesRef.current.slice(-3);
+      const timeDiff = recentCalls[recentCalls.length - 1] - recentCalls[0];
+      if (timeDiff < 100) {
+        console.error('🚨 [App] Save importers useEffect called rapidly! BLOCKING SAVE', {
+          callNumber,
+          callsIn100ms: recentCalls.length,
+          timeDiff,
+          importersLength: importers.length
+        });
+        console.trace('Stack trace:');
+        // Block saves for a short time to prevent loop
+        saveBlockedRef.current = true;
+        setTimeout(() => {
+          saveBlockedRef.current = false;
+        }, 1000);
+        return;
+      }
+    }
+    
+    console.log('[App] Save importers useEffect triggered', {
+      callNumber,
+      importersLength: importers.length,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (importers.length > 0) {
+      // Use a longer timeout to debounce rapid state changes and prevent infinite loops
+      const timeoutId = setTimeout(() => {
+        // Double-check before saving
+        if (importInProgressRef.current || saveBlockedRef.current || isSavingRef.current) {
+          console.log('[App] ⏸️ Save cancelled - conditions changed');
+          return;
+        }
+        
+        isSavingRef.current = true;
+        try {
+          // Only save if importers actually changed (compare by length and IDs)
+          const currentIds = importers.map(i => i.id).sort().join(',');
+          
+          if (currentIds !== lastSavedIdsRef.current) {
+            console.log('[App] 💾 Saving importers to storage:', {
+              callNumber,
+              count: importers.length,
+              ids: currentIds.substring(0, 100) + '...',
+              timestamp: new Date().toISOString()
+            });
+            StorageService.saveImporters(importers);
+            lastSavedIdsRef.current = currentIds;
+          } else {
+            console.log('[App] ⏭️ Importers unchanged, skipping save', {
+              callNumber,
+              count: importers.length
+            });
+          }
+        } catch (error) {
+          console.error('[App] ❌ Failed to save importers:', error);
+          console.error('[App] Error stack:', (error as Error)?.stack);
+          console.error('[App] Error details:', {
+            message: (error as Error)?.message,
+            name: (error as Error)?.name,
+            callNumber
+          });
+        } finally {
+          isSavingRef.current = false;
+        }
+      }, 500); // Increased debounce time to 500ms
+      
+      return () => {
+        console.log('[App] Cleanup save importers timeout', { callNumber });
+        clearTimeout(timeoutId);
+      };
+    }
+  }, [importers.length]); // Only depend on length, not the array itself
 
   // Deep Link Handling for Magic Links and OAuth
   useEffect(() => {
@@ -278,6 +429,12 @@ const App: React.FC = () => {
   }, []);
 
   // Email Ingestion Setup
+  // Use ref to access latest importers without causing re-renders
+  const importersForEmailRef = useRef(importers);
+  useEffect(() => {
+    importersForEmailRef.current = importers;
+  }, [importers]);
+
   useEffect(() => {
     const setupEmailIngestion = async () => {
       const { EmailIngestionService } = await import('./services/emailIngestionService');
@@ -301,9 +458,9 @@ const App: React.FC = () => {
           // Route email
           const routing = EmailRoutingService.routeEmail(message, classification);
           
-          // Find or create importer
+          // Find or create importer - use ref to get latest state
           const emailAddress = message.from.email.toLowerCase();
-          const currentImporters = importers; // Capture current state
+          const currentImporters = importersForEmailRef.current; // Use ref instead of closure
           let importer = currentImporters.find(i => 
             i.contactDetail.toLowerCase() === emailAddress
           );
@@ -434,24 +591,62 @@ const App: React.FC = () => {
         EmailIngestionService.shutdown();
       });
     };
-  }, [isSetupComplete, user, importers, templates]);
+  }, [isSetupComplete, user, templates]); // Removed importers from dependencies
 
-  // Campaign Heartbeat
+  // Campaign Heartbeat - use ref to avoid dependency on importers
+  const importersForCampaignRef = useRef(importers);
   useEffect(() => {
+    importersForCampaignRef.current = importers;
+  }, [importers]);
+
+  useEffect(() => {
+      console.log('[App] Campaign heartbeat useEffect triggered', {
+        campaignsCount: campaigns.length,
+        templatesCount: Object.keys(templates).length,
+        timestamp: new Date().toISOString()
+      });
+      
       const interval = setInterval(async () => {
+          // Skip if import is in progress or circuit breaker is tripped
+          if (importInProgressRef.current || setImportersBlockedRef.current) {
+            console.log('[App] ⏸️ Campaign processing skipped - import in progress or circuit breaker active');
+            return;
+          }
+          
+          // Use ref to get latest importers without causing re-renders
+          const currentImporters = importersForCampaignRef.current;
           const { importers: updatedImporters, events: newEvents } = await CampaignService.processCampaigns(
-              importers, 
+              currentImporters, 
               campaigns, 
               templates, 
               (imp, msg, ch) => sendMessage(imp, msg, ch)
           );
           
-          if (updatedImporters) setImporters(updatedImporters);
+          // Only update if there are actual changes and circuit breaker is not tripped
+          if (setImportersBlockedRef.current) {
+            console.log('[App] ⏸️ Campaign update skipped - circuit breaker active');
+            return;
+          }
+          
+          if (updatedImporters && updatedImporters.length !== currentImporters.length) {
+            setImporters(updatedImporters);
+          } else if (updatedImporters) {
+            // Check if any importer actually changed
+            const hasChanges = updatedImporters.some((updated, idx) => {
+              const current = currentImporters[idx];
+              return !current || updated.id !== current.id || 
+                     JSON.stringify(updated) !== JSON.stringify(current);
+            });
+            if (hasChanges) {
+              setImporters(updatedImporters);
+            }
+          }
+          
           if (newEvents.length > 0) setCalendarEvents(prev => [...prev, ...newEvents]);
 
       }, 60000); // Check every minute
       return () => clearInterval(interval);
-  }, [importers, campaigns, templates]);
+  }, [campaigns, templates]); // Removed importers from dependencies
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -459,9 +654,17 @@ const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Auto-select first importer on desktop - only when list changes, not on every render
+  const prevImportersLengthRef = useRef(importers.length);
   useEffect(() => {
-    if (!isMobile && !selectedId && importers.length > 0) setSelectedId(importers[0].id);
-  }, [isMobile, importers, selectedId]);
+    // Only auto-select if importers list length changed (new items added) and we're on desktop
+    if (!isMobile && !selectedId && importers.length > 0 && importers.length !== prevImportersLengthRef.current) {
+      setSelectedId(importers[0].id);
+      prevImportersLengthRef.current = importers.length;
+    } else if (importers.length !== prevImportersLengthRef.current) {
+      prevImportersLengthRef.current = importers.length;
+    }
+  }, [isMobile, importers.length, selectedId]); // Only depend on length, not the array
 
   // Auto-response rate limiting (per conversation)
   const lastAutoResponseTime = useRef<Record<string, number>>({});
@@ -901,6 +1104,114 @@ const App: React.FC = () => {
     if (importer) await sendMessage(importer, text, channel);
   };
 
+  // Handle import leads callback - memoized to prevent infinite loops
+  // Note: importInProgressRef, importCallStackRef, importDepthRef declared above
+  
+  const handleImportLeads = useCallback((newItems: Importer[]) => {
+    // Prevent multiple simultaneous imports
+    if (importInProgressRef.current) {
+      console.warn('[App] ⚠️ Import already in progress, ignoring duplicate call');
+      console.trace('[App] Duplicate import call stack trace:');
+      return;
+    }
+    
+    // Check recursion depth
+    importDepthRef.current += 1;
+    if (importDepthRef.current > 3) {
+      console.error('[App] 🚨 RECURSIVE CALL DETECTED! Depth:', importDepthRef.current);
+      console.error('[App] Stopping import to prevent stack overflow');
+      importDepthRef.current = 0;
+      importCallStackRef.current = [];
+      return;
+    }
+    
+    // Add current call to stack
+    const callId = `import-${Date.now()}-${Math.random()}`;
+    importCallStackRef.current.push(callId);
+    if (importCallStackRef.current.length > 10) {
+      importCallStackRef.current.shift();
+    }
+    
+    if (!newItems || newItems.length === 0) {
+      console.warn('[App] No leads to import or invalid data');
+      importDepthRef.current = Math.max(0, importDepthRef.current - 1);
+      importCallStackRef.current = importCallStackRef.current.filter(id => id !== callId);
+      return;
+    }
+    
+    // Block saves during import
+    saveBlockedRef.current = true;
+    importInProgressRef.current = true;
+    
+    console.log('[App] 📥 Starting import:', {
+      count: newItems.length,
+      itemIds: newItems.map(i => i.id).slice(0, 5),
+      timestamp: new Date().toISOString(),
+      callStackDepth: importCallStackRef.current.length,
+      recursionDepth: importDepthRef.current
+    });
+    
+      // Use functional update to avoid dependency on importers
+      // Use startTransition to batch the update
+      try {
+        startTransition(() => {
+        setImporters(prev => {
+          console.log('[App] setImporters called in handleImportLeads', {
+            previousCount: prev.length,
+            newItemsCount: newItems.length,
+            recursionDepth: importDepthRef.current
+          });
+          
+          // Check if items already exist to prevent duplicates
+          const existingIds = new Set(prev.map(i => i.id));
+          const newItemsToAdd = newItems.filter(item => !existingIds.has(item.id));
+          
+          if (newItemsToAdd.length === 0) {
+            console.warn('[App] All leads already exist, skipping import');
+            // Reset flags immediately if no items to add
+            setTimeout(() => {
+              importInProgressRef.current = false;
+              importDepthRef.current = 0;
+              importCallStackRef.current = [];
+              saveBlockedRef.current = false;
+            }, 0);
+            return prev;
+          }
+          
+          const updated = [...prev, ...newItemsToAdd];
+          console.log('[App] ✅ Import complete:', {
+            previousCount: prev.length,
+            addedCount: newItemsToAdd.length,
+            totalCount: updated.length
+          });
+          
+          // Reset flags after a delay to allow state to settle
+          setTimeout(() => {
+            importInProgressRef.current = false;
+            importDepthRef.current = 0;
+            importCallStackRef.current = [];
+            saveBlockedRef.current = false;
+            console.log('[App] Import flags reset');
+          }, 1000); // Longer delay to ensure state is settled
+          
+          return updated;
+        });
+      });
+    } catch (error: any) {
+      console.error('[App] ❌ Error in handleImportLeads:', error);
+      console.error('[App] Error stack:', error?.stack);
+      importInProgressRef.current = false;
+      importDepthRef.current = 0;
+      importCallStackRef.current = [];
+      saveBlockedRef.current = false;
+    }
+  }, []);
+  
+  // Memoize close handler to prevent re-renders
+  const handleCloseImportModal = useCallback(() => {
+    setShowImportModal(false);
+  }, []);
+
   const renderMainView = () => {
       if (activeView === 'campaigns') return <CampaignManager campaigns={campaigns} onChange={setCampaigns} importers={importers} />;
       if (activeView === 'calendar') return <CalendarView events={calendarEvents} onEventClick={(id) => alert(`Event ${id}`)} />;
@@ -1004,7 +1315,13 @@ const App: React.FC = () => {
   // 5. Main Application
   return (
     <div className="flex h-full w-full bg-slate-100 text-slate-900 relative overflow-hidden">
-        <BulkImportModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} onImport={(newItems) => setImporters(prev => [...prev, ...newItems])} />
+        <ErrorBoundary>
+          <BulkImportModal 
+            isOpen={showImportModal} 
+            onClose={handleCloseImportModal} 
+            onImport={handleImportLeads} 
+          />
+        </ErrorBoundary>
         <SettingsModal 
             isOpen={showSettingsModal} 
             onClose={() => setShowSettingsModal(false)} 
