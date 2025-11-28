@@ -140,12 +140,90 @@ const getRelevantProducts = async (context: string): Promise<Product[]> => {
     // Simple keyword matching - in production, could use AI to find relevant products
     const keywords = context.toLowerCase().split(/\s+/);
     return allProducts.filter(product => {
-      const searchText = `${product.name} ${product.category} ${product.shortDescription} ${product.tags.join(' ')}`.toLowerCase();
+      const searchText = `${product.name} ${product.category} ${product.shortDescription} ${product.fullDescription} ${product.tags.join(' ')}`.toLowerCase();
       return keywords.some(keyword => searchText.includes(keyword));
     }).slice(0, 5); // Limit to 5 most relevant
   } catch (error) {
     console.warn('[GeminiService] Failed to load products:', error);
     return [];
+  }
+};
+
+/**
+ * Builds comprehensive product context for AI analysis
+ */
+const buildProductContext = async (importer: Importer, products: Product[]): Promise<string> => {
+  try {
+    const { ProductRecommendationService } = await import('./productRecommendationService');
+    const { ProductPriceStrategy } = await import('./productPriceStrategy');
+    
+    // Get recommendations based on customer data
+    const recommendations = await ProductRecommendationService.getRecommendationsForCustomer(
+      importer.id,
+      { 
+        previousPurchases: typeof importer.productsImported === 'string' 
+          ? [importer.productsImported] 
+          : (Array.isArray(importer.productsImported) ? importer.productsImported : []),
+        customerCategory: importer.category,
+        location: importer.country,
+      }
+    );
+    
+    // Build comprehensive context for AI analysis
+    let context = `
+Customer Analysis Data:
+- Name: ${importer.name}
+- Contact: ${importer.contactDetail}
+- Business Category: ${importer.category || 'Not specified'}
+- What They Deal In: ${typeof importer.productsImported === 'string' ? importer.productsImported : (Array.isArray(importer.productsImported) ? importer.productsImported.join(', ') : 'Not specified')}
+- Previous Purchases: ${typeof importer.productsImported === 'string' ? importer.productsImported : (Array.isArray(importer.productsImported) ? importer.productsImported.join(', ') : 'None')}
+- Location: ${importer.country || 'Not specified'}
+- Company: ${importer.companyName || 'Not specified'}
+`;
+
+    if (importer.chatHistory && importer.chatHistory.length > 0) {
+      context += `- Recent Chat History: ${JSON.stringify(importer.chatHistory.slice(-5).map(m => ({ role: m.role, content: m.content.substring(0, 100) })))}\n`;
+    }
+
+    context += `
+Available Products:
+${products.map(p => {
+  const priceContext = p.referencePrice 
+    ? `${p.referencePriceCurrency || 'USD'} ${p.referencePrice}/${p.unit} (FOR YOUR REFERENCE ONLY - DO NOT QUOTE THIS PRICE)`
+    : 'Price on request';
+  
+  return `
+  - ${p.name} (${p.category}): ${p.shortDescription}
+    Full Description: ${p.fullDescription}
+    Unit: ${p.unit}
+    Reference Price Context: ${priceContext}
+    ${p.photos.length > 0 ? `Primary Photo: ${p.photos.find(ph => ph.isPrimary)?.url || p.photos[0].url}` : ''}
+    Tags: ${p.tags.join(', ')}
+    ${p.specifications ? `Specifications: ${JSON.stringify(p.specifications)}` : ''}
+  `;
+}).join('\n')}
+
+AI Recommendations for this customer:
+${recommendations.map(r => `- ${r.productName} (Reason: ${r.reason}, Confidence: ${r.confidence}%): ${r.context || ''}`).join('\n')}
+
+${ProductPriceStrategy.PRICE_STRATEGY_INSTRUCTIONS}
+
+AI Instructions:
+1. Analyze what this customer deals in based on their purchase history, business category, and products imported
+2. Generate a personalized message that matches their business needs and industry
+3. Reference relevant products based on what they deal in and their business type
+4. NEVER quote final prices - use reference prices only for context
+5. Always request quantity for quotation
+6. Use natural, conversational language appropriate for their business
+7. Include product photos when relevant
+8. Make the message feel custom-written and tailored to their specific business, not templated
+9. Show understanding of their industry and what they deal in
+`;
+
+    return context;
+  } catch (error) {
+    console.warn('[GeminiService] Failed to build product context:', error);
+    return '';
   }
 };
 
@@ -311,9 +389,9 @@ export const generateAgentReply = async (
 
   // Get relevant products for context
   const relevantProducts = await getRelevantProducts(importer.productsImported || '');
-  const productContext = relevantProducts.length > 0
-    ? `\nAvailable Products:\n${relevantProducts.map(p => `- ${p.name}: ${p.shortDescription}`).join('\n')}`
-    : '';
+  
+  // Build comprehensive product context with recommendations and price strategy
+  const productContext = await buildProductContext(importer, relevantProducts);
 
   // Include Channel in history for context awareness
   const conversation = history.map(m => `[${m.channel}] ${m.sender.toUpperCase()}: ${m.content}`).join('\n');

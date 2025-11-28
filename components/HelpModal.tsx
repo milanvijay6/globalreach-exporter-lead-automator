@@ -39,8 +39,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[95vh] sm:max-h-[85vh] overflow-hidden" style={{ width: '100%', maxWidth: 'min(90vw, 48rem)' }}>
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
           <div>
@@ -56,7 +56,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-4">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 min-h-0" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             
             <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg flex gap-3">
                 <Book className="w-5 h-5 text-indigo-600 mt-1" />

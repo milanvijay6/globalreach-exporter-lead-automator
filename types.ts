@@ -781,18 +781,39 @@ export interface CompanyDetails {
 }
 
 // Products Catalog
+export interface ProductPhoto {
+  id: string;
+  url: string; // Public URL for sharing
+  thumbnailUrl?: string; // Optimized thumbnail
+  fileName: string;
+  fileSize: number; // bytes
+  mimeType: string; // image/jpeg, image/png, image/webp
+  width?: number;
+  height?: number;
+  isPrimary: boolean; // Main product image
+  uploadedAt: number;
+}
+
 export interface Product {
   id: string;
-  name: string;
-  category: string;
-  shortDescription: string;
-  fullDescription?: string;
-  tags: string[]; // Keywords for AI search
+  name: string; // Required, searchable
+  category: string; // FMCG, Grocery, Electronics, etc.
+  shortDescription: string; // Brief description
+  fullDescription: string; // Detailed info for AI to use in messaging
+  unit: string; // kg, piece, box, liter, MT, etc.
+  referencePrice?: number; // Indicative price for AI reference (NOT final quote)
+  referencePriceCurrency?: string; // USD, INR, EUR, etc.
+  photos: ProductPhoto[]; // Multiple images support
+  tags: string[]; // Keywords for AI search and recommendations
   specifications?: Record<string, string>; // e.g., { weight: "500g", packaging: "Box" }
-  imageUrl?: string;
-  active: boolean; // Can disable without deleting
+  relatedProducts?: string[]; // Product IDs frequently bought together
+  status: 'active' | 'inactive'; // Replaces 'active' boolean
+  aiUsageCount?: number; // Track how often AI recommends this product
+  lastRecommendedAt?: number; // Last time AI recommended this product
   createdAt: number;
   updatedAt: number;
+  createdBy?: string; // User ID who created
+  updatedBy?: string; // User ID who last updated
 }
 
 // Product Pricing
@@ -801,13 +822,19 @@ export interface ProductPrice {
   productId: string; // Link to Product
   productName: string; // Denormalized for quick access
   unitOfMeasure: string; // kg, piece, box, packet, MT, etc.
-  basePrice: number;
-  wholesalePrice?: number;
-  retailPrice?: number;
-  specialCustomerPrice?: number;
+  referencePrice: number; // Renamed from basePrice - indicates this is for AI reference only
   currency: string; // USD, EUR, INR, etc.
   effectiveDate: number; // When price became effective
   lastUpdated: number;
   notes?: string;
   active: boolean;
+}
+
+// Product Recommendations
+export interface ProductRecommendation {
+  productId: string;
+  productName: string;
+  reason: 'previous_purchase' | 'category_match' | 'location_match' | 'seasonal' | 'related_product' | 'ai_suggested';
+  confidence: number; // 0-100
+  context?: string; // Additional context for recommendation
 }

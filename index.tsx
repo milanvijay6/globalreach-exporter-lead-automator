@@ -93,15 +93,20 @@ if (typeof window !== 'undefined') {
   };
 }
 
+// Ensure root element always has content to prevent white screen
+if (!rootElement.innerHTML.trim()) {
+  rootElement.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #f1f5f9;"><div style="text-align: center;"><div style="width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div><p style="color: #64748b; font-family: Inter, sans-serif;">Loading GlobalReach...</p></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>';
+}
+
 try {
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
+  const root = ReactDOM.createRoot(rootElement);
+  root.render(
+    <React.StrictMode>
       <ErrorBoundary>
-    <App />
+        <App />
       </ErrorBoundary>
-  </React.StrictMode>
-);
+    </React.StrictMode>
+  );
 } catch (error) {
   console.error('Failed to render React app:', error);
   const errorDetails = error instanceof Error ? {
@@ -111,16 +116,18 @@ root.render(
   } : { message: String(error) };
   
   rootElement.innerHTML = `
-    <div style="padding: 20px; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
-      <h1 style="color: #dc2626;">Application Error</h1>
-      <p>Failed to load the application. Please check the console for details.</p>
-      <div style="background: #f5f5f5; padding: 15px; border-radius: 4px; margin-top: 15px;">
-        <h3 style="margin-top: 0;">Error Details:</h3>
-        <pre style="background: #fff; padding: 10px; border-radius: 4px; overflow: auto; font-size: 12px;">${JSON.stringify(errorDetails, null, 2)}</pre>
+    <div style="padding: 20px; font-family: Inter, Arial, sans-serif; max-width: 800px; margin: 0 auto; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f1f5f9;">
+      <div style="background: white; padding: 32px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%;">
+        <h1 style="color: #dc2626; margin: 0 0 8px 0; font-size: 24px; font-weight: 600;">Application Error</h1>
+        <p style="color: #64748b; margin: 0 0 24px 0;">Failed to load the application. Please check the console for details.</p>
+        <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #e2e8f0;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #334155;">Error Details:</h3>
+          <pre style="background: #fff; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px; margin: 0; color: #1e293b; border: 1px solid #e2e8f0;">${JSON.stringify(errorDetails, null, 2)}</pre>
+        </div>
+        <button onclick="window.location.reload()" style="padding: 12px 24px; background: #4f46e5; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 14px; width: 100%;">
+          Reload Application
+        </button>
       </div>
-      <button onclick="window.location.reload()" style="margin-top: 15px; padding: 10px 20px; background: #4f46e5; color: white; border: none; border-radius: 4px; cursor: pointer;">
-        Reload Application
-      </button>
     </div>
   `;
 }

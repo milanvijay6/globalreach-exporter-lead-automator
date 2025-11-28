@@ -9,6 +9,27 @@ import { ProductCatalogService } from './productCatalogService';
  */
 export const ProductPricingService = {
   /**
+   * Migrates old price format to new format
+   */
+  migratePrice: (oldPrice: any): ProductPrice => {
+    // If already in new format, return as-is
+    if (oldPrice.referencePrice !== undefined) {
+      return oldPrice as ProductPrice;
+    }
+
+    // Migrate from old format (basePrice -> referencePrice)
+    return {
+      ...oldPrice,
+      referencePrice: oldPrice.basePrice || oldPrice.referencePrice || 0,
+      // Remove old fields
+      basePrice: undefined,
+      wholesalePrice: undefined,
+      retailPrice: undefined,
+      specialCustomerPrice: undefined,
+    } as ProductPrice;
+  },
+
+  /**
    * Gets all prices from storage
    */
   getPrices: async (): Promise<ProductPrice[]> => {
@@ -16,7 +37,10 @@ export const ProductPricingService = {
       const data = await PlatformService.getAppConfig('product_prices', null);
       if (!data) return [];
       const prices = typeof data === 'string' ? JSON.parse(data) : data;
-      return Array.isArray(prices) ? prices : [];
+      const priceArray = Array.isArray(prices) ? prices : [];
+      
+      // Migrate old prices to new format
+      return priceArray.map(p => ProductPricingService.migratePrice(p));
     } catch (error) {
       Logger.error('[ProductPricingService] Failed to load prices:', error);
       return [];
@@ -138,26 +162,13 @@ export const ProductPricingService = {
   },
 
   /**
-   * Gets price for a product with optional tier
+   * Gets reference price for a product (for AI context only, not for quoting)
    */
-  getPriceForProduct: async (
-    productId: string,
-    tier?: 'base' | 'wholesale' | 'retail' | 'special'
-  ): Promise<number | null> => {
+  getPriceForProduct: async (productId: string): Promise<number | null> => {
     try {
       const price = await ProductPricingService.getPriceByProductId(productId);
       if (!price || !price.active) return null;
-
-      switch (tier) {
-        case 'wholesale':
-          return price.wholesalePrice || price.basePrice;
-        case 'retail':
-          return price.retailPrice || price.basePrice;
-        case 'special':
-          return price.specialCustomerPrice || price.basePrice;
-        default:
-          return price.basePrice;
-      }
+      return price.referencePrice || null;
     } catch (error) {
       Logger.error('[ProductPricingService] Failed to get price for product:', error);
       return null;
@@ -208,10 +219,7 @@ export const ProductPricingService = {
             productId: product.id,
             productName: product.name,
             unitOfMeasure: priceData.unitOfMeasure || 'piece',
-            basePrice: priceData.basePrice || 0,
-            wholesalePrice: priceData.wholesalePrice,
-            retailPrice: priceData.retailPrice,
-            specialCustomerPrice: priceData.specialCustomerPrice,
+            referencePrice: priceData.referencePrice || priceData.basePrice || 0, // Support migration
             currency: priceData.currency || 'USD',
             effectiveDate: priceData.effectiveDate || now,
             lastUpdated: now,
@@ -258,17 +266,14 @@ export const ProductPricingService = {
       } else {
         // CSV format
         if (prices.length === 0) {
-          return 'Product Name,Product ID,Unit of Measure,Base Price,Wholesale Price,Retail Price,Special Price,Currency,Effective Date,Active,Notes\n';
+          return 'Product Name,Product ID,Unit of Measure,Reference Price,Currency,Effective Date,Active,Notes\n';
         }
 
         const headers = [
           'Product Name',
           'Product ID',
           'Unit of Measure',
-          'Base Price',
-          'Wholesale Price',
-          'Retail Price',
-          'Special Price',
+          'Reference Price',
           'Currency',
           'Effective Date',
           'Active',
@@ -278,10 +283,7 @@ export const ProductPricingService = {
           p.productName,
           p.productId,
           p.unitOfMeasure,
-          p.basePrice,
-          p.wholesalePrice || '',
-          p.retailPrice || '',
-          p.specialCustomerPrice || '',
+          p.referencePrice,
           p.currency,
           new Date(p.effectiveDate).toISOString(),
           p.active ? 'Yes' : 'No',

@@ -16,8 +16,8 @@ const ReportConfigModal: React.FC<ReportConfigModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[95vh] sm:max-h-[90vh] overflow-hidden" style={{ width: '100%', maxWidth: 'min(90vw, 28rem)' }}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <FileBarChart className="w-5 h-5 text-indigo-600" />
@@ -28,7 +28,7 @@ const ReportConfigModal: React.FC<ReportConfigModalProps> = ({ isOpen, onClose, 
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto flex-1 min-h-0" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           
           {/* Time Frame */}
           <div>

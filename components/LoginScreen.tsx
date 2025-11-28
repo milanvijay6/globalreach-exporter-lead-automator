@@ -62,7 +62,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   }
 
   return (
-    <div className="min-h-full flex flex-col justify-center items-center bg-slate-100 px-4">
+    <div className="h-screen w-screen flex flex-col justify-center items-center bg-slate-100 px-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
       <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-slate-200">
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-600/20">

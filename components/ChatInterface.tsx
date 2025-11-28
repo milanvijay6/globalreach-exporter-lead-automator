@@ -191,7 +191,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const isAuto = importer.channelSelectionMode === 'auto' || !importer.channelSelectionMode;
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 md:rounded-lg md:border border-slate-200 overflow-hidden w-full">
+    <div className="flex flex-col h-full bg-slate-50 md:rounded-lg md:border border-slate-200 overflow-hidden w-full" style={{ minHeight: 0, minWidth: 0 }}>
       {/* Header */}
       <div className="bg-white border-b border-slate-200 shadow-sm z-10">
           <div className="p-3 md:p-4 flex justify-between items-start">
@@ -268,7 +268,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
           
           {/* Tabs */}
-          <div className="flex px-4 gap-6 text-sm font-medium text-slate-500 overflow-x-auto scrollbar-hide bg-slate-50/50 border-t border-slate-100 md:border-none">
+          <div className="flex px-4 gap-6 text-sm font-medium text-slate-500 overflow-x-auto scrollbar-hide bg-slate-50/50 border-t border-slate-100 md:border-none" style={{ WebkitOverflowScrolling: 'touch' }}>
               <button 
                 onClick={() => setActiveTab('chat')}
                 className={`pb-2 pt-2 border-b-2 transition-all whitespace-nowrap ${activeTab === 'chat' ? 'text-indigo-600 border-indigo-600' : 'border-transparent hover:text-slate-700'}`}>
@@ -346,7 +346,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {/* Chat Area */}
             <div 
                 onClick={() => setShowChannelSettings(false)}
-                className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')]"
+                className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')] min-h-0"
+                style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
             >
                 {importer.chatHistory.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-4">
@@ -435,7 +436,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                      </div>
                 ) : (
                     <>
-                        <div className="flex gap-2 mb-2 overflow-x-auto pb-2 scrollbar-hide">
+                        <div className="flex gap-2 mb-2 overflow-x-auto pb-2 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
                             <button 
                                 onClick={onSimulateResponse}
                                 disabled={isProcessing || isImporterTyping || importer.chatHistory.length === 0}

@@ -18,6 +18,13 @@ let typingListener: TypingHandler | null = null;
 // Cache for platform connections to avoid repeated async calls
 let cachedConnections: PlatformConnection[] | null = null;
 
+// Fallback tracking
+let fallbackMessageCount = 0;
+let lastFallbackTime = 0;
+let lastFallbackActivation = 0;
+const FALLBACK_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+const MAX_FALLBACK_MESSAGES = 10;
+
 const getWhatsAppConnection = async (): Promise<PlatformConnection | null> => {
   if (!cachedConnections) {
     cachedConnections = await loadPlatformConnections();
@@ -43,7 +50,7 @@ const getWeChatConnection = async (): Promise<PlatformConnection | null> => {
 export const MessagingService = {
   /**
    * Sends a message through the appropriate provider API.
-   * Uses real WhatsApp Cloud API when credentials are available, otherwise simulates.
+   * Uses real WhatsApp Cloud API when credentials are available, otherwise falls back to WhatsApp Web or simulates.
    */
   sendMessage: async (
     messageId: string, 
@@ -71,16 +78,33 @@ export const MessagingService = {
           content
         );
         
-        if (!result.success) {
-          // Update status to FAILED on error
-          if (statusListener) statusListener(messageId, MessageStatus.FAILED);
-          return result;
+        if (result.success) {
+          // Reset fallback count on successful Cloud API call
+          fallbackMessageCount = 0;
+          return { success: true };
         }
         
-        // Status updates (DELIVERED, READ) will come via webhook
-        // We'll update them when webhook statuses are received
-        return { success: true };
+        // Check if we should fallback to WhatsApp Web
+        const shouldFallback = shouldFallbackToWeb(result.error);
+        
+        if (shouldFallback && canUseFallback()) {
+          console.log('[MessagingService] Falling back to WhatsApp Web');
+          return await fallbackToWhatsAppWeb(messageId, to, content);
+        }
+        
+        // Update status to FAILED on error
+        if (statusListener) statusListener(messageId, MessageStatus.FAILED);
+        return result;
       } else {
+        // No Cloud API connection, check if WhatsApp Web is enabled
+        const { PlatformService } = await import('./platformService');
+        const config = await PlatformService.getAppConfig('whatsapp', { method: 'cloud_api' });
+        
+        if (config?.method === 'web' || config?.web?.enabled === true) {
+          console.log('[MessagingService] Using WhatsApp Web (no Cloud API connection)');
+          return await fallbackToWhatsAppWeb(messageId, to, content);
+        }
+        
         console.warn('[MessagingService] WhatsApp not connected, falling back to simulation');
         // Fall through to simulation
       }
@@ -365,5 +389,124 @@ export const MessagingService = {
       // Use FromUserName (OpenID) as contact identifier
       incomingListener(null, message.FromUserName, content, Channel.WECHAT);
     }
-  }
+  },
+
+  /**
+   * Reset fallback tracking (for testing)
+   */
+  resetFallbackTracking: (): void => {
+    fallbackMessageCount = 0;
+    lastFallbackTime = 0;
+    lastFallbackActivation = 0;
+  },
 };
+
+/**
+ * Check if error should trigger fallback to WhatsApp Web
+ */
+function shouldFallbackToWeb(error?: string): boolean {
+  if (!error) return false;
+  
+  const errorLower = error.toLowerCase();
+  
+  // Only fallback on specific errors
+  const fallbackErrors = [
+    '401', // Unauthorized
+    '404', // Not found
+    '503', // Service unavailable
+    'network',
+    'timeout',
+    'connection',
+  ];
+  
+  // Never fallback on rate limit errors (429)
+  if (errorLower.includes('429') || errorLower.includes('rate limit')) {
+    return false;
+  }
+  
+  return fallbackErrors.some(err => errorLower.includes(err));
+}
+
+/**
+ * Check if fallback can be used (cooldown and message limits)
+ */
+function canUseFallback(): boolean {
+  const now = Date.now();
+  
+  // Check cooldown
+  if (now - lastFallbackActivation < FALLBACK_COOLDOWN_MS) {
+    return false;
+  }
+  
+  // Check message limit
+  if (fallbackMessageCount >= MAX_FALLBACK_MESSAGES) {
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Fallback to WhatsApp Web
+ */
+async function fallbackToWhatsAppWeb(
+  messageId: string,
+  to: string,
+  content: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Check if WhatsApp Web service is available
+    const { WhatsAppWebService } = await import('./whatsappWebService');
+    
+    // Check rate limiter
+    const { WhatsAppWebRateLimiter } = await import('./whatsappWebRateLimiter');
+    const rateLimiter = WhatsAppWebRateLimiter.getInstance();
+    const rateCheck = await rateLimiter.canSend(to);
+    
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `WhatsApp Web rate limit: ${rateCheck.reason}`,
+      };
+    }
+    
+    // Check content uniqueness
+    const { WhatsAppWebContentChecker } = await import('./whatsappWebContentChecker');
+    const contentChecker = WhatsAppWebContentChecker.getInstance();
+    const contentCheck = contentChecker.checkContent(content);
+    
+    if (!contentCheck.valid) {
+      return {
+        success: false,
+        error: `Content check failed: ${contentCheck.reasons.join(', ')}`,
+      };
+    }
+    
+    // Send via WhatsApp Web
+    const result = await WhatsAppWebService.sendMessage(to, content);
+    
+    if (result.success) {
+      // Record in rate limiter
+      await rateLimiter.recordSend(to);
+      
+      // Record in content checker
+      contentChecker.recordMessage(content);
+      
+      // Update fallback tracking
+      fallbackMessageCount++;
+      lastFallbackTime = Date.now();
+      lastFallbackActivation = Date.now();
+      
+      // Notify status
+      if (statusListener) statusListener(messageId, MessageStatus.SENT);
+    }
+    
+    return result;
+  } catch (error: any) {
+    console.error('[MessagingService] WhatsApp Web fallback failed:', error);
+    return {
+      success: false,
+      error: error.message || 'WhatsApp Web fallback failed',
+    };
+  }
+}

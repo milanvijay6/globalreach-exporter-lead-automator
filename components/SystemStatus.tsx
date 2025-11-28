@@ -60,31 +60,24 @@ const SystemStatus: React.FC<SystemStatusProps> = ({ serverPort = 4000, httpsPor
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <Server className="w-5 h-5" />
-          System Status
-        </h3>
-
-        <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
           {/* Health Status */}
           {health && (
-            <div className={`p-4 rounded-lg border ${
+            <div className={`p-3 rounded-lg border ${
               health.status === 'healthy' ? 'bg-green-50 border-green-200' :
               health.status === 'warning' ? 'bg-yellow-50 border-yellow-200' :
               'bg-red-50 border-red-200'
             }`}>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-1">
                 {health.status === 'healthy' ? (
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <CheckCircle className="w-4 h-4 text-green-600" />
                 ) : (
-                  <AlertCircle className="w-5 h-5 text-yellow-600" />
+                  <AlertCircle className="w-4 h-4 text-yellow-600" />
                 )}
-                <span className="font-semibold">Status: {health.status.toUpperCase()}</span>
+                <span className="text-sm font-semibold">Status: {health.status.toUpperCase()}</span>
               </div>
               {health.issues.length > 0 && (
-                <ul className="text-sm text-slate-700 list-disc list-inside mt-2">
+                <ul className="text-xs text-slate-700 list-disc list-inside mt-1">
                   {health.issues.map((issue: string, i: number) => (
                     <li key={i}>{issue}</li>
                   ))}
@@ -94,25 +87,25 @@ const SystemStatus: React.FC<SystemStatusProps> = ({ serverPort = 4000, httpsPor
           )}
 
           {/* Uptime */}
-          <div className="p-4 bg-slate-50 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
+          <div className="p-3 bg-slate-50 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
               <Clock className="w-4 h-4 text-slate-600" />
               <span className="text-sm font-medium text-slate-700">Uptime</span>
             </div>
-            <div className="text-2xl font-bold text-slate-800">{formatUptime(uptime)}</div>
+            <div className="text-xl font-bold text-slate-800">{formatUptime(uptime)}</div>
           </div>
 
           {/* Resource Usage */}
           {metrics && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <div className="text-sm font-medium text-slate-700 mb-1">CPU</div>
-                <div className="text-xl font-bold text-slate-800">{metrics.cpu.usage.toFixed(1)}%</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <div className="text-xs font-medium text-slate-700 mb-1">CPU</div>
+                <div className="text-lg font-bold text-slate-800">{metrics.cpu.usage.toFixed(1)}%</div>
                 <div className="text-xs text-slate-500">{metrics.cpu.cores} cores</div>
               </div>
-              <div className="p-4 bg-slate-50 rounded-lg">
-                <div className="text-sm font-medium text-slate-700 mb-1">Memory</div>
-                <div className="text-xl font-bold text-slate-800">{metrics.memory.usage.toFixed(1)}%</div>
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <div className="text-xs font-medium text-slate-700 mb-1">Memory</div>
+                <div className="text-lg font-bold text-slate-800">{metrics.memory.usage.toFixed(1)}%</div>
                 <div className="text-xs text-slate-500">
                   {Math.round(metrics.memory.used / 1024)}GB / {Math.round(metrics.memory.total / 1024)}GB
                 </div>
@@ -122,11 +115,11 @@ const SystemStatus: React.FC<SystemStatusProps> = ({ serverPort = 4000, httpsPor
 
           {/* Accessible URLs */}
           {urls.length > 0 && (
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <div className="text-sm font-medium text-slate-700 mb-2">Accessible URLs</div>
-              <div className="space-y-1">
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <div className="text-xs font-medium text-slate-700 mb-2">Accessible URLs</div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
                 {urls.map((url, i) => (
-                  <div key={i} className="text-sm text-slate-600 font-mono">
+                  <div key={i} className="text-xs text-slate-600 font-mono break-all">
                     <a href={url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">
                       {url}
                     </a>
@@ -138,19 +131,17 @@ const SystemStatus: React.FC<SystemStatusProps> = ({ serverPort = 4000, httpsPor
 
           {/* Network Interfaces */}
           {interfaces.length > 0 && (
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <div className="text-sm font-medium text-slate-700 mb-2">Network Interfaces</div>
-              <div className="space-y-1">
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <div className="text-xs font-medium text-slate-700 mb-2">Network Interfaces</div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
                 {interfaces.filter(i => i.family === 'IPv4' && !i.internal).map((iface, i) => (
-                  <div key={i} className="text-sm text-slate-600">
+                  <div key={i} className="text-xs text-slate-600">
                     <span className="font-medium">{iface.name}:</span> {iface.address}
                   </div>
                 ))}
               </div>
             </div>
           )}
-        </div>
-      </div>
     </div>
   );
 };

@@ -363,6 +363,202 @@ function startServer(startingPort) {
   });
 
   // Fallback for React Router (only in production mode)
+  // Product API Endpoints
+  // GET /api/products - List products with optional filters
+  appServer.get('/api/products', async (req, res) => {
+    try {
+      const { category, search, tags, status, limit = 50, offset = 0 } = req.query;
+      
+      // Forward request to renderer via IPC
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'get-products',
+          params: { category, search, tags, status, limit: parseInt(limit), offset: parseInt(offset) },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        // Wait for response (with timeout)
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, data, total: data.length, limit: parseInt(limit), offset: parseInt(offset) });
+            } else {
+              res.status(500).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error('[API] Error in GET /api/products:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // GET /api/products/:id - Get single product
+  appServer.get('/api/products/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'get-product',
+          params: { id },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, data });
+            } else {
+              res.status(404).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error('[API] Error in GET /api/products/:id:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // GET /api/products/recommended - Get product recommendations for customer
+  appServer.get('/api/products/recommended', async (req, res) => {
+    try {
+      const { customerId, context, limit = 10 } = req.query;
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'get-recommended-products',
+          params: { customerId, context, limit: parseInt(limit) },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, data });
+            } else {
+              res.status(500).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error('[API] Error in GET /api/products/recommended:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // GET /api/products/search - Search products
+  // Serve product photos
+  appServer.get('/api/product-photos/:productId/:fileName', (req, res) => {
+    try {
+      const { productId, fileName } = req.params;
+      const photosDir = path.join(app.getPath('userData'), 'product-photos', productId);
+      const filePath = path.join(photosDir, fileName);
+      
+      // Security: Check if file exists and is within photos directory
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).send('Photo not found');
+      }
+      
+      // Verify the file is actually in the photos directory (prevent directory traversal)
+      const resolvedPath = path.resolve(filePath);
+      const resolvedDir = path.resolve(photosDir);
+      if (!resolvedPath.startsWith(resolvedDir)) {
+        return res.status(403).send('Access denied');
+      }
+      
+      // Determine content type from file extension
+      const ext = path.extname(fileName).toLowerCase();
+      const mimeTypes = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+      };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      
+      // Set headers and send file
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+      res.sendFile(resolvedPath);
+    } catch (error) {
+      logger.error('[ProductPhoto] Serve photo error:', error);
+      res.status(500).send('Error serving photo');
+    }
+  });
+
+  appServer.get('/api/products/search', async (req, res) => {
+    try {
+      const { q, category, tags } = req.query;
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'search-products',
+          params: { q, category, tags: tags ? tags.split(',') : undefined },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, data });
+            } else {
+              res.status(500).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error('[API] Error in GET /api/products/search:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   appServer.get('*', (req, res) => {
     if (req.path.startsWith('/webhooks/')) return res.sendStatus(404);
     if (req.path.startsWith('/auth/')) return res.sendStatus(404);
@@ -844,6 +1040,7 @@ ipcMain.handle('reset-app', async () => {
 });
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('get-path', (event, name) => app.getPath(name));
 
 ipcMain.handle('reload-window', () => {
   if (mainWindow) {
@@ -899,6 +1096,103 @@ ipcMain.handle('restore-backup', async () => {
     return { success: true, data: decrypted };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+});
+
+// --- Product Photo Management IPC Handlers ---
+ipcMain.handle('product-photo-upload', async (event, { productId, photoId, fileData, fileName, mimeType }) => {
+  try {
+    const photosDir = path.join(app.getPath('userData'), 'product-photos', productId);
+    if (!fs.existsSync(photosDir)) {
+      fs.mkdirSync(photosDir, { recursive: true });
+    }
+
+    // Convert array back to Buffer
+    const buffer = Buffer.from(fileData);
+    
+    // Save original file
+    const filePath = path.join(photosDir, `${photoId}_${fileName}`);
+    fs.writeFileSync(filePath, buffer);
+
+    // Generate HTTP URLs (served through Express server)
+    // Use relative path that will be served by Express
+    const port = getConfig('serverPort', DEFAULT_PORT);
+    const url = `http://localhost:${port}/api/product-photos/${productId}/${photoId}_${fileName}`;
+    
+    // For now, use same URL for thumbnail (can be enhanced with image optimization later)
+    const thumbnailUrl = url;
+
+    // Get image dimensions if possible (basic check, can be enhanced)
+    let width, height;
+    if (mimeType.startsWith('image/')) {
+      // For now, we'll skip dimension detection (can add sharp or jimp later)
+      // This is a placeholder for future enhancement
+      width = undefined;
+      height = undefined;
+    }
+
+    logger.info(`[ProductPhoto] Uploaded photo ${photoId} for product ${productId}`);
+    
+    return {
+      success: true,
+      url,
+      thumbnailUrl,
+      width,
+      height,
+    };
+  } catch (error) {
+    logger.error('[ProductPhoto] Upload failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('product-photo-delete', async (event, { productId, photoId }) => {
+  try {
+    const photosDir = path.join(app.getPath('userData'), 'product-photos', productId);
+    if (!fs.existsSync(photosDir)) {
+      return { success: false, error: 'Photo directory not found' };
+    }
+
+    // Find and delete photo file
+    const files = fs.readdirSync(photosDir);
+    const photoFile = files.find(f => f.startsWith(photoId));
+    
+    if (photoFile) {
+      const filePath = path.join(photosDir, photoFile);
+      fs.unlinkSync(filePath);
+      logger.info(`[ProductPhoto] Deleted photo ${photoId} for product ${productId}`);
+      return { success: true };
+    } else {
+      return { success: false, error: 'Photo file not found' };
+    }
+  } catch (error) {
+    logger.error('[ProductPhoto] Delete failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('product-photo-get-url', async (event, { productId, photoId }) => {
+  try {
+    const photosDir = path.join(app.getPath('userData'), 'product-photos', productId);
+    if (!fs.existsSync(photosDir)) {
+      return { success: false, error: 'Photo directory not found' };
+    }
+
+    // Find photo file
+    const files = fs.readdirSync(photosDir);
+    const photoFile = files.find(f => f.startsWith(photoId));
+    
+    if (photoFile) {
+      // Generate HTTP URL (served through Express server)
+      const port = getConfig('serverPort', DEFAULT_PORT);
+      const url = `http://localhost:${port}/api/product-photos/${productId}/${photoFile}`;
+      return { success: true, url };
+    } else {
+      return { success: false, error: 'Photo file not found' };
+    }
+  } catch (error) {
+    logger.error('[ProductPhoto] Get URL failed:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -1237,5 +1531,573 @@ ipcMain.handle('oauth-revoke', async (event, { provider, token, config }) => {
   } catch (error) {
     logger.error('OAuth token revocation failed', error);
     return { success: false, error: error.message || 'Failed to revoke OAuth token' };
+  }
+});
+
+// --- WhatsApp Web IPC Handlers ---
+let whatsappWebClient = null;
+let whatsappWebQRCode = null;
+let whatsappWebPairingCode = null;
+let whatsappWebReady = false;
+let whatsappWebEventListeners = [];
+
+ipcMain.handle('whatsapp-web-init', async (event, config) => {
+  try {
+    logger.info('WhatsApp Web initialization requested');
+    
+    // Clear require cache to ensure fresh module load
+    const moduleName = 'whatsapp-web.js';
+    const modulePath = path.join(__dirname, '..', 'node_modules', moduleName);
+    
+    // Try to resolve the module path, but don't fail if it doesn't exist in cache
+    let resolvedPath;
+    try {
+      resolvedPath = require.resolve(moduleName);
+      // Clear cache for this module and its dependencies
+      if (require.cache[resolvedPath]) {
+        delete require.cache[resolvedPath];
+        logger.info('Cleared require cache for whatsapp-web.js');
+      }
+    } catch (resolveError) {
+      logger.warn('Could not resolve module path (will try direct require):', resolveError.message);
+      resolvedPath = null;
+    }
+    
+    // Dynamic import to avoid bundling issues
+    // whatsapp-web.js exports Client and LocalAuth directly
+    let Client, LocalAuth;
+    
+    try {
+      // Try to require the module with fresh cache
+      let whatsappModule;
+      try {
+        logger.info('Attempting to require whatsapp-web.js from:', resolvedPath);
+        whatsappModule = require(moduleName);
+        logger.info('Module required successfully');
+      } catch (requireErr) {
+        // If direct require fails, try with absolute path
+        logger.warn('Direct require failed, trying absolute path:', {
+          error: requireErr.message,
+          stack: requireErr.stack,
+          code: requireErr.code
+        });
+        try {
+          logger.info('Trying absolute path:', modulePath);
+          // Clear cache for absolute path too
+          if (require.cache[modulePath]) {
+            delete require.cache[modulePath];
+          }
+          whatsappModule = require(modulePath);
+          logger.info('Module loaded from absolute path');
+        } catch (absPathErr) {
+          logger.error('Both require methods failed:', {
+            directError: requireErr.message,
+            absPathError: absPathErr.message,
+            directStack: requireErr.stack,
+            absPathStack: absPathErr.stack
+          });
+          throw absPathErr;
+        }
+      }
+      
+      // Debug: Log what we got from the module
+      logger.info('WhatsApp module loaded:', {
+        hasClient: !!whatsappModule.Client,
+        hasLocalAuth: !!whatsappModule.LocalAuth,
+        clientType: typeof whatsappModule.Client,
+        localAuthType: typeof whatsappModule.LocalAuth,
+        keys: Object.keys(whatsappModule).slice(0, 10) // First 10 keys
+      });
+      
+      if (!whatsappModule.Client) {
+        throw new Error('Client not found in whatsapp-web.js module. Available exports: ' + Object.keys(whatsappModule).join(', '));
+      }
+      
+      Client = whatsappModule.Client;
+      LocalAuth = whatsappModule.LocalAuth;
+      
+      // Verify Client is a constructor
+      if (typeof Client !== 'function') {
+        throw new Error(`Client is not a constructor. Type: ${typeof Client}, Value: ${String(Client).substring(0, 100)}`);
+      }
+      
+      // Verify it can be instantiated (check if it's a class)
+      if (!Client.prototype) {
+        throw new Error('Client does not have a prototype - not a valid constructor');
+      }
+      
+      logger.info('Client and LocalAuth verified successfully', {
+        clientName: Client.name,
+        localAuthName: LocalAuth ? LocalAuth.name : 'undefined'
+      });
+    } catch (requireError) {
+      logger.error('Failed to load whatsapp-web.js module:', {
+        error: requireError.message,
+        stack: requireError.stack
+      });
+      throw new Error(`Failed to load WhatsApp Web module: ${requireError.message}`);
+    }
+    
+    // Verify LocalAuth is also a constructor
+    if (!LocalAuth || typeof LocalAuth !== 'function') {
+      throw new Error(`LocalAuth is not a constructor. Type: ${typeof LocalAuth}`);
+    }
+    
+    // Get session path
+    const sessionPath = config?.sessionPath || path.join(app.getPath('userData'), 'whatsapp-web-session');
+    
+    // Clean up existing client if any
+    if (whatsappWebClient) {
+      try {
+        await whatsappWebClient.destroy();
+      } catch (err) {
+        logger.warn('Failed to destroy existing WhatsApp Web client', err);
+      }
+    }
+    
+    // Create LocalAuth instance
+    let authStrategy;
+    try {
+      authStrategy = new LocalAuth({
+        dataPath: sessionPath,
+      });
+      logger.info('LocalAuth instance created successfully');
+    } catch (authError) {
+      logger.error('Failed to create LocalAuth instance:', authError);
+      throw new Error(`Failed to create LocalAuth: ${authError.message}`);
+    }
+    
+    // Create Client instance
+    try {
+      // Final verification before instantiation
+      if (typeof Client !== 'function') {
+        throw new Error(`Client is not a function before instantiation. Type: ${typeof Client}, Value: ${String(Client)}`);
+      }
+      
+      if (!Client.prototype) {
+        throw new Error('Client does not have a prototype before instantiation');
+      }
+      
+      logger.info('Creating Client instance...', {
+        clientType: typeof Client,
+        clientName: Client.name || 'unnamed',
+        hasPrototype: !!Client.prototype,
+        isConstructor: typeof Client === 'function' && Client.prototype && Client.prototype.constructor === Client
+      });
+      
+      // Get user data directory for browser storage
+      const browserUserDataDir = path.join(app.getPath('userData'), 'whatsapp-web-browser');
+      
+      // Try to instantiate
+      const clientOptions = {
+        authStrategy: authStrategy,
+        puppeteer: {
+          headless: true,
+          userDataDir: browserUserDataDir, // Isolated browser profile for storage
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--enable-features=NetworkService',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-web-security',
+            '--allow-running-insecure-content',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--enable-local-storage',
+            '--enable-indexed-db',
+          ],
+          // Ensure IndexedDB and localStorage work properly
+          ignoreDefaultArgs: ['--disable-extensions'],
+        },
+      };
+      
+      // Add phone number pairing if provided
+      if (config?.phoneNumber) {
+        // Format phone number: remove all non-digits
+        const phoneNumber = config.phoneNumber.replace(/\D/g, '');
+        if (phoneNumber.length >= 10) {
+          clientOptions.pairWithPhoneNumber = {
+            phoneNumber: phoneNumber,
+            showNotification: config.showNotification !== false,
+            intervalMs: config.intervalMs || 180000, // 3 minutes default
+          };
+          logger.info('Phone number pairing enabled', { phoneNumber: phoneNumber.substring(0, 3) + '***' });
+        }
+      }
+      
+      logger.info('Calling new Client() with options:', JSON.stringify(clientOptions, null, 2).substring(0, 500));
+      
+      whatsappWebClient = new Client(clientOptions);
+      
+      logger.info('Client instance created successfully', {
+        clientType: typeof whatsappWebClient,
+        hasInitialize: typeof whatsappWebClient.initialize === 'function'
+      });
+    } catch (clientError) {
+      logger.error('Failed to create Client instance:', {
+        error: clientError.message,
+        errorName: clientError.name,
+        stack: clientError.stack,
+        clientType: typeof Client,
+        clientName: Client ? Client.name : 'undefined',
+        clientConstructor: Client ? String(Client).substring(0, 300) : 'undefined',
+        errorString: String(clientError)
+      });
+      
+      // Provide more helpful error message
+      let errorMessage = `Failed to create WhatsApp Client: ${clientError.message}`;
+      if (clientError.message && clientError.message.includes('is not a constructor')) {
+        errorMessage += `. This usually means the module didn't load correctly. Client type: ${typeof Client}, Client name: ${Client ? Client.name : 'undefined'}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    // Set up event handlers
+    whatsappWebClient.on('qr', (qr) => {
+      logger.info('WhatsApp Web QR code received');
+      whatsappWebQRCode = qr;
+      whatsappWebPairingCode = null;
+      whatsappWebReady = false;
+      
+      // Send QR code to all renderer processes
+      const allWindows = BrowserWindow.getAllWindows();
+      allWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('whatsapp-web-qr', qr);
+        }
+      });
+    });
+    
+    // Listen for pairing code (phone number authentication)
+    whatsappWebClient.on('pairing_code', (code) => {
+      logger.info('WhatsApp Web pairing code received');
+      whatsappWebPairingCode = code;
+      whatsappWebQRCode = null;
+      whatsappWebReady = false;
+      
+      // Send pairing code to all renderer processes
+      const allWindows = BrowserWindow.getAllWindows();
+      allWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('whatsapp-web-pairing-code', code);
+        }
+      });
+    });
+    
+    whatsappWebClient.on('ready', () => {
+      logger.info('WhatsApp Web client is ready - connection established');
+      whatsappWebReady = true;
+      whatsappWebQRCode = null;
+      whatsappWebPairingCode = null;
+      
+      // Notify all renderer processes
+      const allWindows = BrowserWindow.getAllWindows();
+      logger.info(`Sending whatsapp-web-ready event to ${allWindows.length} window(s)`);
+      allWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          try {
+            win.webContents.send('whatsapp-web-ready');
+            logger.info('Sent whatsapp-web-ready event to window');
+          } catch (err) {
+            logger.error('Failed to send whatsapp-web-ready event:', err);
+          }
+        }
+      });
+    });
+    
+    whatsappWebClient.on('auth_failure', (msg) => {
+      logger.error('WhatsApp Web authentication failed', msg);
+      whatsappWebReady = false;
+      
+      const allWindows = BrowserWindow.getAllWindows();
+      allWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('whatsapp-web-auth-failure', msg);
+        }
+      });
+    });
+    
+    whatsappWebClient.on('disconnected', (reason) => {
+      logger.warn('WhatsApp Web disconnected', reason);
+      whatsappWebReady = false;
+      
+      const allWindows = BrowserWindow.getAllWindows();
+      allWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('whatsapp-web-disconnected', reason);
+        }
+      });
+    });
+    
+    whatsappWebClient.on('message', async (msg) => {
+      // Forward incoming messages to renderer
+      const allWindows = BrowserWindow.getAllWindows();
+      allWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('whatsapp-web-message', {
+            from: msg.from,
+            body: msg.body,
+            timestamp: msg.timestamp,
+            id: msg.id,
+          });
+        }
+      });
+    });
+    
+    // Initialize client with error handling for storage issues
+    try {
+      await whatsappWebClient.initialize();
+    } catch (initError) {
+      // If initialization fails due to storage issues, try clearing the session
+      if (initError.message && (initError.message.includes('IndexedDB') || initError.message.includes('storage') || initError.message.includes('invariant'))) {
+        logger.warn('Storage error detected, attempting to clear session and retry');
+        try {
+          // Clear the browser user data directory
+          const browserUserDataDir = path.join(app.getPath('userData'), 'whatsapp-web-browser');
+          if (fs.existsSync(browserUserDataDir)) {
+            logger.info('Clearing browser user data directory:', browserUserDataDir);
+            fs.rmSync(browserUserDataDir, { recursive: true, force: true });
+          }
+          
+          // Also clear the session directory
+          const sessionPath = config?.sessionPath || path.join(app.getPath('userData'), 'whatsapp-web-session');
+          if (fs.existsSync(sessionPath)) {
+            logger.info('Clearing session directory:', sessionPath);
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+          }
+          
+          // Recreate client with fresh session
+          logger.info('Recreating client with fresh session');
+          throw new Error('Session cleared, please retry initialization');
+        } catch (clearError) {
+          logger.error('Failed to clear session:', clearError);
+          throw initError; // Re-throw original error
+        }
+      } else {
+        throw initError; // Re-throw if not a storage error
+      }
+    }
+    
+    return {
+      success: true,
+      qrCode: whatsappWebQRCode,
+      pairingCode: whatsappWebPairingCode,
+      ready: whatsappWebReady,
+    };
+  } catch (error) {
+    logger.error('WhatsApp Web initialization failed', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      error: error
+    });
+    
+    // Provide more detailed error message
+    let errorMessage = 'Failed to initialize WhatsApp Web';
+    if (error.message) {
+      errorMessage = error.message;
+    } else if (error.toString) {
+      errorMessage = error.toString();
+    }
+    
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+});
+
+ipcMain.handle('whatsapp-web-get-status', async () => {
+  const status = {
+    initialized: whatsappWebClient !== null,
+    ready: whatsappWebReady,
+    qrCode: whatsappWebQRCode,
+    pairingCode: whatsappWebPairingCode,
+  };
+  logger.info('WhatsApp Web status requested:', status);
+  return status;
+});
+
+// Request pairing code for phone number authentication
+ipcMain.handle('whatsapp-web-request-pairing-code', async (event, { phoneNumber, showNotification = true, intervalMs = 180000 }) => {
+  try {
+    if (!whatsappWebClient) {
+      return {
+        success: false,
+        error: 'WhatsApp Web client is not initialized. Please initialize first.',
+      };
+    }
+    
+    // Format phone number (remove all non-digits)
+    const formattedPhone = phoneNumber.replace(/\D/g, '');
+    
+    if (formattedPhone.length < 10) {
+      return {
+        success: false,
+        error: 'Invalid phone number format. Please include country code (e.g., 12025550108 for US)',
+      };
+    }
+    
+    logger.info('Requesting pairing code for phone number', { phoneNumber: formattedPhone.substring(0, 3) + '***' });
+    
+    // Check if client is initialized and has a page
+    // Wait for the page to be ready before requesting pairing code
+    let pupPage = whatsappWebClient.pupPage;
+    if (!pupPage) {
+      logger.warn('Client page not ready, waiting for initialization...');
+      // Wait a bit for the page to be ready (max 5 seconds)
+      let retries = 0;
+      while (!pupPage && retries < 10) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        pupPage = whatsappWebClient.pupPage;
+        retries++;
+      }
+      
+      if (!pupPage) {
+        return {
+          success: false,
+          error: 'WhatsApp Web client is not fully initialized. Please wait a moment and try again.',
+        };
+      }
+    }
+    
+    // Ensure onCodeReceivedEvent is exposed before requesting pairing code
+    // whatsapp-web.js needs this function to be available in the browser context
+    try {
+      const exists = await pupPage.evaluate(() => {
+        return typeof window.onCodeReceivedEvent === 'function';
+      }).catch(() => false);
+      
+      if (!exists) {
+        logger.info('Exposing onCodeReceivedEvent function for pairing code');
+        
+        // Expose the function to handle pairing code events
+        await pupPage.exposeFunction('onCodeReceivedEvent', async (code) => {
+          logger.info('Pairing code received via exposed function:', code);
+          whatsappWebPairingCode = code;
+          whatsappWebQRCode = null;
+          
+          // Emit the pairing_code event
+          whatsappWebClient.emit('pairing_code', code);
+          
+          // Send pairing code to all renderer processes
+          const allWindows = BrowserWindow.getAllWindows();
+          allWindows.forEach(win => {
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('whatsapp-web-pairing-code', code);
+            }
+          });
+          
+          return code;
+        });
+        logger.info('Successfully exposed onCodeReceivedEvent function');
+      } else {
+        logger.info('onCodeReceivedEvent function already exists');
+      }
+    } catch (exposeError) {
+      logger.warn('Failed to expose onCodeReceivedEvent, will try requestPairingCode anyway:', exposeError.message);
+    }
+    
+    // Request pairing code - the library will use the exposed onCodeReceivedEvent
+    const pairingCode = await whatsappWebClient.requestPairingCode(formattedPhone, showNotification, intervalMs);
+    
+    whatsappWebPairingCode = pairingCode;
+    whatsappWebQRCode = null;
+    
+    logger.info('Pairing code received:', pairingCode);
+    
+    // Emit the pairing_code event
+    whatsappWebClient.emit('pairing_code', pairingCode);
+    
+    // Send pairing code to all renderer processes
+    const allWindows = BrowserWindow.getAllWindows();
+    allWindows.forEach(win => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('whatsapp-web-pairing-code', pairingCode);
+      }
+    });
+    
+    return {
+      success: true,
+      pairingCode: pairingCode,
+    };
+  } catch (error) {
+    logger.error('Failed to request pairing code', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to request pairing code',
+    };
+  }
+});
+
+ipcMain.handle('whatsapp-web-send', async (event, { to, content }) => {
+  try {
+    if (!whatsappWebClient || !whatsappWebReady) {
+      return {
+        success: false,
+        error: 'WhatsApp Web is not ready. Please scan QR code first.',
+      };
+    }
+    
+    // Format phone number for WhatsApp Web
+    // WhatsApp Web format: number@c.us (number should be digits only, no + or spaces)
+    let phoneNumber = to.trim();
+    
+    // Remove @c.us if already present
+    phoneNumber = phoneNumber.replace('@c.us', '');
+    
+    // Remove all non-digits (spaces, +, -, etc.)
+    phoneNumber = phoneNumber.replace(/\D/g, '');
+    
+    // Validate phone number
+    if (phoneNumber.length < 10) {
+      return {
+        success: false,
+        error: 'Invalid phone number format. Please include country code (e.g., 1234567890 or +1234567890)',
+      };
+    }
+    
+    // Format as WhatsApp ID: number@c.us
+    const whatsappId = phoneNumber + '@c.us';
+    
+    logger.info('Sending WhatsApp Web message', { 
+      original: to, 
+      formatted: whatsappId, 
+      contentLength: content.length 
+    });
+    
+    await whatsappWebClient.sendMessage(whatsappId, content);
+    
+    return { success: true };
+  } catch (error) {
+    logger.error('WhatsApp Web send failed', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to send message',
+    };
+  }
+});
+
+ipcMain.handle('whatsapp-web-disconnect', async () => {
+  try {
+    if (whatsappWebClient) {
+      await whatsappWebClient.destroy();
+      whatsappWebClient = null;
+      whatsappWebReady = false;
+      whatsappWebQRCode = null;
+      logger.info('WhatsApp Web disconnected');
+    }
+    return { success: true };
+  } catch (error) {
+    logger.error('WhatsApp Web disconnect failed', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to disconnect',
+    };
   }
 });

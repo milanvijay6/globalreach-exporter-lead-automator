@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Zap, LayoutDashboard, Upload, Settings, LogOut, Menu, X, HelpCircle, Calendar, Megaphone, BarChart3, Shield } from 'lucide-react';
+import { Zap, LayoutDashboard, Upload, Settings, LogOut, Menu, X, HelpCircle, Calendar, Megaphone, BarChart3, Shield, Package } from 'lucide-react';
 import { User, UserRole, Language } from '../types';
 import { canEditSettings } from '../types';
 import { t } from '../services/i18n';
@@ -8,8 +8,8 @@ import { hasAdminAccess } from '../services/permissionService';
 
 interface NavigationProps {
   user: User;
-  activeView: 'dashboard' | 'campaigns' | 'calendar';
-  setActiveView: (view: 'dashboard' | 'campaigns' | 'calendar') => void;
+  activeView: 'dashboard' | 'campaigns' | 'calendar' | 'products';
+  setActiveView: (view: 'dashboard' | 'campaigns' | 'calendar' | 'products') => void;
   showAnalytics: boolean;
   setShowAnalytics: (v: boolean) => void;
   setShowImportModal: (v: boolean) => void;
@@ -39,86 +39,102 @@ const Navigation: React.FC<NavigationProps> = ({
 
   const NavItems = () => (
     <>
-      <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 mb-2 md:mb-6 shrink-0">
-        <Zap className="w-6 h-6 fill-current" />
+      {/* Top Section */}
+      <div className="flex flex-col items-center gap-2 shrink-0">
+        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+          <Zap className="w-6 h-6 fill-current" />
+        </div>
+        
+        {/* Main Views */}
+        <button 
+          onClick={() => { setActiveView('dashboard'); setIsMobileMenuOpen(false); }}
+          title={t('dashboard', language)}
+          className={`p-3 rounded-xl transition-all ${activeView === 'dashboard' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
+          <LayoutDashboard className="w-6 h-6" />
+        </button>
+
+        <button 
+          onClick={() => { setActiveView('campaigns'); setIsMobileMenuOpen(false); }}
+          title="Campaigns"
+          className={`p-3 rounded-xl transition-all ${activeView === 'campaigns' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
+          <Megaphone className="w-6 h-6" />
+        </button>
+
+        <button 
+          onClick={() => { setActiveView('calendar'); setIsMobileMenuOpen(false); }}
+          title="Calendar"
+          className={`p-3 rounded-xl transition-all ${activeView === 'calendar' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
+          <Calendar className="w-6 h-6" />
+        </button>
+
+        <button 
+          onClick={() => { setActiveView('products'); setIsMobileMenuOpen(false); }}
+          title="Products"
+          className={`p-3 rounded-xl transition-all ${activeView === 'products' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
+          <Package className="w-6 h-6" />
+        </button>
       </div>
-      
-      {/* Main Views */}
-      <button 
-        onClick={() => { setActiveView('dashboard'); setIsMobileMenuOpen(false); }}
-        title={t('dashboard', language)}
-        className={`p-3 rounded-xl transition-all ${activeView === 'dashboard' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
-        <LayoutDashboard className="w-6 h-6" />
-      </button>
 
-      <button 
-        onClick={() => { setActiveView('campaigns'); setIsMobileMenuOpen(false); }}
-        title="Campaigns"
-        className={`p-3 rounded-xl transition-all ${activeView === 'campaigns' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
-        <Megaphone className="w-6 h-6" />
-      </button>
+      {/* Divider */}
+      <div className="w-8 h-px bg-slate-800/50 shrink-0"></div>
 
-      <button 
-        onClick={() => { setActiveView('calendar'); setIsMobileMenuOpen(false); }}
-        title="Calendar"
-        className={`p-3 rounded-xl transition-all ${activeView === 'calendar' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
-        <Calendar className="w-6 h-6" />
-      </button>
-
-      <div className="w-8 h-px bg-slate-800/50 my-2"></div>
-
-      {/* Utilities */}
-      <button 
-        onClick={() => { setShowAnalytics(!showAnalytics); setIsMobileMenuOpen(false); }}
-        title="Toggle Analytics"
-        className={`p-3 rounded-xl transition-all ${showAnalytics ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
-        <BarChart3 className="w-6 h-6" />
-      </button>
-
-      {canEditSettings(user.role) && (
+      {/* Middle Section - Utilities */}
+      <div className="flex flex-col items-center gap-2 shrink-0">
         <button 
-          onClick={() => { setShowImportModal(true); setIsMobileMenuOpen(false); }} 
-          title={t('import', language)}
-          className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-          <Upload className="w-6 h-6" />
+          onClick={() => { setShowAnalytics(!showAnalytics); setIsMobileMenuOpen(false); }}
+          title="Toggle Analytics"
+          className={`p-3 rounded-xl transition-all ${showAnalytics ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
+          <BarChart3 className="w-6 h-6" />
         </button>
-      )}
 
-      {hasAdminAccess(user) && setShowAdminDashboard && (
+        {canEditSettings(user.role) && (
+          <button 
+            onClick={() => { setShowImportModal(true); setIsMobileMenuOpen(false); }} 
+            title={t('import', language)}
+            className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
+            <Upload className="w-6 h-6" />
+          </button>
+        )}
+
+        {hasAdminAccess(user) && setShowAdminDashboard && (
+          <button 
+            onClick={() => { setShowAdminDashboard(true); setIsMobileMenuOpen(false); }} 
+            title="Admin Monitoring"
+            className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
+            <Shield className="w-6 h-6" />
+          </button>
+        )}
+
+        {(user.role === 'Owner' || user.email?.toLowerCase() === 'milanvijay24@gmail.com') && setShowOwnerAdmin && (
+          <button 
+            onClick={() => { setShowOwnerAdmin(true); setIsMobileMenuOpen(false); }} 
+            title="Owner Admin"
+            className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
+            <Shield className="w-6 h-6" />
+          </button>
+        )}
+      </div>
+
+      {/* Bottom Section - Spacer pushes this to bottom */}
+      <div className="flex-1"></div>
+
+      {/* Bottom Actions */}
+      <div className="flex flex-col items-center gap-2 shrink-0">
         <button 
-          onClick={() => { setShowAdminDashboard(true); setIsMobileMenuOpen(false); }} 
-          title="Admin Monitoring"
+          onClick={() => { setShowSettingsModal(true); setIsMobileMenuOpen(false); }} 
+          title={t('settings', language)}
           className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-          <Shield className="w-6 h-6" />
+          <Settings className="w-6 h-6" />
         </button>
-      )}
 
-      {(user.role === 'Owner' || user.email?.toLowerCase() === 'milanvijay24@gmail.com') && setShowOwnerAdmin && (
         <button 
-          onClick={() => { setShowOwnerAdmin(true); setIsMobileMenuOpen(false); }} 
-          title="Owner Admin"
+          onClick={() => { setShowHelpModal(true); setIsMobileMenuOpen(false); }} 
+          title="Help & Documentation"
           className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-          <Shield className="w-6 h-6" />
+          <HelpCircle className="w-6 h-6" />
         </button>
-      )}
 
-      
-      <button 
-        onClick={() => { setShowSettingsModal(true); setIsMobileMenuOpen(false); }} 
-        title={t('settings', language)}
-        className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-        <Settings className="w-6 h-6" />
-      </button>
-
-      <button 
-        onClick={() => { setShowHelpModal(true); setIsMobileMenuOpen(false); }} 
-        title="Help & Documentation"
-        className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all mt-auto mb-2">
-        <HelpCircle className="w-6 h-6" />
-      </button>
-
-      <div className="">
-         <button 
+        <button 
           onClick={onLogout} 
           title={t('logout', language)}
           className="p-3 hover:bg-red-900/50 hover:text-red-400 rounded-xl transition-all text-slate-500">
@@ -131,7 +147,7 @@ const Navigation: React.FC<NavigationProps> = ({
   return (
     <>
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex w-20 bg-slate-900 flex-col items-center py-6 gap-6 text-slate-400 shrink-0 z-50 shadow-xl h-full">
+      <div className="hidden md:flex w-20 bg-slate-900 flex-col items-center py-4 gap-3 text-slate-400 shrink-0 z-50 shadow-xl overflow-y-auto" style={{ height: '100vh', minHeight: '100vh', maxHeight: '100vh' }}>
         <NavItems />
       </div>
 

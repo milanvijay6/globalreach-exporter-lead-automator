@@ -97,10 +97,10 @@ export const SourceCodeProtectionService = {
   /**
    * Checks if a path is protected
    */
-  isPathProtected: (path: string): boolean => {
-    const protectedPaths = SourceCodeProtectionService.getProtectedPaths();
-    return protectedPaths.some(protected => path.includes(protected));
-  },
+    isPathProtected: (path: string): boolean => {
+      const protectedPaths = SourceCodeProtectionService.getProtectedPaths();
+      return protectedPaths.some(protectedPath => path.includes(protectedPath));
+    },
 
   /**
    * Cleans up expired tokens

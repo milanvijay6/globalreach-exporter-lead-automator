@@ -5,6 +5,58 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Auto-resize and responsive utilities */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #f1f5f9;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: #f1f5f9;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-width: 100%;
+  min-height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Responsive container utilities */
+.responsive-container {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Smooth scrolling */
+.scroll-smooth {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Custom scrollbar for chat logs */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
@@ -12,5 +64,59 @@ body {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Auto-resize tables */
+table {
+  width: 100%;
+  table-layout: auto;
+}
+
+/* Responsive images */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Flex utilities for auto-resizing */
+.flex-auto-resize {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Modal responsive padding */
+@media (max-width: 640px) {
+  .modal-content {
+    padding: 1rem;
+  }
+}
+
+/* Auto-resize text areas */
+textarea {
+  resize: vertical;
+  min-height: 80px;
+  max-height: 300px;
+}
+
+/* Prevent horizontal overflow */
+.overflow-x-auto {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Viewport-based sizing */
+.vh-90 {
+  height: 90vh;
+}
+
+.vh-95 {
+  height: 95vh;
+}
+
+@media (max-width: 768px) {
+  .vh-90 {
+    height: 95vh;
+  }
 }
 

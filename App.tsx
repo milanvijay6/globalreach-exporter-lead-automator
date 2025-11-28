@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, startTransition } from
 import { Download, Upload, Play, Zap, LayoutDashboard, Lock, Loader2 } from 'lucide-react';
 import ImporterList from './components/ImporterList';
 import ChatInterface from './components/ChatInterface';
-import BulkImportModal from './components/BulkImportModal';
+import LeadImportWizard from './components/LeadImportWizard';
 import SettingsModal from './components/SettingsModal';
 import ReportConfigModal from './components/ReportConfigModal';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
@@ -19,8 +19,11 @@ import CampaignManager from './components/CampaignManager';
 import CalendarView from './components/CalendarView';
 import AdminMonitoringDashboard from './components/AdminMonitoringDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
+import SourceCodeViewer from './components/SourceCodeViewer';
+import ProductsCatalogPanel from './components/ProductsCatalogPanel';
 
-import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, canExportData, canSendMessages, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
+import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
+import { canExportData, canSendMessages } from './services/permissionService';
 import { generateIntroMessage, generateAgentReply, analyzeLeadQuality, simulateImporterResponse, generateSalesForecast } from './services/geminiService';
 import { simulateNetworkValidation, getOptimalChannel } from './services/validationService';
 import { logSecurityEvent, loadUserSession, saveUserSession, clearUserSession, loadPlatformConnections, savePlatformConnections, refreshPlatformTokens } from './services/securityService';
@@ -87,25 +90,70 @@ const App: React.FC = () => {
   const [connectedPlatforms, setConnectedPlatforms] = useState<PlatformConnection[]>([]);
   const [importers, setImportersRaw] = useState<Importer[]>([]);
   
-  // Circuit breaker refs - declare early
+  // Global update lock and queue system - declare early
   const setImportersCallCountRef = useRef(0);
   const lastSetImportersTimeRef = useRef(0);
   const setImportersBlockedRef = useRef(false);
+  const updateQueueRef = useRef<Array<Importer[] | ((prev: Importer[]) => Importer[])>>([]);
+  const isProcessingQueueRef = useRef(false);
+  const globalUpdateLockRef = useRef(false);
+  const setImportersDebounceRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Circuit breaker: Wrap setImporters to prevent recursive calls
+  // Process update queue
+  const processUpdateQueue = useCallback(() => {
+    // Don't process if already processing or circuit breaker is tripped
+    if (isProcessingQueueRef.current || setImportersBlockedRef.current) {
+      return;
+    }
+    
+    // If global lock is active, still allow processing but log it (for imports)
+    if (globalUpdateLockRef.current) {
+      console.log('[App] Processing queue despite global lock (may be import operation)');
+    }
+    
+    if (updateQueueRef.current.length === 0) {
+      return;
+    }
+    
+    isProcessingQueueRef.current = true;
+    
+    try {
+      // Get the last update in the queue (most recent)
+      const lastUpdate = updateQueueRef.current[updateQueueRef.current.length - 1];
+      updateQueueRef.current = []; // Clear queue
+      
+      // Apply the update directly to raw setter (bypass queue to avoid recursion)
+      setImportersRaw(lastUpdate);
+    } catch (error: any) {
+      console.error('[App] Error processing update queue:', error);
+      // Reset flags on error
+      isProcessingQueueRef.current = false;
+      setImportersBlockedRef.current = false;
+    } finally {
+      isProcessingQueueRef.current = false;
+    }
+  }, []);
+  
+  // Circuit breaker: Wrap setImporters to prevent recursive calls with queue system
   const setImporters = useCallback((updater: Importer[] | ((prev: Importer[]) => Importer[])) => {
-    // If circuit breaker is tripped, block all calls
+    // If circuit breaker is tripped, block all calls (check this first)
     if (setImportersBlockedRef.current) {
       console.warn('[App] ⚠️ setImporters blocked - circuit breaker tripped');
       return;
     }
     
+    // If global lock is active, still allow but queue it (for imports, we need to allow the import itself)
+    if (globalUpdateLockRef.current) {
+      console.log('[App] ⚠️ setImporters queued - global lock active (may be import operation)');
+      // Don't return - allow it to be queued
+    }
+    
     const now = Date.now();
     setImportersCallCountRef.current += 1;
     
-    // If called more than 5 times in 50ms, we're in a loop - trip circuit breaker
+    // If called more than 3 times in 50ms, we're in a loop - trip circuit breaker (balanced)
     if (now - lastSetImportersTimeRef.current < 50) {
-      if (setImportersCallCountRef.current > 5) {
+      if (setImportersCallCountRef.current > 3) {
         console.error('🚨 [App] CIRCUIT BREAKER TRIPPED: setImporters called too rapidly!', {
           count: setImportersCallCountRef.current,
           timeDiff: now - lastSetImportersTimeRef.current
@@ -113,12 +161,13 @@ const App: React.FC = () => {
         console.trace('Stack trace:');
         // Trip the circuit breaker
         setImportersBlockedRef.current = true;
-        // Reset after 2 seconds
+        updateQueueRef.current = []; // Clear queue
+        // Reset after 3 seconds (balanced cooldown)
         setTimeout(() => {
           setImportersBlockedRef.current = false;
           setImportersCallCountRef.current = 0;
-          console.log('[App] Circuit breaker reset');
-        }, 2000);
+          console.log('[App] Circuit breaker auto-reset');
+        }, 3000);
         return; // Block the call
       }
     } else {
@@ -127,13 +176,26 @@ const App: React.FC = () => {
     }
     
     lastSetImportersTimeRef.current = now;
-    setImportersRaw(updater);
-  }, []);
+    
+    // Add to queue instead of direct update
+    updateQueueRef.current.push(updater);
+    
+    // Clear any pending queue processing
+    if (setImportersDebounceRef.current) {
+      clearTimeout(setImportersDebounceRef.current);
+    }
+    
+    // Process queue after a short delay to batch updates
+    setImportersDebounceRef.current = setTimeout(() => {
+      processUpdateQueue();
+      setImportersDebounceRef.current = null;
+    }, 30); // Reduced debounce to 30ms for better responsiveness
+  }, [processUpdateQueue]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [importerTypingMap, setImporterTypingMap] = useState<Record<string, boolean>>({});
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [showAnalytics, setShowAnalytics] = useState<boolean>(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'campaigns' | 'calendar'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'campaigns' | 'calendar' | 'products'>('dashboard');
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showReportConfig, setShowReportConfig] = useState<boolean>(false);
@@ -273,13 +335,19 @@ const App: React.FC = () => {
   const saveBlockedRef = useRef(false);
   
   useEffect(() => {
-    // Skip save if import is in progress or if save is blocked
+    // CRITICAL: Skip save if import is in progress or if save is blocked
+    // This must be the FIRST check to prevent any execution
     if (importInProgressRef.current || saveBlockedRef.current || isSavingRef.current) {
       console.log('[App] ⏸️ Skipping save - import in progress or save blocked', {
         importInProgress: importInProgressRef.current,
         saveBlocked: saveBlockedRef.current,
         isSaving: isSavingRef.current
       });
+      return; // Early return - don't execute ANY code below
+    }
+    
+    // Additional safety: If we're in the middle of an import, abort immediately
+    if (importInProgressRef.current) {
       return;
     }
     
@@ -535,7 +603,7 @@ const App: React.FC = () => {
           }
           
           // Auto-reply if appropriate
-          if (routing.route === 'sales' && !classification.requiresHumanReview && user && canSendMessages(user.role)) {
+          if (routing.route === 'sales' && !classification.requiresHumanReview && user && canSendMessages(user)) {
             const shouldReply = EmailAutoReplyService.shouldAutoReply(message, classification);
             if (shouldReply.shouldReply) {
               setTimeout(async () => {
@@ -622,9 +690,9 @@ const App: React.FC = () => {
               (imp, msg, ch) => sendMessage(imp, msg, ch)
           );
           
-          // Only update if there are actual changes and circuit breaker is not tripped
-          if (setImportersBlockedRef.current) {
-            console.log('[App] ⏸️ Campaign update skipped - circuit breaker active');
+          // Only update if there are actual changes and circuit breaker/global lock is not active
+          if (setImportersBlockedRef.current || globalUpdateLockRef.current) {
+            console.log('[App] ⏸️ Campaign update skipped - circuit breaker or global lock active');
             return;
           }
           
@@ -648,15 +716,45 @@ const App: React.FC = () => {
       return () => clearInterval(interval);
   }, [campaigns, templates]); // Removed importers from dependencies
 
+  // Auto-resize handler for responsive UI updates
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const handleResize = () => {
+      const newWidth = window.innerWidth;
+      const newHeight = window.innerHeight;
+      setIsMobile(newWidth < 768);
+      setWindowSize({ width: newWidth, height: newHeight });
+    };
+    
+    // Initial call
+    handleResize();
+    
+    // Throttle resize events for performance
+    let resizeTimeout: NodeJS.Timeout;
+    const throttledResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(handleResize, 150);
+    };
+    
+    window.addEventListener('resize', throttledResize);
+    window.addEventListener('orientationchange', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', throttledResize);
+      window.removeEventListener('orientationchange', handleResize);
+      clearTimeout(resizeTimeout);
+    };
   }, []);
 
   // Auto-select first importer on desktop - only when list changes, not on every render
   const prevImportersLengthRef = useRef(importers.length);
   useEffect(() => {
+    // Skip if import is in progress to prevent interference
+    if (importInProgressRef.current) {
+      return;
+    }
+    
     // Only auto-select if importers list length changed (new items added) and we're on desktop
     if (!isMobile && !selectedId && importers.length > 0 && importers.length !== prevImportersLengthRef.current) {
       setSelectedId(importers[0].id);
@@ -668,8 +766,21 @@ const App: React.FC = () => {
 
   // Auto-response rate limiting (per conversation)
   const lastAutoResponseTime = useRef<Record<string, number>>({});
-  const AUTO_RESPONSE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+  const dailyAutoResponseCount = useRef<Record<string, number>>({}); // Track daily count per importer
+  const AUTO_RESPONSE_COOLDOWN_MS_CLOUD_API = 5 * 60 * 1000; // 5 minutes for Cloud API
+  const AUTO_RESPONSE_COOLDOWN_MS_WEB = 30 * 60 * 1000; // 30 minutes for WhatsApp Web
+  const MAX_DAILY_AUTO_RESPONSES_WEB = 10; // Maximum auto-responses per day via WhatsApp Web
   const ESCALATION_KEYWORDS = ['manager', 'human', 'help', 'support', 'complaint', 'urgent', 'problem'];
+  
+  // Helper to check if WhatsApp Web is being used
+  const isUsingWhatsAppWeb = useCallback(async (): Promise<boolean> => {
+    try {
+      const config = await PlatformService.getAppConfig('whatsapp', { method: 'cloud_api' });
+      return config?.method === 'web' || config?.web?.enabled === true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // Auto-Update & Webhook Listener (Desktop Only)
   useEffect(() => {
@@ -748,39 +859,137 @@ const App: React.FC = () => {
                                       }]
                                   };
                                   
-                                  // Auto-response logic
+                                  // Auto-response logic with WhatsApp Web support
                                   const autoRespondEnabled = notificationConfig.pushMessages; // Using pushMessages as proxy for auto-respond
                                   const now = Date.now();
                                   const lastResponse = lastAutoResponseTime.current[existing.id] || 0;
-                                  const canAutoRespond = now - lastResponse > AUTO_RESPONSE_COOLDOWN_MS;
                                   
                                   // Check for escalation keywords
                                   const needsEscalation = ESCALATION_KEYWORDS.some(keyword => 
                                       content.toLowerCase().includes(keyword.toLowerCase())
                                   );
                                   
-                                  if (autoRespondEnabled && canAutoRespond && !needsEscalation && user && canSendMessages(user.role)) {
-                                      // Trigger auto-response asynchronously
-                                      setTimeout(async () => {
+                                  if (autoRespondEnabled && !needsEscalation && user && canSendMessages(user)) {
+                                      // Check if using WhatsApp Web and apply appropriate cooldown/limits
+                                      // Use async IIFE to handle await
+                                      (async () => {
+                                          const usingWeb = await isUsingWhatsAppWeb();
+                                          const cooldownMs = usingWeb ? AUTO_RESPONSE_COOLDOWN_MS_WEB : AUTO_RESPONSE_COOLDOWN_MS_CLOUD_API;
+                                          const canAutoRespond = now - lastResponse > cooldownMs;
+                                          
+                                          // Additional checks for WhatsApp Web
+                                          let webChecksPassed = true;
+                                          let webCheckReason = '';
+                                          
+                                          if (usingWeb) {
+                                          // Check daily auto-response limit
+                                          const today = new Date().toDateString();
+                                          const dailyKey = `${existing.id}-${today}`;
+                                          const dailyCount = dailyAutoResponseCount.current[dailyKey] || 0;
+                                          
+                                          if (dailyCount >= MAX_DAILY_AUTO_RESPONSES_WEB) {
+                                              webChecksPassed = false;
+                                              webCheckReason = `Daily auto-response limit reached (${MAX_DAILY_AUTO_RESPONSES_WEB} per day)`;
+                                          }
+                                          
+                                          // Check rate limiter
                                           try {
-                                              const { generateAgentReply } = await import('./services/geminiService');
-                                              // generateAgentReply now automatically loads company/product data from services
-                                              const reply = await generateAgentReply(
-                                                  updatedImporter,
-                                                  updatedImporter.chatHistory,
-                                                  null,
-                                                  templates.agentSystemInstruction,
-                                                  Channel.WHATSAPP
-                                              );
+                                              const { WhatsAppWebRateLimiter } = await import('./services/whatsappWebRateLimiter');
+                                              const rateLimiter = WhatsAppWebRateLimiter.getInstance();
+                                              const rateCheck = await rateLimiter.canSend(existing.contactDetail);
                                               
-                                              if (!reply.startsWith("Error:")) {
-                                                  await sendMessage(updatedImporter, reply, Channel.WHATSAPP);
-                                                  lastAutoResponseTime.current[existing.id] = now;
+                                              if (!rateCheck.allowed) {
+                                                  webChecksPassed = false;
+                                                  webCheckReason = rateCheck.reason || 'Rate limit exceeded';
                                               }
                                           } catch (error) {
-                                              console.error("Auto-response failed:", error);
+                                              console.error("Rate limiter check failed:", error);
+                                              // Continue if rate limiter fails
                                           }
-                                      }, 1000);
+                                      }
+                                      
+                                      if (canAutoRespond && webChecksPassed) {
+                                          // Calculate initial delay (longer for WhatsApp Web)
+                                          const initialDelay = usingWeb ? 5000 + Math.random() * 5000 : 1000; // 5-10s for Web, 1s for API
+                                          
+                                          // Trigger auto-response asynchronously
+                                          setTimeout(async () => {
+                                              try {
+                                                  const { generateAgentReply } = await import('./services/geminiService');
+                                                  // generateAgentReply now automatically loads company/product data from services
+                                                  const reply = await generateAgentReply(
+                                                      updatedImporter,
+                                                      updatedImporter.chatHistory,
+                                                      null,
+                                                      templates.agentSystemInstruction,
+                                                      Channel.WHATSAPP
+                                                  );
+                                                  
+                                                  if (!reply.startsWith("Error:")) {
+                                                      // For WhatsApp Web, check content uniqueness
+                                                      if (usingWeb) {
+                                                          try {
+                                                              const { WhatsAppWebContentChecker } = await import('./services/whatsappWebContentChecker');
+                                                              const contentChecker = WhatsAppWebContentChecker.getInstance();
+                                                              const contentCheck = contentChecker.checkContent(reply, {
+                                                                  name: existing.name,
+                                                                  previousMessages: existing.chatHistory.map(m => m.content),
+                                                              });
+                                                              
+                                                              if (!contentCheck.valid) {
+                                                                  console.warn("Auto-response blocked by content checker:", contentCheck.reasons);
+                                                                  return; // Don't send if content check fails
+                                                              }
+                                                          } catch (error) {
+                                                              console.error("Content checker failed:", error);
+                                                              // Continue if content checker fails
+                                                          }
+                                                      }
+                                                      
+                                                      // Add typing simulation delay for WhatsApp Web (2-5 seconds)
+                                                      if (usingWeb) {
+                                                          const typingDelay = 2000 + Math.random() * 3000;
+                                                          await new Promise(resolve => setTimeout(resolve, typingDelay));
+                                                      }
+                                                      
+                                                      await sendMessage(updatedImporter, reply, Channel.WHATSAPP);
+                                                      lastAutoResponseTime.current[existing.id] = now;
+                                                      
+                                                      // Update daily count for WhatsApp Web
+                                                      if (usingWeb) {
+                                                          const today = new Date().toDateString();
+                                                          const dailyKey = `${existing.id}-${today}`;
+                                                          dailyAutoResponseCount.current[dailyKey] = (dailyAutoResponseCount.current[dailyKey] || 0) + 1;
+                                                          
+                                                          // Record in rate limiter
+                                                          try {
+                                                              const { WhatsAppWebRateLimiter } = await import('./services/whatsappWebRateLimiter');
+                                                              const rateLimiter = WhatsAppWebRateLimiter.getInstance();
+                                                              await rateLimiter.recordSend(existing.contactDetail);
+                                                          } catch (error) {
+                                                              console.error("Failed to record send in rate limiter:", error);
+                                                          }
+                                                          
+                                                          // Record in content checker
+                                                          try {
+                                                              const { WhatsAppWebContentChecker } = await import('./services/whatsappWebContentChecker');
+                                                              const contentChecker = WhatsAppWebContentChecker.getInstance();
+                                                              contentChecker.recordMessage(reply);
+                                                          } catch (error) {
+                                                              console.error("Failed to record message in content checker:", error);
+                                                          }
+                                                      }
+                                                  }
+                                              } catch (error) {
+                                                  console.error("Auto-response failed:", error);
+                                              }
+                                          }, initialDelay);
+                                          } else if (!canAutoRespond) {
+                                              console.log(`Auto-response skipped: Cooldown not met (${Math.round((cooldownMs - (now - lastResponse)) / 1000)}s remaining)`);
+                                          } else if (!webChecksPassed) {
+                                              console.log(`Auto-response skipped: ${webCheckReason}`);
+                                          }
+                                      })();
                                   } else if (needsEscalation) {
                                       updatedImporter.needsHumanReview = true;
                                       updatedImporter.activityLog.push({
@@ -1057,7 +1266,7 @@ const App: React.FC = () => {
   };
 
   const handleStartCampaign = async () => {
-    if (!user || !canSendMessages(user.role) || !selectedId) return;
+    if (!user || !canSendMessages(user) || !selectedId) return;
     setIsProcessing(true);
     const importer = importers.find(i => i.id === selectedId);
     if (importer) {
@@ -1075,7 +1284,7 @@ const App: React.FC = () => {
   };
 
   const handleAgentReply = async () => {
-    if (!user || !canSendMessages(user.role) || !selectedId) return;
+    if (!user || !canSendMessages(user) || !selectedId) return;
     setIsProcessing(true);
     const importer = importers.find(i => i.id === selectedId);
     if (importer) {
@@ -1104,128 +1313,31 @@ const App: React.FC = () => {
     if (importer) await sendMessage(importer, text, channel);
   };
 
-  // Handle import leads callback - memoized to prevent infinite loops
-  // Note: importInProgressRef, importCallStackRef, importDepthRef declared above
-  
-  const handleImportLeads = useCallback((newItems: Importer[]) => {
-    // Prevent multiple simultaneous imports
-    if (importInProgressRef.current) {
-      console.warn('[App] ⚠️ Import already in progress, ignoring duplicate call');
-      console.trace('[App] Duplicate import call stack trace:');
-      return;
-    }
-    
-    // Check recursion depth
-    importDepthRef.current += 1;
-    if (importDepthRef.current > 3) {
-      console.error('[App] 🚨 RECURSIVE CALL DETECTED! Depth:', importDepthRef.current);
-      console.error('[App] Stopping import to prevent stack overflow');
-      importDepthRef.current = 0;
-      importCallStackRef.current = [];
-      return;
-    }
-    
-    // Add current call to stack
-    const callId = `import-${Date.now()}-${Math.random()}`;
-    importCallStackRef.current.push(callId);
-    if (importCallStackRef.current.length > 10) {
-      importCallStackRef.current.shift();
-    }
-    
-    if (!newItems || newItems.length === 0) {
-      console.warn('[App] No leads to import or invalid data');
-      importDepthRef.current = Math.max(0, importDepthRef.current - 1);
-      importCallStackRef.current = importCallStackRef.current.filter(id => id !== callId);
-      return;
-    }
-    
-    // Block saves during import
-    saveBlockedRef.current = true;
-    importInProgressRef.current = true;
-    
-    console.log('[App] 📥 Starting import:', {
-      count: newItems.length,
-      itemIds: newItems.map(i => i.id).slice(0, 5),
-      timestamp: new Date().toISOString(),
-      callStackDepth: importCallStackRef.current.length,
-      recursionDepth: importDepthRef.current
+  // Simple import handler - atomic state update, no complexity
+  const handleImportComplete = useCallback((newItems: Importer[]) => {
+    // Simple, direct state update - no guards, no queues, no complexity
+    setImportersRaw(prev => {
+      const existingIds = new Set(prev.map(i => i.id));
+      const filtered = newItems.filter(item => !existingIds.has(item.id));
+      return [...prev, ...filtered];
     });
-    
-      // Use functional update to avoid dependency on importers
-      // Use startTransition to batch the update
-      try {
-        startTransition(() => {
-        setImporters(prev => {
-          console.log('[App] setImporters called in handleImportLeads', {
-            previousCount: prev.length,
-            newItemsCount: newItems.length,
-            recursionDepth: importDepthRef.current
-          });
-          
-          // Check if items already exist to prevent duplicates
-          const existingIds = new Set(prev.map(i => i.id));
-          const newItemsToAdd = newItems.filter(item => !existingIds.has(item.id));
-          
-          if (newItemsToAdd.length === 0) {
-            console.warn('[App] All leads already exist, skipping import');
-            // Reset flags immediately if no items to add
-            setTimeout(() => {
-              importInProgressRef.current = false;
-              importDepthRef.current = 0;
-              importCallStackRef.current = [];
-              saveBlockedRef.current = false;
-            }, 0);
-            return prev;
-          }
-          
-          const updated = [...prev, ...newItemsToAdd];
-          console.log('[App] ✅ Import complete:', {
-            previousCount: prev.length,
-            addedCount: newItemsToAdd.length,
-            totalCount: updated.length
-          });
-          
-          // Reset flags after a delay to allow state to settle
-          setTimeout(() => {
-            importInProgressRef.current = false;
-            importDepthRef.current = 0;
-            importCallStackRef.current = [];
-            saveBlockedRef.current = false;
-            console.log('[App] Import flags reset');
-          }, 1000); // Longer delay to ensure state is settled
-          
-          return updated;
-        });
-      });
-    } catch (error: any) {
-      console.error('[App] ❌ Error in handleImportLeads:', error);
-      console.error('[App] Error stack:', error?.stack);
-      importInProgressRef.current = false;
-      importDepthRef.current = 0;
-      importCallStackRef.current = [];
-      saveBlockedRef.current = false;
-    }
-  }, []);
-  
-  // Memoize close handler to prevent re-renders
-  const handleCloseImportModal = useCallback(() => {
-    setShowImportModal(false);
   }, []);
 
   const renderMainView = () => {
-      if (activeView === 'campaigns') return <CampaignManager campaigns={campaigns} onChange={setCampaigns} importers={importers} />;
-      if (activeView === 'calendar') return <CalendarView events={calendarEvents} onEventClick={(id) => alert(`Event ${id}`)} />;
+      if (activeView === 'campaigns') return <ErrorBoundary><CampaignManager campaigns={campaigns} onChange={setCampaigns} importers={importers} /></ErrorBoundary>;
+      if (activeView === 'calendar') return <ErrorBoundary><CalendarView events={calendarEvents} onEventClick={(id) => alert(`Event ${id}`)} /></ErrorBoundary>;
+      if (activeView === 'products') return <ErrorBoundary><div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100" style={{ height: '100%', minHeight: 0, flex: '1 1 0%', overflowY: 'auto' }}><ProductsCatalogPanel user={user} /></div></ErrorBoundary>;
       
       // Dashboard (Default)
       return (
-        <div className="flex-1 flex overflow-hidden p-0 md:p-6 gap-6 bg-slate-100 relative h-full">
+        <div className="flex-1 flex overflow-hidden p-0 md:p-6 gap-6 bg-slate-100 relative" style={{ width: '100%', maxWidth: '100%', height: '100%', minHeight: '100%', flex: '1 1 auto' }}>
             {/* Importer List Panel - Slide Logic */}
-            <div className={`w-full md:w-1/3 flex flex-col min-w-[320px] max-w-full md:max-w-[450px] shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-10 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && selectedId ? '-translate-x-full' : 'translate-x-0'}`}>
+            <div className={`w-full md:w-1/3 flex flex-col min-w-[280px] max-w-full md:max-w-[450px] shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-10 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && selectedId ? '-translate-x-full' : 'translate-x-0'}`} style={{ flexShrink: 0 }}>
                 <ImporterList importers={importers} selectedId={selectedId} onSelect={setSelectedId} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} language={language} />
             </div>
             
             {/* Chat Interface Panel - Slide Logic */}
-            <div className={`flex-1 flex flex-col w-full shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-20 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && !selectedId ? 'translate-x-full' : 'translate-x-0'}`}>
+            <div className={`flex-1 flex flex-col w-full shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-20 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && !selectedId ? 'translate-x-full' : 'translate-x-0'}`} style={{ minWidth: 0, flex: '1 1 auto' }}>
                 {importers.find(i => i.id === selectedId) ? 
                   <ChatInterface 
                     importer={importers.find(i => i.id === selectedId)!} 
@@ -1235,7 +1347,7 @@ const App: React.FC = () => {
                     onSimulateResponse={handleSimulateResponse} 
                     onAutoReply={handleAgentReply} 
                     onBack={() => setSelectedId(null)} 
-                    readOnly={!canSendMessages(user!.role)} 
+                    readOnly={!canSendMessages(user!)} 
                     language={language} 
                     onUpdateImporter={updateImporter} 
                     onMessageFeedback={handleMessageFeedback} 
@@ -1258,7 +1370,7 @@ const App: React.FC = () => {
   // 1. Loading State (Checking Config)
   if (isSetupComplete === null) {
       return (
-          <div className="h-full w-full flex items-center justify-center bg-slate-100">
+          <div className="h-screen w-screen flex items-center justify-center bg-slate-100" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
               <div className="flex flex-col items-center gap-3">
                   <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
                   <p className="text-slate-500 font-medium">Initializing GlobalReach...</p>
@@ -1269,17 +1381,23 @@ const App: React.FC = () => {
 
   // 2. Setup Wizard (First Run)
   if (!isSetupComplete) {
-      return <SetupWizard onComplete={() => setIsSetupComplete(true)} />;
+      return (
+        <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+          <SetupWizard onComplete={() => setIsSetupComplete(true)} />
+        </div>
+      );
   }
 
   // 3. PIN Lock Screen
   if (user && isLocked) {
     return (
-      <PinLockScreen
-        isLocked={isLocked}
-        onUnlock={() => setIsLocked(false)}
-        inactivityTimeout={LOCK_TIMEOUT_MS}
-      />
+      <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+        <PinLockScreen
+          isLocked={isLocked}
+          onUnlock={() => setIsLocked(false)}
+          inactivityTimeout={LOCK_TIMEOUT_MS}
+        />
+      </div>
     );
   }
 
@@ -1287,8 +1405,8 @@ const App: React.FC = () => {
   if (user && showOwnerAdmin) {
     if (OwnerAuthService.isOwner(user)) {
       return (
-        <div className="min-h-screen bg-slate-50 p-6">
-          <div className="max-w-7xl mx-auto">
+        <div className="h-screen w-screen bg-slate-50 overflow-y-auto" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+          <div className="max-w-7xl mx-auto p-6">
             <button
               onClick={() => setShowOwnerAdmin(false)}
               className="mb-4 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
@@ -1310,18 +1428,24 @@ const App: React.FC = () => {
   }
 
   // 5. Login Screen (Not Authenticated)
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!user) {
+    return (
+      <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+        <LoginScreen onLogin={handleLogin} />
+      </div>
+    );
+  }
 
   // 5. Main Application
   return (
-    <div className="flex h-full w-full bg-slate-100 text-slate-900 relative overflow-hidden">
-        <ErrorBoundary>
-          <BulkImportModal 
-            isOpen={showImportModal} 
-            onClose={handleCloseImportModal} 
-            onImport={handleImportLeads} 
-          />
-        </ErrorBoundary>
+    <div className="flex h-screen w-screen bg-slate-100 text-slate-900 relative overflow-hidden" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0, width: '100vw', height: '100vh', minWidth: '100vw', minHeight: '100vh', maxWidth: '100vw', maxHeight: '100vh', overflow: 'hidden' }}>
+          <ErrorBoundary>
+            <LeadImportWizard 
+              isOpen={showImportModal} 
+              onClose={() => setShowImportModal(false)} 
+              onComplete={handleImportComplete} 
+            />
+          </ErrorBoundary>
         <SettingsModal 
             isOpen={showSettingsModal} 
             onClose={() => setShowSettingsModal(false)} 
@@ -1343,8 +1467,8 @@ const App: React.FC = () => {
         
         {/* Admin Monitoring Dashboard Modal */}
         {user && showAdminDashboard && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden" style={{ width: '100%', maxWidth: 'min(95vw, 80rem)', height: 'auto', maxHeight: '95vh' }}>
               <div className="flex justify-between items-center p-6 border-b border-slate-200">
                 <h2 className="text-2xl font-bold text-slate-800">Admin Monitoring Dashboard</h2>
                 <button
@@ -1356,7 +1480,7 @@ const App: React.FC = () => {
                   </svg>
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <AdminMonitoringDashboard
                   user={user}
                   importers={importers}
@@ -1384,24 +1508,30 @@ const App: React.FC = () => {
         onLogout={handleLogout} 
         language={language} 
       />
-      <div className={`fixed md:absolute top-0 bottom-16 md:bottom-0 left-0 md:left-20 w-full md:w-96 bg-white border-r border-slate-200 shadow-2xl z-40 transition-transform duration-300 ${showAnalytics ? 'translate-x-0' : '-translate-x-[120%] md:-translate-x-full'}`}>
-         <AnalyticsDashboard importers={importers} forecastData={forecastData} reportConfig={reportConfig} onDrillDown={setStatusFilter} onGenerateForecast={async () => { setIsForecasting(true); setForecastData(await generateSalesForecast(importers)); setIsForecasting(false); }} onConfigure={() => setShowReportConfig(true)} onClose={() => setShowAnalytics(false)} isForecasting={isForecasting} />
-      </div>
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0 ml-0 relative z-0">
-        <header className="h-16 bg-white border-b border-slate-200 flex justify-between items-center px-6 shrink-0 shadow-sm z-10 hidden md:flex">
+      <ErrorBoundary>
+        <div className={`fixed md:absolute top-0 bottom-16 md:bottom-0 left-0 md:left-20 w-full md:w-96 bg-white border-r border-slate-200 shadow-2xl z-40 transition-transform duration-300 ${showAnalytics ? 'translate-x-0' : '-translate-x-[120%] md:-translate-x-full'}`}>
+           <AnalyticsDashboard importers={importers} forecastData={forecastData} reportConfig={reportConfig} onDrillDown={setStatusFilter} onGenerateForecast={async () => { setIsForecasting(true); setForecastData(await generateSalesForecast(importers)); setIsForecasting(false); }} onConfigure={() => setShowReportConfig(true)} onClose={() => setShowAnalytics(false)} isForecasting={isForecasting} />
+        </div>
+      </ErrorBoundary>
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 ml-0 relative z-0" style={{ width: '100%', maxWidth: '100%', height: '100%', minHeight: 0, flex: '1 1 0%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <header className="h-16 bg-white border-b border-slate-200 flex justify-between items-center px-6 shrink-0 shadow-sm z-10 hidden md:flex" style={{ flexShrink: 0 }}>
             <h1 className="text-xl font-bold text-slate-800">GlobalReach <span className="text-indigo-600 font-light">Automator</span></h1>
             <div className="flex gap-3 items-center">
                 <span className="text-sm text-slate-500 mr-2">{t('welcome', language)}, {user.name}</span>
-                {canSendMessages(user.role) && <button onClick={handleStartCampaign} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"><Play className="w-4 h-4" /> {t('campaign', language)}</button>}
-                {canExportData(user.role) && <button onClick={() => alert("Export")} className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-all"><Download className="w-4 h-4" /> {t('export', language)}</button>}
+                {canSendMessages(user) && <button onClick={handleStartCampaign} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all"><Play className="w-4 h-4" /> {t('campaign', language)}</button>}
+                {canExportData(user) && <button onClick={() => alert("Export")} className="flex items-center gap-2 border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-all"><Download className="w-4 h-4" /> {t('export', language)}</button>}
             </div>
         </header>
-        <header className="md:hidden h-14 bg-white border-b border-slate-200 flex justify-between items-center px-4 shrink-0 z-10">
+        <header className="md:hidden h-14 bg-white border-b border-slate-200 flex justify-between items-center px-4 shrink-0 z-10" style={{ flexShrink: 0 }}>
              <h1 className="text-lg font-bold text-slate-800">GlobalReach</h1>
-             {canSendMessages(user.role) && !selectedId && <button onClick={handleStartCampaign} className="p-2 bg-slate-900 text-white rounded-lg"><Play className="w-4 h-4" /></button>}
+             {canSendMessages(user) && !selectedId && <button onClick={handleStartCampaign} className="p-2 bg-slate-900 text-white rounded-lg"><Play className="w-4 h-4" /></button>}
         </header>
         
-        {renderMainView()}
+        <div className="flex-1 overflow-hidden min-h-0" style={{ flex: '1 1 0%', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ErrorBoundary>
+            {renderMainView()}
+          </ErrorBoundary>
+        </div>
 
       </div>
     </div>

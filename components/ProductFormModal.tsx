@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Tag, Plus, Trash2 } from 'lucide-react';
-import { Product } from '../types';
+import { Product, ProductPhoto } from '../types';
 import { ProductCatalogService } from '../services/productCatalogService';
 import { validateProduct } from '../services/validationService';
 import { Logger } from '../services/loggerService';
+import ProductPhotoGallery from './ProductPhotoGallery';
 
 interface ProductFormModalProps {
   isOpen: boolean;
@@ -18,9 +19,14 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
     category: '',
     shortDescription: '',
     fullDescription: '',
+    unit: 'piece',
+    referencePrice: undefined,
+    referencePriceCurrency: 'USD',
+    photos: [],
     tags: [],
     specifications: {},
-    active: true,
+    relatedProducts: [],
+    status: 'active',
   });
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -30,16 +36,25 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
 
   useEffect(() => {
     if (product) {
-      setFormData(product);
+      setFormData({
+        ...product,
+        photos: product.photos || [],
+        relatedProducts: product.relatedProducts || [],
+      });
     } else {
       setFormData({
         name: '',
         category: '',
         shortDescription: '',
         fullDescription: '',
+        unit: 'piece',
+        referencePrice: undefined,
+        referencePriceCurrency: 'USD',
+        photos: [],
         tags: [],
         specifications: {},
-        active: true,
+        relatedProducts: [],
+        status: 'active',
       });
     }
     setErrors([]);
@@ -89,23 +104,95 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
 
   const handleSave = async () => {
     setErrors([]);
+    
+    // Detailed validation with helpful messages
+    const validationErrors: string[] = [];
+    
+    // Required field checks
+    if (!formData.name || formData.name.trim().length === 0) {
+      validationErrors.push('Product Name is required');
+    } else if (formData.name.length > 200) {
+      validationErrors.push('Product Name must be less than 200 characters');
+    }
+    
+    if (!formData.category || formData.category.trim().length === 0) {
+      validationErrors.push('Category is required');
+    }
+    
+    if (!formData.shortDescription || formData.shortDescription.trim().length === 0) {
+      validationErrors.push('Short Description is required');
+    } else if (formData.shortDescription.length > 500) {
+      validationErrors.push('Short Description must be less than 500 characters');
+    }
+    
+    // Full description is optional but recommended
+    if (formData.fullDescription && formData.fullDescription.length > 5000) {
+      validationErrors.push('Full Description must be less than 5000 characters');
+    }
+    
+    // Unit validation
+    if (!formData.unit || formData.unit.trim().length === 0) {
+      validationErrors.push('Unit is required (e.g., piece, kg, liter)');
+    }
+    
+    // Tags validation
+    if (formData.tags && formData.tags.length > 20) {
+      validationErrors.push('Maximum 20 tags allowed');
+    }
+    
+    // Run standard validation as well
     const validation = validateProduct(formData);
-    if (!validation.valid) {
-      setErrors(validation.errors);
+    if (!validation.isValid) {
+      validationErrors.push(...validation.errors);
+    }
+    
+    if (validationErrors.length > 0) {
+      setErrors(validationErrors);
       return;
     }
 
     try {
       setSaving(true);
-      if (product) {
-        await ProductCatalogService.updateProduct(product.id, formData);
-      } else {
-        await ProductCatalogService.addProduct(formData as Omit<Product, 'id' | 'createdAt' | 'updatedAt'>);
+      
+      // Ensure fullDescription is set (use shortDescription as fallback)
+      if (!formData.fullDescription || formData.fullDescription.trim() === '') {
+        formData.fullDescription = formData.shortDescription || '';
       }
-      Logger.info('[ProductFormModal] Product saved');
+
+      // Prepare product data (remove old 'active' field if present, ensure status is set)
+      const productData: Partial<Product> = {
+        ...formData,
+        name: formData.name?.trim() || '',
+        category: formData.category?.trim() || '',
+        shortDescription: formData.shortDescription?.trim() || '',
+        fullDescription: formData.fullDescription?.trim() || formData.shortDescription?.trim() || '',
+        unit: formData.unit || 'piece',
+        status: formData.status || 'active',
+        photos: formData.photos || [],
+        tags: formData.tags || [],
+        specifications: formData.specifications || {},
+        relatedProducts: formData.relatedProducts || [],
+        referencePrice: formData.referencePrice,
+        referencePriceCurrency: formData.referencePriceCurrency || 'USD',
+        // Remove old 'active' field if migrating
+        active: undefined,
+      };
+
+      if (product) {
+        await ProductCatalogService.updateProduct(product.id, productData);
+        Logger.info('[ProductFormModal] Product updated successfully');
+      } else {
+        await ProductCatalogService.addProduct({
+          ...productData,
+          photos: [], // Photos will be added after product is created
+        } as Omit<Product, 'id' | 'createdAt' | 'updatedAt'>);
+        Logger.info('[ProductFormModal] Product added successfully');
+      }
       onSave();
     } catch (error: any) {
-      setErrors([error.message || 'Failed to save product']);
+      const errorMessage = error?.message || 'Failed to save product';
+      Logger.error('[ProductFormModal] Save error:', error);
+      setErrors([`Error: ${errorMessage}. Please check the console for more details.`]);
     } finally {
       setSaving(false);
     }
@@ -114,9 +201,9 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] my-4 flex flex-col">
+        <div className="p-6 border-b border-slate-200 flex justify-between items-center shrink-0">
           <h3 className="text-lg font-bold text-slate-800">
             {product ? 'Edit Product' : 'Add Product'}
           </h3>
@@ -125,12 +212,20 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+        <div className="p-6 overflow-y-auto flex-1 space-y-4 min-h-0">
           {errors.length > 0 && (
-            <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
-              {errors.map((error, i) => (
-                <div key={i} className="text-sm text-red-700">{error}</div>
-              ))}
+            <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
+              <div className="flex items-start gap-2 mb-2">
+                <div className="text-red-600 font-semibold">⚠️ Validation Errors:</div>
+              </div>
+              <ul className="list-disc list-inside space-y-1">
+                {errors.map((error, i) => (
+                  <li key={i} className="text-sm text-red-700">{error}</li>
+                ))}
+              </ul>
+              <div className="mt-3 text-xs text-red-600">
+                <strong>Required fields:</strong> Product Name, Category, Short Description, Unit
+              </div>
             </div>
           )}
 
@@ -175,16 +270,97 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Full Description
+              Full Description <span className="text-slate-400 text-xs">(Optional but recommended)</span>
             </label>
             <textarea
               value={formData.fullDescription || ''}
               onChange={(e) => handleInputChange('fullDescription', e.target.value)}
               rows={5}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              placeholder="Detailed product description"
+              placeholder="Detailed product description for AI to use in messaging (will use Short Description if left empty)"
             />
+            <p className="text-xs text-slate-500 mt-1">This description helps AI understand the product better for customer conversations. If empty, Short Description will be used.</p>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Unit <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.unit || 'piece'}
+                onChange={(e) => handleInputChange('unit', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="piece">Piece</option>
+                <option value="kg">Kilogram (kg)</option>
+                <option value="g">Gram (g)</option>
+                <option value="liter">Liter</option>
+                <option value="ml">Milliliter (ml)</option>
+                <option value="box">Box</option>
+                <option value="packet">Packet</option>
+                <option value="MT">Metric Ton (MT)</option>
+                <option value="dozen">Dozen</option>
+                <option value="set">Set</option>
+                <option value="pair">Pair</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Status
+              </label>
+              <select
+                value={formData.status || 'active'}
+                onChange={(e) => handleInputChange('status', e.target.value as 'active' | 'inactive')}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Reference Price (for AI context only)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.referencePrice || ''}
+                onChange={(e) => handleInputChange('referencePrice', e.target.value ? parseFloat(e.target.value) : undefined)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                placeholder="0.00"
+              />
+              <p className="text-xs text-slate-500 mt-1">AI will use this for context, but never quote it directly</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Currency
+              </label>
+              <select
+                value={formData.referencePriceCurrency || 'USD'}
+                onChange={(e) => handleInputChange('referencePriceCurrency', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="USD">USD ($)</option>
+                <option value="INR">INR (₹)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="CNY">CNY (¥)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Photo Gallery - Show after product is created */}
+          {product && product.id && (
+            <ProductPhotoGallery
+              productId={product.id}
+              photos={formData.photos || []}
+              onPhotosChange={(photos) => handleInputChange('photos', photos)}
+            />
+          )}
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -269,21 +445,26 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="active"
-              checked={formData.active !== false}
-              onChange={(e) => handleInputChange('active', e.target.checked)}
-              className="w-4 h-4"
-            />
-            <label htmlFor="active" className="text-sm text-slate-700">
-              Product is active
+          {/* Related Products - Simple implementation, can be enhanced with autocomplete */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Related Products (Product IDs)
             </label>
+            <input
+              type="text"
+              value={formData.relatedProducts?.join(', ') || ''}
+              onChange={(e) => {
+                const ids = e.target.value.split(',').map(id => id.trim()).filter(id => id);
+                handleInputChange('relatedProducts', ids);
+              }}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              placeholder="Enter product IDs separated by commas"
+            />
+            <p className="text-xs text-slate-500 mt-1">Products frequently bought together (comma-separated product IDs)</p>
           </div>
         </div>
 
-        <div className="p-6 border-t border-slate-200 flex justify-end gap-3">
+        <div className="p-6 border-t border-slate-200 flex justify-end gap-3 shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"

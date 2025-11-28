@@ -5,6 +5,7 @@ import { AuthService } from '../services/authService';
 import { UserManagementService } from '../services/userManagementService';
 import { UserService } from '../services/userService';
 import { Logger } from '../services/loggerService';
+import { hasAdminAccess } from '../services/permissionService';
 import { Lock, Key, Shield, CheckCircle, XCircle } from 'lucide-react';
 
 interface SecurityPinPanelProps {
@@ -222,7 +223,7 @@ const SecurityPinPanel: React.FC<SecurityPinPanelProps> = ({ user }) => {
       </div>
 
       {/* Admin: Reset Other Users' PINs */}
-      {(user.role === 'Admin' || user.role === 'Owner') && (
+      {hasAdminAccess(user) && (
         <div className="border border-slate-200 rounded-lg p-6">
           <h4 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <Key className="w-5 h-5" /> Admin: Reset User PINs

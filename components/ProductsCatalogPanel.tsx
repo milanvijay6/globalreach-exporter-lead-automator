@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Edit, Trash2, Upload, Download, Package, Filter, X } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Upload, Download, Package, Filter, X, Image as ImageIcon, TrendingUp } from 'lucide-react';
 import { Product } from '../types';
 import { ProductCatalogService } from '../services/productCatalogService';
 import { canManageProducts } from '../services/permissionService';
@@ -16,6 +16,7 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -23,7 +24,9 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: boolean; imported: number; errors: string[] } | null>(null);
 
-  const canEdit = user ? canManageProducts(user) : false;
+  // Allow all authenticated users to manage products for now
+  // You can restrict this later if needed
+  const canEdit = user !== undefined;
 
   const loadProducts = useCallback(async () => {
     try {
@@ -47,18 +50,42 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
       await loadProducts();
       return;
     }
-    const results = await ProductCatalogService.searchProducts(query);
+    const results = await ProductCatalogService.searchProducts(query, {
+      category: categoryFilter !== 'all' ? categoryFilter : undefined,
+      status: statusFilter !== 'all' ? (statusFilter as 'active' | 'inactive') : undefined,
+    });
     setProducts(results);
   };
 
   const handleCategoryFilter = async (category: string) => {
     setCategoryFilter(category);
-    if (category === 'all') {
-      await loadProducts();
-    } else {
-      const results = await ProductCatalogService.getProductsByCategory(category);
-      setProducts(results);
+    applyFilters(category, statusFilter);
+  };
+
+  const handleStatusFilter = async (status: string) => {
+    setStatusFilter(status);
+    applyFilters(categoryFilter, status);
+  };
+
+  const applyFilters = async (category: string, status: string) => {
+    let results = await ProductCatalogService.getProducts();
+    
+    if (category !== 'all') {
+      results = results.filter(p => p.category === category);
     }
+    
+    if (status !== 'all') {
+      results = results.filter(p => p.status === status);
+    }
+    
+    if (searchQuery.trim()) {
+      results = await ProductCatalogService.searchProducts(searchQuery, {
+        category: category !== 'all' ? category : undefined,
+        status: status !== 'all' ? (status as 'active' | 'inactive') : undefined,
+      });
+    }
+    
+    setProducts(results);
   };
 
   const handleDelete = async (id: string) => {
@@ -113,6 +140,7 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
 
   const filteredProducts = products.filter(p => {
     if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
     return true;
   });
 
@@ -125,7 +153,7 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-h-0 pb-4" style={{ minHeight: 0 }}>
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
         <div>
           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -184,55 +212,126 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
             ))}
           </select>
         </div>
+        <div className="relative">
+          <select
+            value={statusFilter}
+            onChange={(e) => handleStatusFilter(e.target.value)}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
       </div>
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredProducts.map(product => (
-          <div key={product.id} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex-1">
-                <h4 className="font-bold text-slate-800">{product.name}</h4>
-                <p className="text-xs text-slate-500 mt-1">{product.category}</p>
-              </div>
-              {!product.active && (
-                <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded">Inactive</span>
+        {filteredProducts.map(product => {
+          const primaryPhoto = product.photos?.find(p => p.isPrimary) || product.photos?.[0];
+          return (
+            <div key={product.id} className="border border-slate-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow bg-white">
+              {/* Product Image */}
+              {primaryPhoto ? (
+                <div className="w-full h-48 bg-slate-100 relative overflow-hidden">
+                  <img
+                    src={primaryPhoto.url}
+                    alt={product.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%" y="50%" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
+                    }}
+                  />
+                  {product.photos && product.photos.length > 1 && (
+                    <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                      <ImageIcon className="w-3 h-3" />
+                      {product.photos.length}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="w-full h-48 bg-slate-100 flex items-center justify-center">
+                  <ImageIcon className="w-12 h-12 text-slate-300" />
+                </div>
               )}
-            </div>
-            <p className="text-sm text-slate-600 mb-3 line-clamp-2">{product.shortDescription}</p>
-            {product.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-3">
-                {product.tags.slice(0, 3).map((tag, i) => (
-                  <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded">
-                    {tag}
-                  </span>
-                ))}
-                {product.tags.length > 3 && (
-                  <span className="text-xs text-slate-500">+{product.tags.length - 3}</span>
+              
+              <div className="p-4">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-800">{product.name}</h4>
+                    <p className="text-xs text-slate-500 mt-1">{product.category}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    {product.status === 'inactive' && (
+                      <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded">Inactive</span>
+                    )}
+                    {product.status === 'active' && (
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Active</span>
+                    )}
+                  </div>
+                </div>
+                
+                <p className="text-sm text-slate-600 mb-3 line-clamp-2">{product.shortDescription}</p>
+                
+                {/* Price and Unit */}
+                {(product.referencePrice || product.unit) && (
+                  <div className="flex items-center gap-2 mb-2 text-xs text-slate-600">
+                    {product.referencePrice && (
+                      <span className="font-semibold">
+                        {product.referencePriceCurrency || 'USD'} {product.referencePrice}
+                      </span>
+                    )}
+                    {product.unit && (
+                      <span className="text-slate-400">/ {product.unit}</span>
+                    )}
+                  </div>
+                )}
+                
+                {/* AI Usage Count */}
+                {product.aiUsageCount && product.aiUsageCount > 0 && (
+                  <div className="flex items-center gap-1 mb-2 text-xs text-indigo-600">
+                    <TrendingUp className="w-3 h-3" />
+                    <span>Recommended {product.aiUsageCount} time{product.aiUsageCount !== 1 ? 's' : ''}</span>
+                  </div>
+                )}
+                
+                {/* Tags */}
+                {product.tags && product.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {product.tags.slice(0, 3).map((tag, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded">
+                        {tag}
+                      </span>
+                    ))}
+                    {product.tags.length > 3 && (
+                      <span className="text-xs text-slate-500">+{product.tags.length - 3}</span>
+                    )}
+                  </div>
+                )}
+                
+                {canEdit && (
+                  <div className="flex gap-2 pt-2 border-t border-slate-200">
+                    <button
+                      onClick={() => {
+                        setEditingProduct(product);
+                        setShowModal(true);
+                      }}
+                      className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
+                    >
+                      <Edit className="w-3 h-3" /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(product.id)}
+                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center justify-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 )}
               </div>
-            )}
-            {canEdit && (
-              <div className="flex gap-2 pt-2 border-t border-slate-200">
-                <button
-                  onClick={() => {
-                    setEditingProduct(product);
-                    setShowModal(true);
-                  }}
-                  className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
-                >
-                  <Edit className="w-3 h-3" /> Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(product.id)}
-                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center justify-center gap-1"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
 
       {filteredProducts.length === 0 && (

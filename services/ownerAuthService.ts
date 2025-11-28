@@ -8,7 +8,7 @@ const OWNER_PASSWORD_HASH_ENV = 'OWNER_PASSWORD_HASH';
 
 // Default owner credentials (will be hashed on first use)
 const DEFAULT_OWNER_EMAIL = 'milanvijay24@gmail.com';
-const DEFAULT_OWNER_PASSWORD = 'vijayvargiya@24';
+const DEFAULT_OWNER_PASSWORD = 'vijayvargiya24';
 
 /**
  * Owner Authentication Service

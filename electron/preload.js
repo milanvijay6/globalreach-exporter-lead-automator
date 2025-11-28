@@ -62,5 +62,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Window Management
   reloadWindow: () => ipcRenderer.invoke('reload-window'),
-  reloadWindowIgnoringCache: () => ipcRenderer.invoke('reload-window-ignoring-cache')
+  reloadWindowIgnoringCache: () => ipcRenderer.invoke('reload-window-ignoring-cache'),
+  
+  // WhatsApp Web
+  whatsappWebInit: (config) => ipcRenderer.invoke('whatsapp-web-init', config),
+  whatsappWebGetStatus: () => ipcRenderer.invoke('whatsapp-web-get-status'),
+  whatsappWebRequestPairingCode: (params) => ipcRenderer.invoke('whatsapp-web-request-pairing-code', params),
+  whatsappWebSend: (to, content) => ipcRenderer.invoke('whatsapp-web-send', { to, content }),
+  whatsappWebDisconnect: () => ipcRenderer.invoke('whatsapp-web-disconnect'),
+  onWhatsAppWebQR: (callback) => ipcRenderer.on('whatsapp-web-qr', (event, qr) => callback(event, qr)),
+  onWhatsAppWebPairingCode: (callback) => ipcRenderer.on('whatsapp-web-pairing-code', (event, code) => callback(event, code)),
+  onWhatsAppWebReady: (callback) => ipcRenderer.on('whatsapp-web-ready', callback),
+  onWhatsAppWebAuthFailure: (callback) => ipcRenderer.on('whatsapp-web-auth-failure', (event, msg) => callback(event, msg)),
+  onWhatsAppWebDisconnected: (callback) => ipcRenderer.on('whatsapp-web-disconnected', (event, reason) => callback(event, reason)),
+  onWhatsAppWebMessage: (callback) => ipcRenderer.on('whatsapp-web-message', (event, msg) => callback(event, msg)),
+  removeWhatsAppWebListeners: () => {
+    ipcRenderer.removeAllListeners('whatsapp-web-qr');
+    ipcRenderer.removeAllListeners('whatsapp-web-pairing-code');
+    ipcRenderer.removeAllListeners('whatsapp-web-ready');
+    ipcRenderer.removeAllListeners('whatsapp-web-auth-failure');
+    ipcRenderer.removeAllListeners('whatsapp-web-disconnected');
+    ipcRenderer.removeAllListeners('whatsapp-web-message');
+  },
+  
+  // Path utilities
+  getPath: (name) => ipcRenderer.invoke('get-path', name),
+  
+  // Product Photo Management
+  productPhotoUpload: (params) => ipcRenderer.invoke('product-photo-upload', params),
+  productPhotoDelete: (params) => ipcRenderer.invoke('product-photo-delete', params),
+  productPhotoGetUrl: (params) => ipcRenderer.invoke('product-photo-get-url', params)
 });
