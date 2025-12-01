@@ -10,7 +10,7 @@ export default defineConfig({
   base: process.env.BUILD_BASE || './',
   plugins: [react()],
   build: {
-    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'electron/build'),
+    outDir: path.resolve(__dirname, 'electron/build'),
     emptyOutDir: true,
     // Always enable source maps for better error debugging
     sourcemap: true,

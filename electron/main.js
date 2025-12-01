@@ -154,7 +154,7 @@ async function startCloudflareTunnel(port) {
           cloudflaredPath = testPath;
           break;
         }
-      } catch (err) {
+    } catch (err) {
         // Continue to next path
       }
     }
@@ -186,7 +186,7 @@ async function startCloudflareTunnel(port) {
       const output = data.toString();
       stderrOutput += output;
       logger.debug('[Cloudflare] stderr:', output);
-      
+
       // Parse URL from Cloudflare Tunnel output
       // Format: "https://xxxxx-xxxxx-xxxxx.trycloudflare.com"
       const urlMatch = output.match(/https:\/\/[^\s]+\.trycloudflare\.com/);
@@ -223,10 +223,10 @@ async function startCloudflareTunnel(port) {
       }
       if (signal) {
         logger.info('[Cloudflare] Tunnel process terminated by signal:', signal);
-      }
+            }
       cloudflareProcess = null;
       cloudflareUrl = null;
-    });
+        });
 
     // Wait for Cloudflare Tunnel to start and extract URL
     // Cloudflare outputs the URL to stderr, so we wait a bit for it to appear
@@ -244,7 +244,7 @@ async function startCloudflareTunnel(port) {
         
         logger.info('[Cloudflare] ✅ Tunnel started (parsed from output):', cloudflareUrl);
         
-        if (mainWindow) {
+          if (mainWindow) {
           mainWindow.webContents.send('ngrok-started', { 
             url: cloudflareUrl, 
             webhookUrl: `${cloudflareUrl}/webhooks/whatsapp`,
@@ -268,19 +268,19 @@ async function startCloudflareTunnel(port) {
             setConfig('oauthCallbackUrl', `${cloudflareUrl}/api/oauth/callback`);
             
             logger.info('[Cloudflare] ✅ Tunnel started (retry):', cloudflareUrl);
-            
-            if (mainWindow) {
+              
+              if (mainWindow) {
               mainWindow.webContents.send('ngrok-started', { 
                 url: cloudflareUrl, 
                 webhookUrl: `${cloudflareUrl}/webhooks/whatsapp`,
                 oauthCallbackUrl: `${cloudflareUrl}/api/oauth/callback`
               });
+              }
             }
           }
-        }
       }, 5000);
     }
-    
+      
     return cloudflareUrl;
   } catch (error) {
     logger.error('[Cloudflare] Error starting tunnel:', error);

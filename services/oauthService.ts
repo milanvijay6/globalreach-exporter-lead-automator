@@ -401,45 +401,45 @@ export const OAuthService = {
         
         // Provide helpful error message for SPA client type issue
         // ONLY show SPA error if we're CERTAIN it's an SPA issue (very specific checks)
-        const isSpaError = errorMessage.includes('AADSTS9002326') || 
-                           errorMessage.includes('Cross-origin token redemption') ||
+          const isSpaError = errorMessage.includes('AADSTS9002326') || 
+                             errorMessage.includes('Cross-origin token redemption') ||
                            (errorMessage.includes('Single-Page Application') && (errorMessage.includes('redirect_uri') || errorMessage.includes('redirect URI'))) ||
                            (errorMessage.includes('Single-page application') && (errorMessage.includes('redirect_uri') || errorMessage.includes('redirect URI'))) ||
-                           errorMessage.includes('AADSTS700054');
-        
+                             errorMessage.includes('AADSTS700054');
+          
         // Only show SPA fix instructions if we're certain it's an SPA error
         if (isSpaError) {
-          // Use the actual redirect URI from config (includes correct port)
-          const redirectUri = config.redirectUri || 'http://localhost:4000/api/oauth/callback';
-          errorMessage = `Azure app registration type mismatch. Your redirect URI exists in "Single-page application" section.\n\n` +
-            `CRITICAL FIX - DO THIS NOW:\n\n` +
-            `STEP 1: Remove from "Single-page application"\n` +
-            `1. Go to Azure Portal → App registrations → Your app (${config.clientId})\n` +
-            `2. Click "Authentication"\n` +
-            `3. Scroll to "Platform configurations"\n` +
-            `4. Look at "Single-page application" section\n` +
-            `5. If you see ${redirectUri} (or ANY redirect URI) there:\n` +
-            `   - Click on it → Click "Remove" → Confirm\n` +
-            `   - REMOVE ALL redirect URIs from "Single-page application"\n` +
-            `6. Click "Save" at the top\n` +
-            `7. Wait 5 minutes\n\n` +
-            `STEP 2: Verify it's ONLY in "Web"\n` +
-            `1. After waiting, refresh Azure Portal page (F5)\n` +
-            `2. Go back to "Authentication" → "Platform configurations"\n` +
-            `3. Check "Single-page application" section:\n` +
-            `   - Should be EMPTY or show "No redirect URIs configured"\n` +
-            `   - Should NOT contain ${redirectUri}\n` +
-            `4. Check "Web" section:\n` +
-            `   - Should contain: ${redirectUri}\n` +
-            `   - Should be the ONLY place this URI exists\n\n` +
-            `STEP 3: If "Web" doesn't have the redirect URI:\n` +
-            `1. Click "+ Add a platform" → Select "Web"\n` +
-            `2. Add redirect URI: ${redirectUri}\n` +
-            `3. Click "Configure" → "Save"\n` +
-            `4. Wait 5 minutes\n\n` +
-            `VERIFY: The redirect URI ${redirectUri} must exist ONLY in "Web" platform.\n` +
-            `If it exists in BOTH "Web" AND "Single-page application", Azure treats it as SPA!\n\n` +
-            `After fixing, wait 5-10 minutes, then try connecting again.`;
+            // Use the actual redirect URI from config (includes correct port)
+            const redirectUri = config.redirectUri || 'http://localhost:4000/api/oauth/callback';
+            errorMessage = `Azure app registration type mismatch. Your redirect URI exists in "Single-page application" section.\n\n` +
+              `CRITICAL FIX - DO THIS NOW:\n\n` +
+              `STEP 1: Remove from "Single-page application"\n` +
+              `1. Go to Azure Portal → App registrations → Your app (${config.clientId})\n` +
+              `2. Click "Authentication"\n` +
+              `3. Scroll to "Platform configurations"\n` +
+              `4. Look at "Single-page application" section\n` +
+              `5. If you see ${redirectUri} (or ANY redirect URI) there:\n` +
+              `   - Click on it → Click "Remove" → Confirm\n` +
+              `   - REMOVE ALL redirect URIs from "Single-page application"\n` +
+              `6. Click "Save" at the top\n` +
+              `7. Wait 5 minutes\n\n` +
+              `STEP 2: Verify it's ONLY in "Web"\n` +
+              `1. After waiting, refresh Azure Portal page (F5)\n` +
+              `2. Go back to "Authentication" → "Platform configurations"\n` +
+              `3. Check "Single-page application" section:\n` +
+              `   - Should be EMPTY or show "No redirect URIs configured"\n` +
+              `   - Should NOT contain ${redirectUri}\n` +
+              `4. Check "Web" section:\n` +
+              `   - Should contain: ${redirectUri}\n` +
+              `   - Should be the ONLY place this URI exists\n\n` +
+              `STEP 3: If "Web" doesn't have the redirect URI:\n` +
+              `1. Click "+ Add a platform" → Select "Web"\n` +
+              `2. Add redirect URI: ${redirectUri}\n` +
+              `3. Click "Configure" → "Save"\n` +
+              `4. Wait 5 minutes\n\n` +
+              `VERIFY: The redirect URI ${redirectUri} must exist ONLY in "Web" platform.\n` +
+              `If it exists in BOTH "Web" AND "Single-page application", Azure treats it as SPA!\n\n` +
+              `After fixing, wait 5-10 minutes, then try connecting again.`;
         } else {
           // For other errors, provide more helpful generic error message
           const redirectUri = config.redirectUri || 'http://localhost:4000/api/oauth/callback';
@@ -481,7 +481,7 @@ export const OAuthService = {
           const errorCodeInfo = errorData.error ? `\n\nError Code: ${errorData.error}` : '';
           const errorSubcode = errorData.error_subcode ? `\nError Subcode: ${errorData.error_subcode}` : '';
           errorMessage = `OAuth authentication failed: ${errorDescription}${errorCodeInfo}${errorSubcode}${troubleshootingTips}`;
-        }
+          }
         }
         
         throw new Error(errorMessage);
