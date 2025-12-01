@@ -1,144 +1,174 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
 # GlobalReach - Exporter Lead Automator
 
-AI-powered CRM that automates international importer outreach via WhatsApp and Email. Features AI-powered messaging, lead scoring, automated replies, and multi-channel communication.
+AI-powered CRM for international importer outreach via WhatsApp and Email.
 
-## Features
+**Version:** 1.0.2  
+**Platform:** Electron Desktop App (Windows, macOS, Linux)  
+**Tech Stack:** Electron + React + TypeScript + Vite  
+**AI Engine:** Google Gemini AI  
+**Node.js Requirement:** >= 18.0.0
 
-- 🤖 **AI-Powered Messaging** - Automated WhatsApp and Email communication using Gemini AI
-- 📧 **Email Integration** - Full email sending/receiving with Gmail API and SMTP/IMAP
-- 💬 **WhatsApp Cloud API** - Real-time WhatsApp messaging with webhook support
-- 🎯 **Lead Scoring** - AI-powered lead qualification and conversion workflows
-- 📊 **Analytics Dashboard** - Track performance, conversion rates, and engagement
-- 🔄 **Automated Workflows** - Drip campaigns, follow-ups, and trigger-based automation
-- 🔒 **Security & Compliance** - CAN-SPAM, GDPR compliance, secure credential storage
+## 🚀 Quick Start
 
-## Run Locally
+### Installation
 
-**Prerequisites:** Node.js >= 18.0.0
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/milanvijay6/globalreach-exporter-lead-automator.git
+   cd globalreach-exporter-lead-automator
+   ```
 
-1. Install dependencies:
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-2. Build the React app:
-   ```bash
-   npm run build:react
-   ```
-
-3. Set your Gemini API key (optional, for AI features):
-   - Create `.env.local` file
-   - Add: `API_KEY=your_gemini_api_key`
-
-4. Run the Electron app:
+3. **Start the app:**
    ```bash
    npm start
    ```
 
-5. For development with hot reload:
-   ```bash
-   npm run dev
-   ```
+The app will:
+- Start the Electron desktop application
+- Launch a local Express server on port 4000
+- Automatically start Cloudflare Tunnel for webhooks (if configured)
+- Open the application window
 
-## Deployment to GitHub
+## 📦 Building the App
 
-This project includes automatic deployment workflows. See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
-
-### Quick Setup
-
-1. **Initialize Git** (if not already done):
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   ```
-
-2. **Create GitHub Repository**:
-   - Go to [GitHub](https://github.com/new)
-   - Create a new repository
-   - Copy the repository URL
-
-3. **Push to GitHub**:
-   ```bash
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
-   git branch -M main
-   git push -u origin main
-   ```
-
-4. **Automatic Deployment**:
-   - Every push to `main` branch triggers automatic build
-   - Create a release tag to build executables:
-     ```bash
-     git tag v1.0.0
-     git push --tags
-     ```
-
-## Project Structure
-
-```
-├── components/          # React UI components
-├── services/           # Business logic services
-│   ├── emailService.ts
-│   ├── whatsappService.ts
-│   ├── geminiService.ts
-│   └── ...
-├── electron/           # Electron main process
-│   ├── main.js        # Main Electron process
-│   └── preload.js     # Preload script
-└── types.ts           # TypeScript type definitions
+### Development Build
+```bash
+npm run build:react
+npm start
 ```
 
-## Configuration
+### Production Build (Installer)
+```bash
+npm run build
+```
 
-### WhatsApp Integration
-1. Go to Settings → Integrations
-2. Click "Connect" on WhatsApp
-3. Enter your WhatsApp Cloud API credentials:
-   - Access Token
-   - Phone Number ID
-   - Business Account ID
-   - Webhook Verify Token
+This creates installers for:
+- Windows: `.exe` installer
+- macOS: `.dmg` installer
+- Linux: `.AppImage` or `.deb` package
 
-### Email Integration
-1. Go to Settings → Integrations
-2. Click "Connect" on Email
-3. Choose provider:
-   - **Gmail**: OAuth 2.0 (recommended - see [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md))
-   - **Outlook**: OAuth 2.0 (recommended) or SMTP/IMAP (see [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md))
-   - **Custom**: SMTP/IMAP credentials (see [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md))
+### Custom Installer
+```bash
+npm run build:installer
+```
 
-#### Gmail OAuth Setup
-For Gmail integration, you'll need to:
-1. Create a Google Cloud Project
-2. Enable Gmail API
-3. Configure OAuth 2.0 credentials
-4. Set up redirect URIs
+## 🖥️ Local PC Hosting
 
-See the [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md) for detailed step-by-step instructions.
+The app runs as a desktop application on your PC:
 
-#### Outlook SMTP/IMAP Setup
-For Outlook email using SMTP/IMAP:
-1. Find your email server settings (see [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md))
-2. Use preset configurations in the app (Outlook.com, Gmail, Yahoo)
-3. Or manually enter SMTP and IMAP server details
+- **Server:** Express server runs locally on port 4000
+- **Storage:** Data stored locally in `config.json` (in app user data directory)
+- **Webhooks:** Cloudflare Tunnel automatically exposes local server for webhooks
+- **Access:** App accessible via Electron window + localhost:4000
 
-See the [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md) for:
-- How to find settings in Windows Control Panel
-- Complete server settings for Outlook, Gmail, Yahoo
-- Step-by-step app configuration
-- Troubleshooting common issues
+### Accessing the App
 
-## Documentation
+- **Desktop App:** Launch via Electron window (default)
+- **Web Interface:** Open `http://localhost:4000` in browser (optional)
 
-- [Deployment Guide](DEPLOYMENT.md) - Detailed deployment instructions
-- [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md) - Complete guide for setting up Gmail OAuth 2.0 authentication
-- [Outlook SMTP/IMAP Setup Guide](OUTLOOK_SMTP_IMAP_SETUP.md) - Complete guide for configuring Outlook email via SMTP/IMAP
-- [WhatsApp Integration](./whatsapp-cloud-api-integration.plan.md) - WhatsApp setup guide
+### Configuration
 
-## License
+Configuration is stored in:
+- **Windows:** `%APPDATA%/shreenathji-app/config.json`
+- **macOS:** `~/Library/Application Support/shreenathji-app/config.json`
+- **Linux:** `~/.config/shreenathji-app/config.json`
+
+## 🌐 Web Deployment (Optional)
+
+For web hosting on Back4App, see:
+- `BACK4APP_QUICK_START.md` - Quick deployment guide
+- `BACK4APP_DEPLOYMENT.md` - Full deployment guide
+- `README_BACK4APP.md` - Back4App-specific documentation
+
+**Note:** The app defaults to Electron desktop mode. Web deployment is optional.
+
+## 🔧 Development
+
+### Development Mode
+```bash
+npm run dev
+```
+
+This starts:
+- Vite dev server on port 3000
+- Hot module replacement
+- Fast refresh
+
+### Project Structure
+
+```
+.
+├── electron/          # Electron main process
+│   ├── main.js       # Main Electron process
+│   ├── preload.js    # Preload script
+│   └── build/        # Built frontend (production)
+├── components/       # React components
+├── services/         # Business logic services
+├── server/           # Standalone server (for web deployment)
+└── build/            # Web build (for Back4App)
+```
+
+## 📋 Features
+
+- ✅ AI-powered messaging (Gemini AI)
+- ✅ WhatsApp Cloud API integration
+- ✅ Email integration (Gmail OAuth, Outlook OAuth, SMTP/IMAP)
+- ✅ Lead management and automation
+- ✅ Product catalog management
+- ✅ Analytics and monitoring
+- ✅ Webhook support for real-time updates
+- ✅ Cloudflare Tunnel integration
+- ✅ Local data storage
+- ✅ Secure credential management
+
+## 🔐 Security
+
+- Encrypted credential storage (OS keychain)
+- Secure API key management
+- Webhook token verification
+- Rate limiting
+- Input sanitization
+
+## 📚 Documentation
+
+- **Setup Guides:**
+  - `GET_YOUR_CALLBACK_URL_NOW.md` - Cloudflare Tunnel setup
+  - `WHATSAPP_WEBHOOK_FIELDS.md` - WhatsApp webhook configuration
+  - `AZURE_URL_UPDATE_INSTRUCTIONS.md` - Azure OAuth setup
+
+- **Deployment:**
+  - `BACK4APP_QUICK_START.md` - Web deployment (optional)
+  - `DEPLOYMENT.md` - General deployment guide
+
+## 🆘 Troubleshooting
+
+### App won't start
+- Check Node.js version: `node --version` (must be >= 18.0.0)
+- Check logs in app user data directory
+- Try: `npm install` again
+
+### Server port in use
+- Change port in settings
+- Or kill process using port 4000
+
+### Webhooks not working
+- Check Cloudflare Tunnel is running
+- Verify webhook URL in Meta/WeChat settings
+- Check webhook token matches
+
+## 📝 License
 
 ISC
+
+## 👤 Author
+
+User
+
+---
+
+**For web deployment options, see `BACK4APP_QUICK_START.md`**
