@@ -1,10 +1,11 @@
 
-import { Channel, MessageStatus, PlatformConnection } from '../types';
+import { Channel, MessageStatus, PlatformConnection, Importer } from '../types';
 import { WhatsAppService } from './whatsappService';
-// EmailService is imported dynamically to avoid bundling Node.js modules
-// import { EmailService } from './emailService';
 import { WeChatService } from './wechatService';
-import { loadPlatformConnections } from './securityService';
+import { loadPlatformConnections, loadEmailConnection } from './securityService';
+import { OutlookEmailService } from './outlookEmailService';
+import { EmailQueueService } from './emailQueueService';
+import { Logger } from './loggerService';
 
 // Types for the internal mock event system
 type IncomingHandler = (importerId: string | null, contactDetail: string, content: string, channel: Channel) => void;
@@ -47,16 +48,22 @@ const getWeChatConnection = async (): Promise<PlatformConnection | null> => {
   ) || null;
 };
 
+const getEmailConnection = async (): Promise<PlatformConnection | null> => {
+  return await loadEmailConnection();
+};
+
 export const MessagingService = {
   /**
    * Sends a message through the appropriate provider API.
    * Uses real WhatsApp Cloud API when credentials are available, otherwise falls back to WhatsApp Web or simulates.
+   * For email, uses Outlook OAuth 2.0 via Microsoft Graph API.
    */
   sendMessage: async (
     messageId: string, 
     to: string, 
     content: string, 
-    channel: Channel
+    channel: Channel,
+    importer?: Importer
   ): Promise<{ success: boolean; error?: string }> => {
     
     console.log(`[MessagingService] Outgoing via ${channel} to ${to}:`, content.substring(0, 20) + '...');
@@ -146,66 +153,78 @@ export const MessagingService = {
 
     // Use real Email API if connected
     if (channel === Channel.EMAIL) {
-      const { EmailIPCService } = await import('./emailIPCService');
-      const emailConn = await EmailIPCService.getEmailConnection();
+      const emailConn = await getEmailConnection();
       
       if (emailConn?.emailCredentials) {
         // Notify SENT status immediately
         if (statusListener) statusListener(messageId, MessageStatus.SENT);
         
-        const { EmailSendingService } = await import('./emailSendingService');
-        const { EmailAnalyticsService } = await import('./emailAnalyticsService');
-        const { EmailComplianceService } = await import('./emailComplianceService');
-        
-        // Check compliance
-        const complianceCheck = await EmailComplianceService.validateBeforeSend(to);
-        if (!complianceCheck.valid) {
-          if (statusListener) statusListener(messageId, MessageStatus.FAILED);
-          return { success: false, error: complianceCheck.errors.join('; ') };
-        }
-        
-        // Find importer for personalization
-        const { loadPlatformConnections } = await import('./securityService');
-        // Note: Would need importer data - for now use basic template
-        const result = await EmailSendingService.sendEmail(
-          { contactDetail: to } as any, // Simplified
-          content,
-          { introTemplate: content, agentSystemInstruction: '' },
-          { subject: 'Message from Global Exports', useHTML: true }
-        );
-        
-        if (result.success) {
-          // Log send
-          EmailAnalyticsService.logAction({
-            id: messageId,
-            messageId: result.messageId,
-            to,
-            subject: 'Message from Global Exports',
-            action: 'sent',
-            timestamp: Date.now(),
-          });
+        try {
+          // Get OAuth config for token refresh if needed
+          const { PlatformService } = await import('./platformService');
+          const clientId = await PlatformService.getAppConfig('outlookClientId', '');
+          const clientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
+          const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
           
-          // Record for rate limiting
-          await EmailComplianceService.recordSend(to);
+          // Prepare email message
+          const emailMessage: import('./outlookEmailService').EmailMessage = {
+            to: [to],
+            subject: importer?.companyName 
+              ? `Re: ${importer.companyName} - Inquiry`
+              : 'Re: Your Inquiry',
+            body: content,
+            bodyType: 'html',
+          };
           
-          // Simulate delivery (email providers don't give real-time delivery status)
-          setTimeout(() => {
-            if (statusListener) statusListener(messageId, MessageStatus.DELIVERED);
-          }, 2000);
-        } else {
+          // Try to send email
+          const result = await OutlookEmailService.sendEmail(
+            emailConn.emailCredentials,
+            emailMessage,
+            clientId || undefined,
+            clientSecret || undefined,
+            tenantId !== 'common' ? tenantId : undefined
+          );
+          
+          if (result.success) {
+            // Update status to DELIVERED
+            setTimeout(() => {
+              if (statusListener) statusListener(messageId, MessageStatus.DELIVERED);
+            }, 1000);
+            return { success: true };
+          } else {
+            // Queue for retry if it's a retryable error
+            if (result.error && !result.error.includes('401') && !result.error.includes('403')) {
+              Logger.warn('[MessagingService] Email send failed, queuing for retry:', result.error);
+              EmailQueueService.enqueue(
+                emailMessage,
+                emailConn.emailCredentials,
+                {
+                  clientId: clientId || undefined,
+                  clientSecret: clientSecret || undefined,
+                  tenantId: tenantId !== 'common' ? tenantId : undefined,
+                  priority: 'normal',
+                }
+              );
+            }
+            
+            // Update status to FAILED
+            if (statusListener) statusListener(messageId, MessageStatus.FAILED);
+            return { success: false, error: MessagingService.handleEmailError(result.error) };
+          }
+        } catch (error: any) {
+          Logger.error('[MessagingService] Email send exception:', error);
           if (statusListener) statusListener(messageId, MessageStatus.FAILED);
+          return { success: false, error: MessagingService.handleEmailError(error.message) };
         }
-        
-        return result;
       } else {
-        console.warn('[MessagingService] Email not connected, falling back to simulation');
-        // Fall through to simulation
+        console.warn('[MessagingService] Email not connected, cannot send email');
+        return { success: false, error: 'Email account not connected. Please connect your Outlook account in Settings → Integrations.' };
       }
     }
 
-    // Simulation for Email, SMS, or WhatsApp without credentials
+    // Simulation for SMS or WhatsApp without credentials
     // 1. Simulate Network Latency based on Channel
-    const latency = channel === Channel.EMAIL ? 1500 : 600; // Email is slower than IM
+    const latency = 600;
     await new Promise(resolve => setTimeout(resolve, latency));
 
     // 2. Simulate Protocol Handshake & "Sent" status
@@ -218,8 +237,8 @@ export const MessagingService = {
     if (statusListener) statusListener(messageId, MessageStatus.SENT);
 
     // 3. Simulate Delivery Receipt (Async)
-    // WhatsApp/WeChat usually show 'Delivered' quickly. Email takes longer to 'Open'.
-    const deliveryDelay = channel === Channel.EMAIL ? 3000 : 1000;
+    // WhatsApp/WeChat usually show 'Delivered' quickly.
+    const deliveryDelay = 1000;
     
     setTimeout(() => {
       if (statusListener) statusListener(messageId, MessageStatus.DELIVERED);
@@ -281,6 +300,68 @@ export const MessagingService = {
       return error || 'Failed to send message. Please try again.';
     }
     return error?.message || 'Failed to send message. Please try again.';
+  },
+
+  /**
+   * Handles Email API errors with user-friendly messages
+   */
+  handleEmailError: (error?: string): string => {
+    if (!error) return 'Failed to send email. Please try again.';
+    
+    const errorLower = error.toLowerCase();
+    
+    if (errorLower.includes('401') || errorLower.includes('unauthorized') || errorLower.includes('invalid token')) {
+      return 'Email access token expired. Please reconnect your Outlook account in Settings → Integrations.';
+    }
+    if (errorLower.includes('403') || errorLower.includes('forbidden')) {
+      return 'Email permission denied. Please check your Outlook account permissions.';
+    }
+    if (errorLower.includes('429') || errorLower.includes('rate limit')) {
+      return 'Email rate limit exceeded. Please wait before sending more emails.';
+    }
+    if (errorLower.includes('network') || errorLower.includes('timeout') || errorLower.includes('connection')) {
+      return 'Network error. Please check your internet connection.';
+    }
+    if (errorLower.includes('invalid recipient') || errorLower.includes('invalid email')) {
+      return 'Invalid email address. Please check the recipient email.';
+    }
+    
+    return error || 'Failed to send email. Please try again.';
+  },
+
+  /**
+   * Determines the best contact channel based on importer data and priority
+   * Returns the channel to use, or null if no valid contact method
+   * 
+   * Priority Order (as per spec):
+   * 1. phone && primary_channel="whatsapp" → WhatsApp (priority 1)
+   * 2. wechatId && primary_channel="wechat" → WeChat (priority 2)
+   * 3. email → Outlook/Email (priority 3)
+   */
+  determineContactChannel: (importer: Importer): { channel: Channel; contact: string } | null => {
+    const phone = importer.phone || (importer.contactDetail && /^\+?[\d\s\-()]+$/.test(importer.contactDetail) ? importer.contactDetail : null);
+    const email = importer.email || (importer.contactDetail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(importer.contactDetail) ? importer.contactDetail : null);
+    const wechatId = (importer as any).wechatId;
+    
+    const primaryContact = importer.primaryContact;
+    
+    // Priority 1: phone && primary_channel="whatsapp" → WhatsApp
+    if (phone && (primaryContact === 'phone' || primaryContact === 'whatsapp')) {
+      return { channel: Channel.WHATSAPP, contact: phone };
+    }
+    
+    // Priority 2: wechatId && primary_channel="wechat" → WeChat
+    if (wechatId && primaryContact === 'wechat') {
+      return { channel: Channel.WECHAT, contact: wechatId };
+    }
+    
+    // Priority 3: email → Outlook/Email
+    if (email) {
+      return { channel: Channel.EMAIL, contact: email };
+    }
+    
+    // No valid contact method
+    return null;
   },
 
   /**

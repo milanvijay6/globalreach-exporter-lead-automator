@@ -4,7 +4,7 @@ import { UserService } from '../services/userService';
 import { UserManagementService } from '../services/userManagementService';
 import { AuthService } from '../services/authService';
 import { Logger } from '../services/loggerService';
-import { Plus, Edit, Trash2, RefreshCw, Lock, Unlock, Key } from 'lucide-react';
+import { Plus, Edit, Trash2, RefreshCw, Lock, Unlock, Key, X } from 'lucide-react';
 
 interface UserManagementPanelProps {
   user: User; // Current logged-in user (must be admin or owner)
@@ -15,6 +15,10 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState<User | null>(null);
+  const [showPinModal, setShowPinModal] = useState<User | null>(null);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [pinPasswordInput, setPinPasswordInput] = useState('');
   
   // Create user form state
   const [newUserName, setNewUserName] = useState('');
@@ -90,24 +94,38 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   };
 
   const handleResetPassword = async (targetUser: User) => {
-    const newPassword = prompt(`Enter new password for ${targetUser.name}:`);
-    if (!newPassword) return;
+    setShowPasswordModal(targetUser);
+    setPasswordInput('');
+  };
+
+  const handleConfirmPasswordReset = async () => {
+    if (!showPasswordModal || !passwordInput) return;
 
     try {
-      await UserManagementService.resetUserPassword(targetUser.id, newPassword, user.id);
+      await UserManagementService.resetUserPassword(showPasswordModal.id, passwordInput, user.id);
       alert('Password reset successfully');
+      setShowPasswordModal(null);
+      setPasswordInput('');
+      await loadUsers();
     } catch (error: any) {
       alert(`Failed to reset password: ${error.message}`);
     }
   };
 
   const handleResetPin = async (targetUser: User) => {
-    const resetterPassword = prompt('Enter your password to confirm PIN reset:');
-    if (!resetterPassword) return;
+    setShowPinModal(targetUser);
+    setPinPasswordInput('');
+  };
+
+  const handleConfirmPinReset = async () => {
+    if (!showPinModal || !pinPasswordInput) return;
 
     try {
-      await UserManagementService.resetUserPin(targetUser.id, user.id, resetterPassword);
+      await UserManagementService.resetUserPin(showPinModal.id, user.id, pinPasswordInput);
       alert('PIN reset successfully');
+      setShowPinModal(null);
+      setPinPasswordInput('');
+      await loadUsers();
     } catch (error: any) {
       alert(`Failed to reset PIN: ${error.message}`);
     }
@@ -321,6 +339,120 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
                 className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-slate-800">Reset Password</h3>
+              <button 
+                onClick={() => {
+                  setShowPasswordModal(null);
+                  setPasswordInput('');
+                }} 
+                className="p-2 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="mb-4 text-slate-600 text-sm">
+              Enter new password for <strong>{showPasswordModal.name}</strong>:
+            </p>
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              placeholder="Enter new password"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg mb-4"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleConfirmPasswordReset();
+                } else if (e.key === 'Escape') {
+                  setShowPasswordModal(null);
+                  setPasswordInput('');
+                }
+              }}
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowPasswordModal(null);
+                  setPasswordInput('');
+                }}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmPasswordReset}
+                disabled={!passwordInput}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reset Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PIN Reset Modal */}
+      {showPinModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-slate-800">Reset PIN</h3>
+              <button 
+                onClick={() => {
+                  setShowPinModal(null);
+                  setPinPasswordInput('');
+                }} 
+                className="p-2 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="mb-4 text-slate-600 text-sm">
+              Enter your password to confirm PIN reset for <strong>{showPinModal.name}</strong>:
+            </p>
+            <input
+              type="password"
+              value={pinPasswordInput}
+              onChange={(e) => setPinPasswordInput(e.target.value)}
+              placeholder="Enter your password"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg mb-4"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleConfirmPinReset();
+                } else if (e.key === 'Escape') {
+                  setShowPinModal(null);
+                  setPinPasswordInput('');
+                }
+              }}
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowPinModal(null);
+                  setPinPasswordInput('');
+                }}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmPinReset}
+                disabled={!pinPasswordInput}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reset PIN
               </button>
             </div>
           </div>

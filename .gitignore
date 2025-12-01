@@ -1,56 +1,45 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
+# Dependencies
+node_modules/
+server/node_modules/
 
 # Build outputs
-electron/build
-build
-dist
-out
-*.app
-*.dmg
-*.exe
-*.deb
-*.rpm
-*.AppImage
-*.snap
+build/
+dist/
+electron/build/
+*.log
 
 # Environment variables
 .env
 .env.local
 .env.*.local
 
-# Electron
-*.asar
-*.asar.unpacked
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS
-Thumbs.db
 .DS_Store
+Thumbs.db
 
-# Secrets and credentials (never commit these!)
-*.pem
-*.key
+# Parse/Back4App
+. parse/
+parse/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Config (if contains sensitive data)
 config.json
-secrets.json
+*.backup
+
+# Temporary files
+tmp/
+temp/
+*.tmp

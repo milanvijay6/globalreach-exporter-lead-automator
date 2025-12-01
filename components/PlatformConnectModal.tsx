@@ -1,21 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Smartphone, CheckCircle, Loader2, RefreshCw, Mail, Globe, Server, MessageCircle, AlertCircle, Key, Link2 } from 'lucide-react';
-import { Channel, PlatformStatus, PlatformConnection, WhatsAppCredentials, EmailCredentials, WeChatCredentials, AuthStep } from '../types';
+import { Channel, PlatformStatus, PlatformConnection, WhatsAppCredentials, WeChatCredentials, AuthStep } from '../types';
 import { WhatsAppService } from '../services/whatsappService';
-// EmailService is imported dynamically to avoid bundling Node.js modules
-// import { EmailService } from '../services/emailService';
 import { WeChatService } from '../services/wechatService';
 import { PlatformService } from '../services/platformService';
-// OAuthService is imported dynamically to avoid bundling Node.js modules
-// import { OAuthService } from '../services/oauthService';
-// EmailAuthService is imported dynamically to avoid bundling Node.js modules
-// import { EmailAuthService } from '../services/emailAuthService';
-import { MagicLinkService } from '../services/magicLinkService';
-import { AuthStateService } from '../services/authStateService';
-import { AuthLogService } from '../services/authLogService';
-import { ErrorHandlerService } from '../services/errorHandlerService';
-import AuthProgressModal from './AuthProgressModal';
+import EmailOAuthModal from './EmailOAuthModal';
 
 interface PlatformConnectModalProps {
   isOpen: boolean;
@@ -25,9 +15,8 @@ interface PlatformConnectModalProps {
 }
 
 const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onClose, channel, onLink }) => {
-  const [step, setStep] = useState<'provider-select' | 'credentials' | 'testing' | 'success' | 'error' | 'magic-link'>('provider-select');
+  const [step, setStep] = useState<'provider-select' | 'credentials' | 'testing' | 'success' | 'error'>('provider-select');
   const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [emailProvider, setEmailProvider] = useState<'google' | 'microsoft' | 'custom' | null>(null);
   
   // WhatsApp credentials state
   const [accessToken, setAccessToken] = useState('');
@@ -40,89 +29,22 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
   const [appSecret, setAppSecret] = useState('');
   const [wechatWebhookToken, setWechatWebhookToken] = useState('');
   
-  // Email OAuth/Magic Link state
-  const [emailAddress, setEmailAddress] = useState('');
-  const [magicLinkToken, setMagicLinkToken] = useState('');
-  const [oauthConfig, setOauthConfig] = useState<{ 
-    outlook?: { clientId: string; clientSecret: string; tenantId?: string };
-    gmail?: { clientId: string; clientSecret: string };
-    redirectUri?: string;
-  } | null>(null);
-  const [authStep, setAuthStep] = useState<AuthStep>(AuthStep.IDLE);
-  const [showAuthProgress, setShowAuthProgress] = useState(false);
-  
-  // Email SMTP/IMAP credentials state (reusing existing state variables)
-  // accessToken = email address
-  // phoneNumberId = SMTP host
-  // businessAccountId = SMTP port (as string)
-  // webhookVerifyToken = password
-  // Adding new state for IMAP
-  const [imapHost, setImapHost] = useState('');
-  const [imapPort, setImapPort] = useState('');
-  
   const [errorMessage, setErrorMessage] = useState('');
   const [testResult, setTestResult] = useState<{ success: boolean; phoneNumber?: string; accountName?: string; error?: string } | null>(null);
+  const [showEmailOAuthModal, setShowEmailOAuthModal] = useState(false);
 
   // Reset state when opening
   useEffect(() => {
     if (isOpen) {
-      if (channel === Channel.EMAIL) {
-        setStep('provider-select');
-        
-        // Check for existing email connection and auto-fill
-        const loadEmailCredentials = async () => {
-          try {
-            // Check if email is already connected
-            const { EmailIPCService } = await import('../services/emailIPCService');
-            const existingConnection = await EmailIPCService.getEmailConnection();
-            
-            if (existingConnection && existingConnection.emailCredentials) {
-              // Load existing credentials for reconnection
-              const creds = existingConnection.emailCredentials;
-              setEmailAddress(creds.username || '');
-              setAccessToken(creds.username || ''); // Reusing for email
-              setPhoneNumberId(creds.smtpHost || ''); // SMTP host
-              setBusinessAccountId(String(creds.smtpPort || '')); // SMTP port
-              setWebhookVerifyToken(''); // Don't auto-fill password for security (user needs to re-enter)
-              setImapHost(creds.imapHost || '');
-              setImapPort(String(creds.imapPort || ''));
-            } else {
-              // Auto-fill with default credentials if no connection exists
-              const { getDefaultEmailCredentials } = await import('../services/emailConfig');
-              const defaultCreds = getDefaultEmailCredentials();
-              
-              setEmailAddress(defaultCreds.username || '');
-              setAccessToken(defaultCreds.username || ''); // Reusing for email
-              setPhoneNumberId(defaultCreds.smtpHost || '');
-              setBusinessAccountId(String(defaultCreds.smtpPort || ''));
-              setWebhookVerifyToken(defaultCreds.password || ''); // Auto-fill App Password
-              setImapHost(defaultCreds.imapHost || '');
-              setImapPort(String(defaultCreds.imapPort || ''));
-              
-              // Automatically set emailProvider to 'custom' to show the form with pre-filled credentials
-              setEmailProvider('custom');
-              setStep('credentials');
-            }
-          } catch (error) {
-            console.error('Failed to load email credentials:', error);
-            // Reset email fields on error
-            setEmailAddress('');
-            setAccessToken('');
-            setPhoneNumberId('');
-            setBusinessAccountId('');
-            setWebhookVerifyToken('');
-            setImapHost('');
-            setImapPort('');
-          }
-        };
-        
-        loadEmailCredentials();
-      } else if (channel === Channel.WHATSAPP) {
+      if (channel === Channel.WHATSAPP) {
         setStep('credentials');
         loadExistingCredentials();
       } else if (channel === Channel.WECHAT) {
         setStep('credentials');
         loadExistingCredentials();
+      } else if (channel === Channel.EMAIL) {
+        // For email, open OAuth modal directly
+        setShowEmailOAuthModal(true);
       } else {
         setStep('provider-select');
         setTimeout(() => {
@@ -284,16 +206,43 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         onLink(connection);
         setStep('success');
         
-        // Show warning if test failed
+        // Show warning if test failed with detailed guidance
         if (showWarning) {
           setTimeout(() => {
+            const errorDetails = testResult.error || 'Unknown error';
+            const is401 = errorDetails.includes('Invalid') || errorDetails.includes('401');
+            const is404 = errorDetails.includes('not found') || errorDetails.includes('404');
+            
+            let guidance = '';
+            if (is401) {
+              guidance = '\n\n🔧 FIX: Generate a new Access Token in Meta for Developers:\n' +
+                        '1. Go to developers.facebook.com/apps\n' +
+                        '2. Select your app → WhatsApp → API Setup\n' +
+                        '3. Click "Generate new token"\n' +
+                        '4. Select permissions: whatsapp_business_messaging\n' +
+                        '5. Copy the token and reconnect';
+            } else if (is404) {
+              guidance = '\n\n🔧 FIX: Verify your Phone Number ID:\n' +
+                        '1. Go to developers.facebook.com/apps\n' +
+                        '2. Select your app → WhatsApp → API Setup\n' +
+                        '3. Copy the "Phone number ID" exactly\n' +
+                        '4. Make sure it matches what you entered';
+            } else {
+              guidance = '\n\n🔧 FIX: Check token permissions:\n' +
+                        '1. Token needs: whatsapp_business_messaging permission\n' +
+                        '2. Generate new token in Meta for Developers\n' +
+                        '3. See WHATSAPP_CONNECTION_FIX.md for detailed steps';
+            }
+            
             alert('⚠️ WhatsApp connected with warning:\n\n' + 
                   'Connection test failed, but credentials saved.\n' +
-                  'The access token may not have permission to query phone number info, but should still work for sending messages.\n\n' +
-                  'If you encounter issues sending messages, verify:\n' +
-                  '• Access token is valid and not expired\n' +
-                  '• Phone Number ID matches your WhatsApp Business Account\n' +
-                  '• Token has "whatsapp_business_messaging" permissions');
+                  `Error: ${errorDetails}\n\n` +
+                  'The token may still work for sending messages, but:\n' +
+                  '• Access token might not have query permissions\n' +
+                  '• Phone Number ID might be incorrect\n' +
+                  '• Token might be expired' +
+                  guidance + '\n\n' +
+                  'If messages don\'t work, follow the fix steps above.');
           }, 500);
         }
         
@@ -371,365 +320,6 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
     }, 2000);
   };
 
-  // Load OAuth config from settings and ensure redirect URI is set
-  useEffect(() => {
-    const loadOAuthConfig = async () => {
-      try {
-        // Load OAuth configuration from settings
-        const configStr = await (window as any).electronAPI?.getConfig('oauthConfig');
-        if (configStr) {
-          const parsedConfig = JSON.parse(configStr);
-          
-          // Ensure redirect URI is set - get from server port or use default
-          if (!parsedConfig.redirectUri) {
-            const { PlatformService } = await import('../services/platformService');
-            const port = await PlatformService.getAppConfig('serverPort', 4000);
-            parsedConfig.redirectUri = `http://localhost:${port}/auth/oauth/callback`;
-          }
-          
-          setOauthConfig(parsedConfig);
-        }
-      } catch (e) {
-        // Config not set yet
-        console.error('Failed to load OAuth config:', e);
-      }
-    };
-    if (isOpen && channel === Channel.EMAIL) {
-      loadOAuthConfig();
-    }
-  }, [isOpen, channel]);
-
-  // Listen for OAuth callbacks
-  useEffect(() => {
-    if (!isOpen || channel !== Channel.EMAIL) return;
-
-    const handleOAuthCallback = async (event: any, data: any) => {
-      if (data.success && data.code && data.state) {
-        setAuthStep(AuthStep.EXCHANGING);
-        setShowAuthProgress(true);
-        
-        try {
-          const startTime = Date.now();
-          AuthLogService.logLoginAttempt({
-            provider: data.provider || 'gmail',
-            method: 'oauth',
-            email: emailAddress,
-            success: false, // Will update on completion
-          });
-
-          if (!oauthConfig) {
-            throw new Error('OAuth configuration not found. Please configure OAuth credentials in Settings > Integrations > OAuth Configuration.');
-          }
-
-          const provider = data.provider || 'gmail';
-          const providerConfig = provider === 'outlook' ? oauthConfig.outlook : oauthConfig.gmail;
-          
-          if (!providerConfig || !providerConfig.clientId || !providerConfig.clientSecret) {
-            throw new Error(`${provider === 'outlook' ? 'Outlook' : 'Gmail'} OAuth configuration not found. Please configure OAuth credentials in Settings > Integrations > OAuth Configuration.`);
-          }
-
-          // Build OAuth config object for the service
-          const serviceConfig = {
-            clientId: providerConfig.clientId,
-            clientSecret: providerConfig.clientSecret,
-            redirectUri: oauthConfig.redirectUri || `http://localhost:${await (await import('../services/platformService')).PlatformService.getAppConfig('serverPort', 4000)}/auth/oauth/callback`,
-            tenantId: provider === 'outlook' ? (providerConfig as any).tenantId || 'common' : undefined
-          };
-
-          const { OAuthService } = await import('../services/oauthService');
-          const tokens = await OAuthService.handleOAuthCallback(
-            provider,
-            data.code,
-            data.state,
-            serviceConfig
-          );
-
-          // Store credentials with expiry and redirect URI
-          const credentials: EmailCredentials = {
-            provider: provider as 'gmail' | 'outlook',
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            tokenExpiryDate: tokens.expiryDate || (tokens.expiresIn ? Date.now() + tokens.expiresIn : undefined),
-            oauthClientId: providerConfig.clientId,
-            oauthClientSecret: providerConfig.clientSecret,
-            redirectUri: serviceConfig.redirectUri,
-          };
-
-          const { EmailAuthService } = await import('../services/emailAuthService');
-          const connection = await EmailAuthService.storeCredentialsSecurely(credentials, {
-            accountName: emailAddress,
-          });
-
-          const duration = Date.now() - startTime;
-          AuthLogService.logLoginAttempt({
-            provider: data.provider || 'gmail',
-            method: 'oauth',
-            email: emailAddress,
-            success: true,
-            duration,
-          });
-
-          setAuthStep(AuthStep.CONNECTED);
-          onLink(connection);
-          setTimeout(() => {
-            setShowAuthProgress(false);
-            setStep('success');
-            setTimeout(() => onClose(), 2000);
-          }, 1000);
-        } catch (error: any) {
-          const errorInfo = ErrorHandlerService.handleAuthError(error, {
-            provider: data.provider || 'gmail',
-            method: 'oauth',
-          });
-          
-          AuthLogService.logAuthError({
-            errorCode: errorInfo.code,
-            errorMessage: errorInfo.message,
-            provider: data.provider || 'gmail',
-            method: 'oauth',
-          });
-
-          // Add fallback options to error message
-          let enhancedMessage = errorInfo.userMessage;
-          if (errorInfo.fallbackOptions && errorInfo.fallbackOptions.length > 0) {
-            enhancedMessage += '\n\nAlternatives:\n' + errorInfo.fallbackOptions.map(opt => `• ${opt}`).join('\n');
-          }
-
-          setAuthStep(AuthStep.ERROR);
-          setErrorMessage(enhancedMessage);
-          setShowAuthProgress(false);
-          setStep('error');
-        }
-      } else if (data.error) {
-        const errorInfo = ErrorHandlerService.handleAuthError(new Error(data.error), {
-          provider: data.provider || 'gmail',
-          method: 'oauth',
-        });
-        setErrorMessage(errorInfo.userMessage);
-        setAuthStep(AuthStep.ERROR);
-        setShowAuthProgress(false);
-        setStep('error');
-      }
-    };
-
-    const handleMagicLinkCallback = async (event: any, data: any) => {
-      if (data.token) {
-        setAuthStep(AuthStep.AUTHENTICATING);
-        setShowAuthProgress(true);
-        
-        try {
-          const validation = await (window as any).electronAPI?.validateMagicLink(data.token);
-          if (validation?.valid && validation.payload) {
-            // Process magic link connection
-            const email = validation.payload.email;
-            const provider = validation.payload.provider;
-            
-            // For magic links, we'd typically have pre-configured credentials
-            // or use them to initiate OAuth
-            setAuthStep(AuthStep.CONNECTED);
-            setShowAuthProgress(false);
-            setStep('success');
-            setTimeout(() => onClose(), 2000);
-          } else {
-            throw new Error(validation?.error || 'Invalid magic link');
-          }
-        } catch (error: any) {
-          const errorInfo = ErrorHandlerService.handleAuthError(error, {
-            method: 'magic-link',
-          });
-          setErrorMessage(errorInfo.userMessage);
-          setAuthStep(AuthStep.ERROR);
-          setShowAuthProgress(false);
-          setStep('error');
-        }
-      }
-    };
-
-    if ((window as any).electronAPI) {
-      (window as any).electronAPI.onOAuthCallback(handleOAuthCallback);
-      (window as any).electronAPI.onMagicLinkCallback(handleMagicLinkCallback);
-      
-      return () => {
-        (window as any).electronAPI?.removeOAuthCallback();
-        (window as any).electronAPI?.removeMagicLinkCallback();
-      };
-    }
-  }, [isOpen, channel, emailAddress, oauthConfig, onLink, onClose]);
-
-  const handleEmailConnect = async (provider: 'google' | 'microsoft' | 'custom') => {
-    setEmailProvider(provider);
-    setErrorMessage('');
-    
-    try {
-      if (provider === 'google' || provider === 'microsoft') {
-        // OAuth flow
-        if (!oauthConfig) {
-          setStep('credentials');
-          setErrorMessage('OAuth configuration required. Please configure OAuth credentials in Settings > Integrations > OAuth Configuration. You can also use manual SMTP/IMAP credentials as an alternative.');
-          return;
-        }
-
-        const oauthProvider = provider === 'google' ? 'gmail' : 'outlook';
-        const providerConfig = oauthProvider === 'outlook' ? oauthConfig.outlook : oauthConfig.gmail;
-
-        // Validate provider-specific OAuth config
-        if (!providerConfig || !providerConfig.clientId || !providerConfig.clientSecret) {
-          setStep('credentials');
-          setErrorMessage(`${oauthProvider === 'outlook' ? 'Outlook' : 'Gmail'} OAuth configuration not found. Please configure ${oauthProvider === 'outlook' ? 'Outlook' : 'Gmail'} Client ID and Client Secret in Settings > Integrations > OAuth Configuration. You can also use manual SMTP/IMAP credentials as an alternative.`);
-          return;
-        }
-
-        // Build OAuth config for the service
-        const { PlatformService } = await import('../services/platformService');
-        const port = await PlatformService.getAppConfig('serverPort', 4000);
-        const redirectUri = oauthConfig.redirectUri || `http://localhost:${port}/auth/oauth/callback`;
-        
-        const serviceConfig = {
-          clientId: providerConfig.clientId,
-          clientSecret: providerConfig.clientSecret,
-          redirectUri: redirectUri,
-          tenantId: oauthProvider === 'outlook' ? (providerConfig as any).tenantId || 'common' : undefined
-        };
-
-        // Validate config using OAuth service
-        const { OAuthService } = await import('../services/oauthService');
-        const validation = OAuthService.validateOAuthConfig(serviceConfig, oauthProvider);
-        if (!validation.valid) {
-          setStep('credentials');
-          setErrorMessage(`Invalid OAuth configuration: ${validation.error}. Please check your settings in Settings > Integrations > OAuth Configuration.`);
-          return;
-        }
-
-        setAuthStep(AuthStep.INITIATING);
-        setShowAuthProgress(true);
-
-        try {
-          const result = await (window as any).electronAPI?.initiateOAuth(
-            oauthProvider,
-            serviceConfig,
-            emailAddress
-          );
-
-          if (result?.success) {
-            setAuthStep(AuthStep.AUTHENTICATING);
-            AuthLogService.logLinkClick({
-              source: 'app',
-              url: 'oauth://initiate',
-              type: 'oauth',
-              success: true,
-            });
-            // OAuth URL opened in browser, waiting for callback
-          } else {
-            throw new Error(result?.error || 'Failed to initiate OAuth');
-          }
-        } catch (error: any) {
-          const errorInfo = ErrorHandlerService.handleAuthError(error, {
-            provider: provider === 'google' ? 'gmail' : 'outlook',
-            method: 'oauth',
-          });
-          
-          // Add fallback options to error message
-          let enhancedMessage = errorInfo.userMessage;
-          if (errorInfo.fallbackOptions && errorInfo.fallbackOptions.length > 0) {
-            enhancedMessage += '\n\nAlternatives:\n' + errorInfo.fallbackOptions.map(opt => `• ${opt}`).join('\n');
-          }
-          
-          setErrorMessage(enhancedMessage);
-          setAuthStep(AuthStep.ERROR);
-          setShowAuthProgress(false);
-          setStep('error');
-        }
-      } else {
-        // Custom SMTP/IMAP - show credential form
-        setStep('credentials');
-        return;
-      }
-    } catch (error: any) {
-      const errorInfo = ErrorHandlerService.handleAuthError(error);
-      setStep('error');
-      setErrorMessage(errorInfo.userMessage);
-    }
-  };
-
-  const handleMagicLink = async () => {
-    if (!emailAddress) {
-      setErrorMessage('Please enter your email address');
-      return;
-    }
-
-    const { EmailAuthService } = await import('../services/emailAuthService');
-    const provider = EmailAuthService.detectEmailProvider(emailAddress);
-    if (provider === 'custom') {
-      setErrorMessage('Magic links are only available for Gmail and Outlook. Please use OAuth or manual credentials.');
-      return;
-    }
-
-    setStep('magic-link');
-    setAuthStep(AuthStep.INITIATING);
-    setShowAuthProgress(true);
-
-    try {
-      const result = await (window as any).electronAPI?.sendMagicLink(
-        emailAddress,
-        provider,
-        'email_connection'
-      );
-
-      if (result?.success) {
-        setAuthStep(AuthStep.AUTHENTICATING);
-        setErrorMessage('');
-        AuthLogService.logLinkClick({
-          source: 'app',
-          url: 'magic-link://send',
-          type: 'magic-link',
-          success: true,
-        });
-      } else {
-        throw new Error(result?.error || 'Failed to send magic link');
-      }
-    } catch (error: any) {
-      const errorInfo = ErrorHandlerService.handleAuthError(error, {
-        provider,
-        method: 'magic-link',
-      });
-      setErrorMessage(errorInfo.userMessage);
-      setAuthStep(AuthStep.ERROR);
-      setShowAuthProgress(false);
-      setStep('error');
-    }
-  };
-
-  const handleMagicLinkInput = async () => {
-    if (!magicLinkToken.trim()) {
-      setErrorMessage('Please enter the magic link');
-      return;
-    }
-
-    setAuthStep(AuthStep.AUTHENTICATING);
-    setShowAuthProgress(true);
-
-    try {
-      const validation = await (window as any).electronAPI?.validateMagicLink(magicLinkToken);
-      if (validation?.valid && validation.payload) {
-        // Process magic link
-        setAuthStep(AuthStep.CONNECTED);
-        setShowAuthProgress(false);
-        setStep('success');
-        setTimeout(() => onClose(), 2000);
-      } else {
-        throw new Error(validation?.error || 'Invalid magic link');
-      }
-    } catch (error: any) {
-      const errorInfo = ErrorHandlerService.handleAuthError(error, {
-        method: 'magic-link',
-      });
-      setErrorMessage(errorInfo.userMessage);
-      setAuthStep(AuthStep.ERROR);
-      setShowAuthProgress(false);
-      setStep('error');
-    }
-  };
-
   const getInstructions = () => {
     switch (channel) {
       case Channel.WHATSAPP:
@@ -766,6 +356,16 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
             </p>
           </div>
         );
+      case Channel.EMAIL:
+        return (
+          <div className="text-left space-y-3 text-sm text-slate-600">
+            <p className="font-semibold text-slate-800 mb-2">Connect your Outlook account:</p>
+            <p>Click the button below to connect your Outlook account using OAuth 2.0. You'll be redirected to Microsoft's secure login page.</p>
+            <p className="text-xs text-slate-500 mt-2">
+              Make sure you have configured your Outlook OAuth credentials in Settings → Integrations → Email & OAuth.
+            </p>
+          </div>
+        );
       default:
         return null;
     }
@@ -775,15 +375,15 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
     switch (channel) {
       case Channel.WHATSAPP: return 'bg-[#00a884]';
       case Channel.WECHAT: return 'bg-[#07C160]';
-      case Channel.EMAIL: return 'bg-blue-600';
+      case Channel.EMAIL: return 'bg-[#0078d4]';
       default: return 'bg-slate-900';
     }
   };
 
   const getHeaderIcon = () => {
     switch (channel) {
-      case Channel.EMAIL: return <Mail className="w-5 h-5" />;
       case Channel.WECHAT: return <MessageCircle className="w-5 h-5" />;
+      case Channel.EMAIL: return <Mail className="w-5 h-5" />;
       default: return <Smartphone className="w-5 h-5" />;
     }
   };
@@ -808,357 +408,6 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         {/* Body */}
         <div className="p-8 flex flex-col overflow-y-auto">
           
-          {/* EMAIL: Provider Selection */}
-          {step === 'provider-select' && channel === Channel.EMAIL && (
-            <div className="w-full space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-              <p className="text-slate-600 mb-6 text-sm">Select your email provider to authorize access via OAuth 2.0.</p>
-              
-              <button 
-                onClick={() => handleEmailConnect('google')}
-                className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all hover:shadow-md group"
-              >
-                <div className="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center text-slate-700 group-hover:scale-110 transition-transform">
-                  <span className="font-bold text-lg">G</span>
-                </div>
-                <div className="ml-4 text-left">
-                  <span className="block font-bold text-slate-800">Sign in with Google</span>
-                  <span className="block text-xs text-slate-500">Gmail, G Suite, Workspace</span>
-                </div>
-              </button>
-
-              <button 
-                onClick={() => handleEmailConnect('microsoft')}
-                className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all hover:shadow-md group"
-              >
-                <div className="w-10 h-10 bg-[#00a4ef] text-white rounded-full shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <span className="font-bold text-lg">M</span>
-                </div>
-                <div className="ml-4 text-left">
-                  <span className="block font-bold text-slate-800">Sign in with Microsoft</span>
-                  <span className="block text-xs text-slate-500">Outlook, Office 365</span>
-                </div>
-              </button>
-
-              <button 
-                onClick={() => handleEmailConnect('custom')}
-                className="w-full flex items-center p-4 border border-slate-200 rounded-xl hover:bg-slate-50 transition-all hover:shadow-md group"
-              >
-                <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-full shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Server className="w-5 h-5" />
-                </div>
-                <div className="ml-4 text-left">
-                  <span className="block font-bold text-slate-800">IMAP/SMTP</span>
-                  <span className="block text-xs text-slate-500">Custom server configuration</span>
-                </div>
-              </button>
-              </div>
-          )}
-
-          {/* EMAIL: SMTP/IMAP Credentials Form */}
-          {step === 'credentials' && channel === Channel.EMAIL && emailProvider === 'custom' && (
-            <div className="w-full space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
-                <h3 className="font-bold text-slate-800 text-sm mb-2">SMTP/IMAP Configuration</h3>
-                <p className="text-xs text-slate-600 mb-3">
-                  Enter your email server credentials. For Gmail, use app-specific password.
-                </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
-                  <p className="text-xs text-amber-800 font-medium mb-1">⚠️ Important Notice</p>
-                  <p className="text-xs text-amber-700">
-                    Some Outlook.com accounts have basic authentication disabled by Microsoft. 
-                    If you get "basic authentication is disabled" error, use <strong>"Sign in with Microsoft"</strong> (OAuth) instead.
-                  </p>
-                </div>
-                
-                {/* Auto-filled credentials notice */}
-                {(accessToken || phoneNumberId || imapHost) && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm text-blue-800 font-medium">
-                        {webhookVerifyToken ? 'Default credentials auto-filled' : 'Existing credentials loaded'}
-                      </p>
-                      <p className="text-xs text-blue-600 mt-1">
-                        {webhookVerifyToken 
-                          ? 'Default Outlook credentials have been pre-filled. You can modify them if needed.'
-                          : 'Your existing email credentials have been loaded. Password is required for reconnection.'}
-                      </p>
-                      {(accessToken?.includes('@outlook.com') || accessToken?.includes('@hotmail.com')) && (
-                        <p className="text-xs text-amber-700 mt-2 font-medium">
-                          ⚠️ Note: Some Outlook.com accounts require App Passwords even without 2FA enabled. If authentication fails, try using an App Password.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Preset Configuration Buttons */}
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <button
-                    onClick={() => {
-                      setAccessToken('');
-                      setPhoneNumberId('smtp-mail.outlook.com');
-                      setBusinessAccountId('587');
-                      setImapHost('outlook.office365.com');
-                      setImapPort('993');
-                    }}
-                    className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
-                  >
-                    Outlook.com
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAccessToken('');
-                      setPhoneNumberId('smtp.gmail.com');
-                      setBusinessAccountId('587');
-                      setImapHost('imap.gmail.com');
-                      setImapPort('993');
-                    }}
-                    className="px-3 py-1.5 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
-                  >
-                    Gmail
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAccessToken('');
-                      setPhoneNumberId('smtp.mail.yahoo.com');
-                      setBusinessAccountId('587');
-                      setImapHost('imap.mail.yahoo.com');
-                      setImapPort('993');
-                    }}
-                    className="px-3 py-1.5 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-md hover:bg-purple-100 transition-colors"
-                  >
-                    Yahoo Mail
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAccessToken('');
-                      setPhoneNumberId('');
-                      setBusinessAccountId('');
-                      setWebhookVerifyToken('');
-                      setImapHost('');
-                      setImapPort('');
-                    }}
-                    className="px-3 py-1.5 text-xs bg-gray-50 text-gray-700 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-
-              {errorMessage && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm text-red-800 whitespace-pre-line leading-relaxed">{errorMessage}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Email Address <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={accessToken} // Reusing for email
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    placeholder="your.email@example.com"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    SMTP Host <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={phoneNumberId} // Reusing for SMTP host
-                    onChange={(e) => setPhoneNumberId(e.target.value)}
-                    placeholder="smtp.gmail.com"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    SMTP Port <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={businessAccountId} // Reusing for port
-                    onChange={(e) => setBusinessAccountId(e.target.value)}
-                    placeholder="587"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Password/App Password <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={webhookVerifyToken} // Reusing for password
-                    onChange={(e) => setWebhookVerifyToken(e.target.value)}
-                    placeholder="Your email password or app password"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs text-slate-600">
-                      <strong className="text-amber-700">⚠️ Important:</strong> For accounts with 2-Step Verification (2FA), you <strong>must</strong> use an App Password, not your regular password.
-                    </p>
-                    <details className="text-xs bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
-                      <summary className="px-3 py-2 cursor-pointer font-semibold text-blue-800 hover:bg-blue-100 transition-colors">
-                        📖 How to create an App Password (Click to expand)
-                      </summary>
-                      <div className="px-3 pb-3 pt-2 space-y-2 text-blue-700 border-t border-blue-200">
-                        <div>
-                          <p className="font-semibold mb-1">For Outlook/Hotmail/Live accounts:</p>
-                          <ol className="list-decimal list-inside space-y-0.5 ml-1 text-xs">
-                            <li>Go to <a href="https://account.microsoft.com/security" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">account.microsoft.com/security</a></li>
-                            <li>Click on <strong>"Advanced security options"</strong></li>
-                            <li>Scroll down to <strong>"App passwords"</strong> section</li>
-                            <li>Click <strong>"Create a new app password"</strong></li>
-                            <li>Copy the generated password and paste it here</li>
-                          </ol>
-                        </div>
-                        <div>
-                          <p className="font-semibold mb-1">For Gmail accounts:</p>
-                          <ol className="list-decimal list-inside space-y-0.5 ml-1 text-xs">
-                            <li>Go to <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">myaccount.google.com/security</a></li>
-                            <li>Under "Signing in to Google", click <strong>"2-Step Verification"</strong></li>
-                            <li>Scroll down and click <strong>"App passwords"</strong></li>
-                            <li>Select "Mail" and "Other (Custom name)" and enter "GlobalReach"</li>
-                            <li>Click "Generate" and copy the 16-character password</li>
-                          </ol>
-                        </div>
-                      </div>
-                    </details>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200">
-                  <h4 className="text-sm font-medium text-slate-700 mb-3">IMAP Settings (For Reading Emails)</h4>
-                  
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        IMAP Host <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={imapHost}
-                        onChange={(e) => setImapHost(e.target.value)}
-                        placeholder="imap.gmail.com or outlook.office365.com"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        IMAP Port <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        value={imapPort}
-                        onChange={(e) => setImapPort(e.target.value)}
-                        placeholder="993"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                      <p className="text-xs text-slate-500 mt-1">
-                        Usually 993 (SSL/TLS) or 143 (STARTTLS)
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={async () => {
-                    setStep('testing');
-                    setErrorMessage('');
-                    
-                    try {
-                      // Validate required fields
-                      if (!accessToken || !phoneNumberId || !businessAccountId || !webhookVerifyToken) {
-                        throw new Error('Please fill in all required fields (Email, SMTP Host, SMTP Port, Password)');
-                      }
-                      
-                      if (!imapHost || !imapPort) {
-                        throw new Error('Please fill in IMAP Host and IMAP Port for reading emails');
-                      }
-
-                      // Test SMTP connection using IPC (runs in main process where nodemailer is available)
-                      // Detect provider from email address for better error handling
-                      const emailDomain = accessToken.split('@')[1]?.toLowerCase();
-                      let detectedProvider: 'gmail' | 'outlook' | 'imap' = 'imap';
-                      if (emailDomain === 'gmail.com' || emailDomain === 'googlemail.com') {
-                        detectedProvider = 'gmail';
-                      } else if (emailDomain === 'outlook.com' || emailDomain === 'hotmail.com' || emailDomain === 'live.com' || emailDomain?.endsWith('.office365.com')) {
-                        detectedProvider = 'outlook';
-                      }
-                      
-                      // Use 'imap' provider for SMTP/IMAP connections (even for Outlook)
-                      // This ensures we use SMTP authentication, not OAuth
-                      const creds: EmailCredentials = {
-                        provider: 'imap' as const, // Always use 'imap' for SMTP/IMAP connections
-                        smtpHost: phoneNumberId.trim(),
-                        smtpPort: parseInt(businessAccountId) || 587,
-                        imapHost: imapHost.trim(),
-                        imapPort: parseInt(imapPort) || 993,
-                        username: accessToken.trim(),
-                        password: webhookVerifyToken.trim(), // Trim any whitespace from App Password
-                      };
-                      
-                      // Use IPC service wrapper to avoid importing emailService.ts (which causes nodemailer resolution errors)
-                      const { EmailIPCService } = await import('../services/emailIPCService');
-                      const result = await EmailIPCService.testConnection(creds);
-                      
-                      if (!result) {
-                        throw new Error('No response from connection test. Please try again.');
-                      }
-                      
-                      if (result.success) {
-                        // Connect
-                        const connection: PlatformConnection = {
-                          channel: Channel.EMAIL,
-                          status: PlatformStatus.CONNECTED,
-                          accountName: accessToken,
-                          connectedAt: Date.now(),
-                          provider: 'custom',
-                          emailCredentials: creds as EmailCredentials,
-                        };
-                        onLink(connection);
-                        setStep('success');
-                        setTimeout(() => onClose(), 2000);
-                      } else {
-                        setStep('credentials');
-                        // Display enhanced error message with actionable guidance
-                        let errorMsg = result.error || 'Connection test failed. Please check your credentials and server settings.';
-                        
-                        // Preserve line breaks from the error message for better formatting
-                        setErrorMessage(errorMsg);
-                      }
-                    } catch (error: any) {
-                      console.error('Email connection test error:', error);
-                      setStep('credentials');
-                      const errorMsg = error.message || error.toString() || 'Connection test failed';
-                      setErrorMessage(errorMsg.includes('nodemailer') || errorMsg.includes('module specifier') 
-                        ? 'Internal error: Please restart the application and try again.' 
-                        : errorMsg);
-                    }
-                  }}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-                >
-                  Test & Connect
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* WHATSAPP: Credentials Form */}
           {step === 'credentials' && channel === Channel.WHATSAPP && (
@@ -1339,8 +588,6 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                   ? 'Verifying WhatsApp API credentials...'
                   : channel === Channel.WECHAT
                   ? 'Verifying WeChat API credentials...'
-                  : channel === Channel.EMAIL 
-                  ? `Connecting to ${emailProvider === 'google' ? 'Google' : emailProvider === 'microsoft' ? 'Microsoft' : 'Server'}...`
                   : "Securely linking your device session."}
               </p>
               {testResult && testResult.success && (
@@ -1358,7 +605,7 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
                 <CheckCircle className="w-10 h-10" />
               </div>
               <h3 className="font-bold text-slate-800 text-xl">
-                {channel === Channel.EMAIL ? 'Email Linked!' : channel === Channel.WECHAT ? 'WeChat Connected!' : 'WhatsApp Connected!'}
+                {channel === Channel.WECHAT ? 'WeChat Connected!' : 'WhatsApp Connected!'}
               </h3>
               <p className="text-slate-500 text-sm">Redirecting back to settings...</p>
             </div>
@@ -1367,34 +614,7 @@ const PlatformConnectModal: React.FC<PlatformConnectModalProps> = ({ isOpen, onC
         </div>
       </div>
 
-      {/* Auth Progress Modal */}
-      <AuthProgressModal
-        isOpen={showAuthProgress}
-        currentStep={authStep}
-        provider={emailProvider === 'google' ? 'gmail' : emailProvider === 'microsoft' ? 'outlook' : 'custom'}
-        error={authStep === AuthStep.ERROR ? {
-          code: 'AUTH_ERROR',
-          message: errorMessage,
-          retryable: true,
-        } : undefined}
-        onClose={() => {
-          setShowAuthProgress(false);
-          if (authStep === AuthStep.CONNECTED) {
-            setStep('success');
-            setTimeout(() => onClose(), 2000);
-          }
-        }}
-        onRetry={() => {
-          if (emailProvider === 'google' || emailProvider === 'microsoft') {
-            handleEmailConnect(emailProvider);
-          } else {
-            handleMagicLink();
-          }
-        }}
-        onHelp={() => {
-          window.open('https://support.globalreach.app/auth', '_blank');
-        }}
-      />
+      {/* Auth Progress Modal removed - email functionality removed */}
     </div>
   );
 };

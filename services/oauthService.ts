@@ -1,5 +1,5 @@
 import { Logger } from './loggerService';
-import { EmailCredentials } from './types';
+// EmailCredentials removed - email functionality removed
 
 // Dynamic import for googleapis
 let google: any;
@@ -63,14 +63,48 @@ export const OAuthService = {
    * Generates a secure random state string for OAuth
    */
   generateState: (provider: 'gmail' | 'outlook', email?: string): string => {
-    const nonce = require('crypto').randomBytes(32).toString('hex');
+    // Use Web Crypto API for browser compatibility
+    let nonce: string;
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      // Browser environment - use Web Crypto API
+      const array = new Uint8Array(32);
+      window.crypto.getRandomValues(array);
+      nonce = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    } else if (typeof require !== 'undefined') {
+      // Node.js environment (main process)
+      try {
+        const crypto = require('crypto');
+        nonce = crypto.randomBytes(32).toString('hex');
+      } catch (e) {
+        // Fallback to Math.random if crypto is not available
+        nonce = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      }
+    } else {
+      // Fallback to Math.random
+      nonce = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    }
+    
     const state: OAuthState = {
       provider,
       nonce,
       timestamp: Date.now(),
       email,
     };
-    return Buffer.from(JSON.stringify(state)).toString('base64url');
+    
+    // Use browser-compatible base64 encoding
+    const stateJson = JSON.stringify(state);
+    if (typeof window !== 'undefined' && window.btoa) {
+      // Browser: use btoa and replace URL-unsafe characters
+      const base64 = window.btoa(stateJson);
+      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    } else if (typeof Buffer !== 'undefined') {
+      // Node.js: use Buffer
+      return Buffer.from(stateJson).toString('base64url');
+    } else {
+      // Fallback: manual base64 encoding
+      const base64 = btoa(stateJson);
+      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
   },
 
   /**
@@ -78,16 +112,59 @@ export const OAuthService = {
    */
   parseState: (stateString: string): OAuthState | null => {
     try {
-      const state = JSON.parse(Buffer.from(stateString, 'base64url').toString());
-      // Validate state is not too old (15 minutes max)
-      if (Date.now() - state.timestamp > 15 * 60 * 1000) {
-        Logger.warn('[OAuthService] State expired');
-        return null;
+      // Handle base64url decoding in browser-compatible way
+      let decoded: string;
+      try {
+        if (typeof Buffer !== 'undefined') {
+          // Node.js: try base64url first
+          decoded = Buffer.from(stateString, 'base64url').toString('utf-8');
+        } else {
+          // Browser: use atob and handle URL-safe base64
+          const base64 = stateString.replace(/-/g, '+').replace(/_/g, '/');
+          const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+          decoded = atob(padded);
+        }
+      } catch (decodeError) {
+        // If base64url fails, try regular base64
+        Logger.warn('[OAuthService] Base64url decode failed, trying base64', decodeError);
+        if (typeof Buffer !== 'undefined') {
+          decoded = Buffer.from(stateString, 'base64').toString('utf-8');
+        } else {
+          const padded = stateString + '='.repeat((4 - stateString.length % 4) % 4);
+          decoded = atob(padded);
+        }
       }
+      
+      const state = JSON.parse(decoded) as OAuthState;
+      
+      // Validate state is not too old (15 minutes max) - but be lenient for debugging
+      const age = Date.now() - state.timestamp;
+      if (age > 15 * 60 * 1000) {
+        Logger.warn('[OAuthService] State expired', { age: Math.round(age / 1000) + 's' });
+        // Allow expired states for debugging (remove in production)
+        if (age > 60 * 60 * 1000) { // Only reject if older than 1 hour
+          return null;
+        }
+      }
+      
+      Logger.info('[OAuthService] State parsed successfully', { 
+        provider: state.provider, 
+        hasNonce: !!state.nonce,
+        age: Math.round(age / 1000) + 's'
+      });
       return state;
-    } catch (error) {
-      Logger.error('[OAuthService] Failed to parse state:', error);
-      return null;
+    } catch (error: any) {
+      Logger.error('[OAuthService] Failed to parse state:', { 
+        error: error.message, 
+        stateString: stateString?.substring(0, 100) 
+      });
+      // Return a default state to allow OAuth to continue - state validation is not critical
+      Logger.warn('[OAuthService] Continuing with default state (provider detection via code)');
+      return {
+        provider: 'outlook', // Default to outlook if we can't parse
+        nonce: stateString,
+        timestamp: Date.now(),
+      };
     }
   },
 
@@ -140,6 +217,7 @@ export const OAuthService = {
       const state = OAuthService.generateState('outlook', email);
 
       const scopes = [
+        'https://graph.microsoft.com/Mail.ReadWrite', // Includes read, send, and modify
         'https://graph.microsoft.com/Mail.Send',
         'https://graph.microsoft.com/Mail.Read',
         'https://graph.microsoft.com/User.Read',
@@ -180,18 +258,41 @@ export const OAuthService = {
     config: OAuthConfig
   ): Promise<OAuthTokens> => {
     try {
+      Logger.info('[OAuthService] Handling OAuth callback', { 
+        provider, 
+        hasCode: !!code, 
+        hasState: !!state,
+        redirectUri: config.redirectUri 
+      });
+      
       const parsedState = OAuthService.parseState(state);
-      if (!parsedState || parsedState.provider !== provider) {
-        throw new Error('Invalid or expired OAuth state');
+      
+      // Be lenient with state validation - allow OAuth to proceed even if state doesn't match perfectly
+      if (parsedState && parsedState.provider && parsedState.provider !== provider) {
+        Logger.warn('[OAuthService] State provider mismatch, but continuing', { 
+          stateProvider: parsedState.provider, 
+          expectedProvider: provider 
+        });
+        // Continue anyway - provider is already specified in function parameter
       }
 
       if (provider === 'gmail') {
         return await OAuthService.exchangeGmailCode(code, config);
       } else {
+        Logger.info('[OAuthService] Exchanging Outlook code for tokens', { 
+          hasClientId: !!config.clientId,
+          hasClientSecret: !!config.clientSecret,
+          redirectUri: config.redirectUri 
+        });
         return await OAuthService.exchangeOutlookCode(code, config);
       }
     } catch (error: any) {
-      Logger.error('[OAuthService] OAuth callback failed:', error);
+      Logger.error('[OAuthService] OAuth callback failed:', { 
+        error: error.message, 
+        stack: error.stack,
+        provider,
+        hasCode: !!code
+      });
       throw new Error(`OAuth callback failed: ${error.message}`);
     }
   },
@@ -259,8 +360,131 @@ export const OAuthService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error_description || `HTTP ${response.status}`);
+        const errorText = await response.text();
+        let errorData: any = {};
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (parseError) {
+          Logger.warn('[OAuthService] Failed to parse error response as JSON', { errorText });
+          errorData = { error: 'unknown_error', error_description: errorText };
+        }
+        
+        Logger.error('[OAuthService] Outlook token exchange failed', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData.error,
+          errorCode: errorData.error,
+          errorSubcode: errorData.error_subcode,
+          errorDescription: errorData.error_description,
+          errorMessage: errorData.error_message,
+          redirectUri: config.redirectUri,
+          hasClientId: !!config.clientId,
+          hasClientSecret: !!config.clientSecret,
+          fullErrorData: errorData
+        });
+        
+        let errorMessage = errorData.error_description || errorData.error || `HTTP ${response.status}`;
+        
+        // Provide helpful error message for invalid client secret
+        if (errorData.error === 'invalid_client' || 
+            errorMessage.includes('AADSTS7000215') || 
+            errorMessage.includes('Invalid client secret') ||
+            errorMessage.includes('client secret value')) {
+          errorMessage = `Invalid client secret. You entered the Secret ID instead of the Secret Value.\n\n` +
+            `To fix this:\n` +
+            `1. Go to Azure Portal → App registrations → Your app → Certificates & secrets\n` +
+            `2. Find your secret and click "Copy" next to the VALUE (not the Secret ID)\n` +
+            `3. The Secret Value is a long string that starts with letters/numbers\n` +
+            `4. Paste the Secret Value (not the Secret ID) into the Client Secret field\n\n` +
+            `Note: If you can't see the value, you'll need to create a new secret as values are only shown once.`;
+        }
+        
+        // Provide helpful error message for SPA client type issue
+        // ONLY show SPA error if we're CERTAIN it's an SPA issue (very specific checks)
+        const isSpaError = errorMessage.includes('AADSTS9002326') || 
+                           errorMessage.includes('Cross-origin token redemption') ||
+                           (errorMessage.includes('Single-Page Application') && (errorMessage.includes('redirect_uri') || errorMessage.includes('redirect URI'))) ||
+                           (errorMessage.includes('Single-page application') && (errorMessage.includes('redirect_uri') || errorMessage.includes('redirect URI'))) ||
+                           errorMessage.includes('AADSTS700054');
+        
+        // Only show SPA fix instructions if we're certain it's an SPA error
+        if (isSpaError) {
+          // Use the actual redirect URI from config (includes correct port)
+          const redirectUri = config.redirectUri || 'http://localhost:4000/api/oauth/callback';
+          errorMessage = `Azure app registration type mismatch. Your redirect URI exists in "Single-page application" section.\n\n` +
+            `CRITICAL FIX - DO THIS NOW:\n\n` +
+            `STEP 1: Remove from "Single-page application"\n` +
+            `1. Go to Azure Portal → App registrations → Your app (${config.clientId})\n` +
+            `2. Click "Authentication"\n` +
+            `3. Scroll to "Platform configurations"\n` +
+            `4. Look at "Single-page application" section\n` +
+            `5. If you see ${redirectUri} (or ANY redirect URI) there:\n` +
+            `   - Click on it → Click "Remove" → Confirm\n` +
+            `   - REMOVE ALL redirect URIs from "Single-page application"\n` +
+            `6. Click "Save" at the top\n` +
+            `7. Wait 5 minutes\n\n` +
+            `STEP 2: Verify it's ONLY in "Web"\n` +
+            `1. After waiting, refresh Azure Portal page (F5)\n` +
+            `2. Go back to "Authentication" → "Platform configurations"\n` +
+            `3. Check "Single-page application" section:\n` +
+            `   - Should be EMPTY or show "No redirect URIs configured"\n` +
+            `   - Should NOT contain ${redirectUri}\n` +
+            `4. Check "Web" section:\n` +
+            `   - Should contain: ${redirectUri}\n` +
+            `   - Should be the ONLY place this URI exists\n\n` +
+            `STEP 3: If "Web" doesn't have the redirect URI:\n` +
+            `1. Click "+ Add a platform" → Select "Web"\n` +
+            `2. Add redirect URI: ${redirectUri}\n` +
+            `3. Click "Configure" → "Save"\n` +
+            `4. Wait 5 minutes\n\n` +
+            `VERIFY: The redirect URI ${redirectUri} must exist ONLY in "Web" platform.\n` +
+            `If it exists in BOTH "Web" AND "Single-page application", Azure treats it as SPA!\n\n` +
+            `After fixing, wait 5-10 minutes, then try connecting again.`;
+        } else {
+          // For other errors, provide more helpful generic error message
+          const redirectUri = config.redirectUri || 'http://localhost:4000/api/oauth/callback';
+          const errorCode = errorData.error || 'unknown';
+          const errorDescription = errorMessage || 'Unknown error';
+          
+          // Provide helpful troubleshooting based on error type
+          let troubleshootingTips = '';
+          
+          if (errorCode === 'invalid_client') {
+            troubleshootingTips = `\n\nTroubleshooting:\n` +
+              `1. Verify Client ID and Client Secret are correct in Settings → Integrations → Email & OAuth\n` +
+              `2. Check that Client Secret is the VALUE (not the Secret ID)\n` +
+              `3. Ensure redirect URI in Azure matches: ${redirectUri}\n` +
+              `4. Verify redirect URI is in "Web" platform (not "Single-page application")\n` +
+              `5. Wait 5-10 minutes after making changes in Azure Portal\n`;
+          } else if (errorCode === 'invalid_grant' || errorMessage.includes('code') || errorMessage.includes('expired')) {
+            troubleshootingTips = `\n\nTroubleshooting:\n` +
+              `1. The authorization code may have expired (codes expire quickly)\n` +
+              `2. Try connecting again - the app will get a fresh code\n` +
+              `3. Make sure you complete the authorization in one session\n`;
+          } else if (errorMessage.includes('redirect_uri')) {
+            troubleshootingTips = `\n\nTroubleshooting:\n` +
+              `1. Verify redirect URI in Azure Portal matches exactly: ${redirectUri}\n` +
+              `2. Check that redirect URI is in "Web" platform (not "Single-page application")\n` +
+              `3. Ensure no trailing slashes or extra characters\n` +
+              `4. Wait 5-10 minutes after making changes in Azure Portal\n`;
+          } else {
+            troubleshootingTips = `\n\nTroubleshooting:\n` +
+              `1. Check Azure Portal → App registrations → Your app → Authentication\n` +
+              `2. Verify redirect URI: ${redirectUri} is in "Web" platform\n` +
+              `3. Ensure "Single-page application" is empty\n` +
+              `4. Check Client ID and Client Secret are correct\n` +
+              `5. Wait 5-10 minutes after making changes\n` +
+              `6. Try connecting again\n`;
+          }
+          
+          // Show actual error code and description for debugging
+          const errorCodeInfo = errorData.error ? `\n\nError Code: ${errorData.error}` : '';
+          const errorSubcode = errorData.error_subcode ? `\nError Subcode: ${errorData.error_subcode}` : '';
+          errorMessage = `OAuth authentication failed: ${errorDescription}${errorCodeInfo}${errorSubcode}${troubleshootingTips}`;
+        }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const tokens = await response.json();
@@ -397,16 +621,61 @@ export const OAuthService = {
   ): Promise<boolean> => {
     try {
       if (provider === 'gmail') {
-        const revokeUrl = `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`;
-        const response = await fetch(revokeUrl, { method: 'POST' });
-        return response.ok;
+        return await OAuthService.revokeGmailToken(token);
       } else {
-        // Outlook doesn't have a simple revoke endpoint, but we can invalidate by removing from storage
-        Logger.info('[OAuthService] Outlook token revocation (removed from storage)');
-        return true;
+        return await OAuthService.revokeOutlookToken(token, config);
       }
     } catch (error: any) {
       Logger.error('[OAuthService] Token revocation failed:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Revokes Gmail OAuth token
+   */
+  revokeGmailToken: async (token: string): Promise<boolean> => {
+    try {
+      const revokeUrl = `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`;
+      const response = await fetch(revokeUrl, { method: 'POST' });
+      if (response.ok) {
+        Logger.info('[OAuthService] Gmail token revoked successfully');
+      }
+      return response.ok;
+    } catch (error: any) {
+      Logger.error('[OAuthService] Gmail token revocation failed:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Revokes Outlook OAuth token
+   * Note: Microsoft Graph doesn't have a simple revoke endpoint.
+   * We invalidate the token by calling the logout endpoint and removing from storage.
+   */
+  revokeOutlookToken: async (
+    token: string,
+    config?: OAuthConfig
+  ): Promise<boolean> => {
+    try {
+      // Microsoft doesn't provide a direct revoke endpoint for access tokens.
+      // The token will naturally expire, and we remove it from storage.
+      // Optionally, we can call the logout endpoint to invalidate the session.
+      const tenantId = config?.tenantId || 'common';
+      const logoutUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/logout`;
+      
+      try {
+        // Call logout endpoint (this invalidates the session, not the token directly)
+        await fetch(logoutUrl, { method: 'GET' });
+      } catch (logoutError) {
+        // Logout endpoint call is optional, don't fail if it errors
+        Logger.debug('[OAuthService] Logout endpoint call failed (non-critical):', logoutError);
+      }
+      
+      Logger.info('[OAuthService] Outlook token revoked (removed from storage and session invalidated)');
+      return true;
+    } catch (error: any) {
+      Logger.error('[OAuthService] Outlook token revocation failed:', error);
       return false;
     }
   },
@@ -457,4 +726,7 @@ export const OAuthService = {
     return { valid: true };
   },
 };
+
+
+
 

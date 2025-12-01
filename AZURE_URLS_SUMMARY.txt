@@ -1,0 +1,33 @@
+========================================
+AZURE OAUTH REDIRECT URIs - ADD BOTH
+========================================
+
+Add these TWO URLs to Azure Portal:
+
+1. PRIMARY (Cloudflare Tunnel):
+   https://wheel-baking-survivors-budgets.trycloudflare.com/api/oauth/callback
+
+2. BACKUP (localhost):
+   http://localhost:4000/api/oauth/callback
+
+========================================
+HOW TO ADD IN AZURE PORTAL:
+========================================
+
+1. Go to: https://portal.azure.com
+2. App registrations → Your app → Authentication
+3. Under "Platform configurations" → "Web"
+4. Add BOTH URLs (one per line or separate entries)
+5. Click "Save"
+6. Wait 3-5 minutes
+
+========================================
+HOW THE APP WORKS:
+========================================
+
+- App tries Cloudflare URL FIRST (if tunnel is running)
+- Falls back to localhost if Cloudflare URL not available
+- Both URLs must be in Azure Portal for this to work
+
+========================================
+

@@ -174,18 +174,39 @@ export const validatePhoneNumber = (phone: string): ValidationResult => {
     return { isValid: false, errors };
   }
   
-  // Remove common formatting characters
-  const cleaned = phone.replace(/[\s\-\(\)\+]/g, '');
+  const trimmed = phone.trim();
   
-  // Check if it's all digits
-  if (!/^\d+$/.test(cleaned)) {
-    errors.push('Phone number should contain only digits and formatting characters');
+  // Check for invalid characters (letters, special chars except +, -, spaces, parentheses)
+  const invalidCharPattern = /[^\d\s\+\-\(\)]/;
+  if (invalidCharPattern.test(trimmed)) {
+    const invalidChars = trimmed.match(/[^\d\s\+\-\(\)]/g);
+    if (invalidChars) {
+      const uniqueInvalid = [...new Set(invalidChars)];
+      errors.push(`Phone contains invalid characters: ${uniqueInvalid.join(', ')}. Only digits, +, -, spaces, and () are allowed`);
+    }
   }
   
-  // Check length (typically 7-15 digits)
-  if (cleaned.length < 7 || cleaned.length > 15) {
-    errors.push('Phone number should be between 7 and 15 digits');
+  // Remove common formatting characters for length check
+  const cleaned = trimmed.replace(/[\s\-\(\)\+]/g, '');
+  
+  // Check if it's all digits after cleaning
+  if (!/^\d+$/.test(cleaned)) {
+    if (errors.length === 0) {
+      errors.push('Phone number should contain only digits and formatting characters (+, -, spaces, parentheses)');
     }
+  }
+  
+  // Check length (typically 7-15 digits for international format)
+  if (cleaned.length < 7) {
+    errors.push(`Phone number is too short (${cleaned.length} digits). Minimum 7 digits required`);
+  } else if (cleaned.length > 15) {
+    errors.push(`Phone number is too long (${cleaned.length} digits). Maximum 15 digits allowed`);
+  }
+  
+  // Check for common formatting issues
+  if (trimmed.includes('+') && trimmed.match(/\+\s/)) {
+    errors.push('Remove space after + sign. Use +1234567890 instead of + 1234567890');
+  }
   
   return {
     isValid: errors.length === 0,
@@ -356,21 +377,59 @@ export const simulateNetworkValidation = async (
 
 /**
  * Validates contact format (email or phone)
+ * Returns detailed validation result with error messages
  */
-export const validateContactFormat = (contact: string): { isValid: boolean; type: 'email' | 'phone' | 'unknown' } => {
+export const validateContactFormat = (contact: string): { 
+  isValid: boolean; 
+  type: 'email' | 'phone' | 'unknown';
+  errors?: string[];
+  sanitized?: string;
+} => {
   const trimmed = contact.trim();
+  
+  if (!trimmed) {
+    return { 
+      isValid: false, 
+      type: 'unknown',
+      errors: ['Contact cannot be empty']
+    };
+  }
   
   if (trimmed.includes('@')) {
     const emailResult = validateEmail(trimmed);
-    return { isValid: emailResult.isValid, type: 'email' };
+    return { 
+      isValid: emailResult.isValid, 
+      type: 'email',
+      errors: emailResult.errors.length > 0 ? emailResult.errors : undefined,
+      sanitized: emailResult.sanitized
+    };
   }
   
-  if (/^\+?[\d\s\-\(\)]+$/.test(trimmed.replace(/\s/g, ''))) {
+  // Check if it looks like a phone number
+  const phoneLikePattern = /^\+?[\d\s\-\(\)]+$/;
+  const cleanedForTest = trimmed.replace(/\s/g, '');
+  
+  if (phoneLikePattern.test(cleanedForTest)) {
     const phoneResult = validatePhoneNumber(trimmed);
-    return { isValid: phoneResult.isValid, type: 'phone' };
+    return { 
+      isValid: phoneResult.isValid, 
+      type: 'phone',
+      errors: phoneResult.errors.length > 0 ? phoneResult.errors : undefined,
+      sanitized: phoneResult.sanitized
+    };
   }
   
-  return { isValid: false, type: 'unknown' };
+  // If it doesn't match email or phone patterns, provide helpful error
+  return { 
+    isValid: false, 
+    type: 'unknown',
+    errors: [
+      'Invalid contact format. Expected:',
+      '  • Email: example@domain.com',
+      '  • Phone: +1234567890 or 1234567890',
+      '  • Current value contains invalid characters'
+    ]
+  };
 };
 
 /**
@@ -380,9 +439,40 @@ export const getInitialValidationState = (contactDetail?: string): ImporterValid
   // If contact detail provided, do basic validation
   if (contactDetail) {
     const validation = validateContactFormat(contactDetail);
+    let errorMessages: string[] = [];
+    
+    if (!validation.isValid) {
+      if (validation.errors && validation.errors.length > 0) {
+        // Use the detailed error messages from validation
+        errorMessages = validation.errors;
+      } else {
+        // Fallback to generic message if no specific errors
+        errorMessages = ['Invalid contact format'];
+      }
+      
+      // Add format guidance based on type and errors
+      if (validation.type === 'phone' && validation.errors) {
+        // Check if there's a space after + issue
+        const hasSpaceAfterPlus = contactDetail.includes('+ ') || contactDetail.match(/\+\s/);
+        if (hasSpaceAfterPlus) {
+          errorMessages = [
+            'Remove space after + sign',
+            'Current: ' + contactDetail,
+            'Expected: ' + contactDetail.replace(/\+\s+/, '+'),
+            ...validation.errors.filter(e => !e.includes('space after'))
+          ];
+        }
+      } else if (validation.type === 'unknown') {
+        // Provide format examples
+        if (!errorMessages.some(e => e.includes('Expected:'))) {
+          errorMessages.push('Use: email@domain.com OR +1234567890 (no space after +)');
+        }
+      }
+    }
+    
     return {
       isValid: validation.isValid,
-      errors: validation.isValid ? [] : ['Invalid contact format'],
+      errors: errorMessages,
       emailMxValid: validation.type === 'email' ? true : null,
       whatsappAvailable: validation.type === 'phone' ? true : null,
       wechatAvailable: validation.type === 'phone' ? true : null,
@@ -392,7 +482,7 @@ export const getInitialValidationState = (contactDetail?: string): ImporterValid
   
   return {
     isValid: false,
-    errors: [],
+    errors: ['Contact information is required'],
     emailMxValid: null,
     whatsappAvailable: null,
     wechatAvailable: null,

@@ -1,0 +1,39 @@
+2025-11-30T17:46:33Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps
+2025-11-30T17:46:33Z INF Requesting new quick Tunnel on trycloudflare.com...
+2025-11-30T17:46:39Z INF +--------------------------------------------------------------------------------------------+
+2025-11-30T17:46:39Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+2025-11-30T17:46:39Z INF |  https://sunday-berlin-chocolate-resumes.trycloudflare.com                                 |
+2025-11-30T17:46:39Z INF +--------------------------------------------------------------------------------------------+
+2025-11-30T17:46:39Z INF Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp]
+2025-11-30T17:46:39Z INF Version 2025.11.1 (Checksum 413f9b24dc6e61a455564651524f167b8ce29ac4ccd40703dea7af93cd37ed39)
+2025-11-30T17:46:39Z INF GOOS: windows, GOVersion: go1.24.9, GoArch: amd64
+2025-11-30T17:46:39Z INF Settings: map[ha-connections:1 protocol:quic url:http://localhost:4000]
+2025-11-30T17:46:39Z INF cloudflared will not automatically update on Windows systems.
+2025-11-30T17:46:39Z INF Generated Connector ID: 15e7a683-c450-4a6d-8192-3d8b91f0d793
+2025-11-30T17:46:39Z INF Initial protocol quic
+2025-11-30T17:46:39Z INF ICMP proxy will use 192.168.29.211 as source for IPv4
+2025-11-30T17:46:39Z INF ICMP proxy will use 2405:201:202c:82a:97d:7828:d69e:7240 in zone Wi-Fi 3 as source for IPv6
+2025-11-30T17:46:39Z ERR Cannot determine default origin certificate path. No file cert.pem in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp]. You need to specify the origin certificate path by specifying the origincert option in the configuration file, or set TUNNEL_ORIGIN_CERT environment variable originCertPath=
+2025-11-30T17:46:39Z INF cloudflared does not support loading the system root certificate pool on Windows. Please use --origin-ca-pool <PATH> to specify the path to the certificate pool
+2025-11-30T17:46:39Z INF ICMP proxy will use 192.168.29.211 as source for IPv4
+2025-11-30T17:46:39Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T17:46:39Z INF ICMP proxy will use 2405:201:202c:82a:97d:7828:d69e:7240 in zone Wi-Fi 3 as source for IPv6
+2025-11-30T17:46:39Z INF Starting metrics server on 127.0.0.1:20242/metrics
+2025-11-30T17:46:39Z INF Registered tunnel connection connIndex=0 connection=22937321-3d25-4088-9321-fe333dae8ae4 event=0 ip=198.41.192.67 location=nag01 protocol=quic
+2025-11-30T18:16:51Z ERR failed to accept incoming stream requests error="failed to accept QUIC stream: write udp [::]:60944->198.41.192.67:7844: wsasendto: A socket operation was attempted to an unreachable network." connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T18:16:51Z ERR failed to run the datagram handler error="write udp [::]:60944->198.41.192.67:7844: wsasendto: A socket operation was attempted to an unreachable network." connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T18:16:51Z ERR failed to serve tunnel connection error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T18:16:51Z ERR Serve tunnel error error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T18:16:51Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T18:16:52Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T18:16:55Z INF Registered tunnel connection connIndex=0 connection=1fa7210c-b817-41cf-9299-9c1bfa14e023 event=0 ip=198.41.192.67 location=nag01 protocol=quic
+2025-11-30T18:16:56Z ERR Failed to refresh DNS local resolver error="lookup region1.v2.argotunnel.com: i/o timeout"
+2025-11-30T19:09:33Z INF Initiating graceful shutdown due to signal terminated ...
+2025-11-30T19:09:33Z ERR failed to run the datagram handler error="Application error 0x0 (remote)" connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T19:09:33Z ERR failed to serve tunnel connection error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T19:09:33Z ERR Serve tunnel error error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T19:09:33Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.192.67
+2025-11-30T19:09:33Z ERR Connection terminated connIndex=0
+2025-11-30T19:09:33Z ERR no more connections active and exiting
+2025-11-30T19:09:33Z INF Tunnel server stopped
+2025-11-30T19:09:33Z INF Metrics server stopped

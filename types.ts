@@ -2,8 +2,8 @@
 export enum Channel {
   WHATSAPP = 'WhatsApp',
   WECHAT = 'WeChat',
-  EMAIL = 'Email',
   SMS = 'SMS',
+  EMAIL = 'Email',
 }
 
 export enum LeadStatus {
@@ -84,20 +84,12 @@ export interface WhatsAppCredentials {
   webhookVerifyToken: string;
 }
 
-export interface EmailCredentials {
-  provider: 'gmail' | 'outlook' | 'smtp' | 'imap';
-  accessToken?: string;
+export interface OutlookEmailCredentials {
+  accessToken: string;
   refreshToken?: string;
-  tokenExpiryDate?: number; // Absolute timestamp when access token expires
-  smtpHost?: string;
-  smtpPort?: number;
-  imapHost?: string;
-  imapPort?: number;
-  username?: string;
-  password?: string; // Encrypted
-  oauthClientId?: string;
-  oauthClientSecret?: string;
-  redirectUri?: string; // Store redirect URI used for token refresh
+  expiryDate?: number;
+  userEmail: string;
+  tenantId?: string;
 }
 
 export interface WeChatCredentials {
@@ -115,12 +107,12 @@ export interface PlatformConnection {
   status: PlatformStatus;
   accountName?: string; // e.g., +1 (555) 123-4567 or user@example.com
   connectedAt?: number;
-  provider?: 'google' | 'microsoft' | 'custom' | 'whatsapp' | 'wechat';
+  provider?: 'whatsapp' | 'wechat' | 'outlook';
   lastTested?: number;
   healthStatus?: 'healthy' | 'error';
   whatsappCredentials?: WhatsAppCredentials;
-  emailCredentials?: EmailCredentials;
   wechatCredentials?: WeChatCredentials;
+  emailCredentials?: OutlookEmailCredentials;
 }
 
 export interface User {
@@ -224,7 +216,10 @@ export interface Importer {
   name: string;
   companyName: string;
   country: string;
-  contactDetail: string; // Phone or Email
+  contactDetail: string; // Phone or Email (kept for backward compatibility)
+  email?: string; // Separate email field
+  phone?: string; // Separate phone field
+  primaryContact?: 'phone' | 'email' | null; // Default: phone if available, else email
   productsImported: string;
   quantity: string;
   priceRange: string;
@@ -837,4 +832,13 @@ export interface ProductRecommendation {
   reason: 'previous_purchase' | 'category_match' | 'location_match' | 'seasonal' | 'related_product' | 'ai_suggested';
   confidence: number; // 0-100
   context?: string; // Additional context for recommendation
+}
+
+export interface EmailConnectionStatus {
+  connected: boolean;
+  userEmail?: string;
+  lastSync?: number;
+  tokenExpiry?: number;
+  autoReplyEnabled: boolean;
+  aiDraftApprovalRequired: boolean;
 }

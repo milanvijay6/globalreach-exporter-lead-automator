@@ -1,4 +1,4 @@
-import { AuthSession, PlatformConnection, User } from "../types";
+import { AuthSession, PlatformConnection, User, OutlookEmailCredentials, Channel, PlatformStatus } from "../types";
 import { PlatformService } from "./platformService";
 import { logAdminAction } from "./auditService";
 import { hasAdminAccess, requireAdminAccess } from "./permissionService";
@@ -60,6 +60,7 @@ export const verifyMfaForAdminAction = async (user: User, token: string): Promis
 
 const STORAGE_KEY_USER = 'globalreach_user_session';
 const STORAGE_KEY_PLATFORMS = 'globalreach_platforms';
+const STORAGE_KEY_EMAIL_CONNECTION = 'globalreach_email_connection';
 
 export const saveUserSession = async (user: User) => {
   try {
@@ -110,28 +111,55 @@ export const loadPlatformConnections = async (): Promise<PlatformConnection[]> =
   }
 };
 
+export const saveEmailConnection = async (connection: PlatformConnection): Promise<void> => {
+  try {
+    await PlatformService.secureSave(STORAGE_KEY_EMAIL_CONNECTION, JSON.stringify(connection));
+  } catch (e) {
+    Logger.error('[SecurityService] Failed to save email connection:', e);
+    throw e;
+  }
+};
+
+export const loadEmailConnection = async (): Promise<PlatformConnection | null> => {
+  try {
+    const stored = await PlatformService.secureLoad(STORAGE_KEY_EMAIL_CONNECTION);
+    return stored ? JSON.parse(stored) : null;
+  } catch (e) {
+    Logger.error('[SecurityService] Failed to load email connection:', e);
+    return null;
+  }
+};
+
+export const removeEmailConnection = async (): Promise<void> => {
+  try {
+    await PlatformService.secureSave(STORAGE_KEY_EMAIL_CONNECTION, '');
+  } catch (e) {
+    Logger.error('[SecurityService] Failed to remove email connection:', e);
+    throw e;
+  }
+};
+
 export const refreshPlatformTokens = async (connections: PlatformConnection[]): Promise<PlatformConnection[]> => {
   // Enhanced token refresh with rotation on suspicious activity
   const now = Date.now();
   const updatedConnections: PlatformConnection[] = [];
   
   for (const conn of connections) {
-    // Check if token needs refresh (OAuth tokens)
-    if (conn.emailCredentials?.provider === 'gmail' || conn.emailCredentials?.provider === 'outlook') {
+    // Refresh email tokens if needed
+    if (conn.channel === Channel.EMAIL && conn.emailCredentials) {
       try {
-        const { EmailAuthService } = await import('./emailAuthService');
-        const refreshed = await EmailAuthService.refreshTokensIfNeeded(conn.emailCredentials);
+        const refreshed = await refreshEmailTokens(conn.emailCredentials);
         if (refreshed) {
           conn.emailCredentials = refreshed;
           // Save updated credentials
           const allConnections = await loadPlatformConnections();
           const updated = allConnections.map(c => 
-            c.channel === conn.channel ? conn : c
+            c.channel === conn.channel && c.accountName === conn.accountName ? conn : c
           );
           savePlatformConnections(updated);
         }
       } catch (error) {
-        Logger.warn('[SecurityService] Token refresh failed:', error);
+        Logger.warn('[SecurityService] Email token refresh failed:', error);
       }
     }
     
@@ -172,19 +200,30 @@ export const getActiveSessions = (): AuthSession[] => {
  */
 export const deleteUserData = async (userId: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    // Revoke OAuth tokens
+    // Revoke email OAuth tokens
     const connections = await loadPlatformConnections();
     for (const conn of connections) {
-      if (conn.emailCredentials?.provider === 'gmail' || conn.emailCredentials?.provider === 'outlook') {
+      if (conn.channel === Channel.EMAIL && conn.emailCredentials) {
         if (conn.emailCredentials.accessToken) {
           try {
             const { OAuthService } = await import('./oauthService');
-            await OAuthService.revokeOAuthToken(
-              conn.emailCredentials.provider,
-              conn.emailCredentials.accessToken
+            const { PlatformService } = await import('./platformService');
+            const clientId = await PlatformService.getAppConfig('outlookClientId', '');
+            const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
+            
+            if (clientId) {
+              await OAuthService.revokeOutlookToken(
+                conn.emailCredentials.accessToken,
+                {
+                  clientId,
+                  clientSecret: '', // Not needed for revocation
+                  redirectUri: '',
+                  tenantId: tenantId || conn.emailCredentials.tenantId || 'common',
+                }
             );
+            }
           } catch (error) {
-            Logger.warn('[SecurityService] Failed to revoke token during deletion:', error);
+            Logger.warn('[SecurityService] Failed to revoke email token during deletion:', error);
           }
         }
       }
@@ -203,6 +242,171 @@ export const deleteUserData = async (userId: string): Promise<{ success: boolean
   } catch (error: any) {
     Logger.error('[SecurityService] Failed to delete user data:', error);
     return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Unified Integration Token Management
+ */
+export const saveIntegrationTokens = async (
+  service: 'outlook' | 'whatsapp' | 'wechat',
+  tokens: { accessToken: string; refreshToken?: string; expiryDate?: number },
+  accountData: { accountName?: string; email?: string; phone?: string; wechatId?: string }
+): Promise<void> => {
+  try {
+    if (service === 'outlook') {
+      const credentials: OutlookEmailCredentials = {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiryDate: tokens.expiryDate,
+        userEmail: accountData.email || accountData.accountName || '',
+      };
+      await saveEmailConnection({
+        channel: Channel.EMAIL,
+        status: PlatformStatus.CONNECTED,
+        accountName: accountData.accountName || accountData.email || '',
+        connectedAt: Date.now(),
+        provider: 'outlook',
+        emailCredentials: credentials,
+        healthStatus: 'healthy',
+        lastTested: Date.now(),
+      });
+    } else if (service === 'whatsapp') {
+      const connections = await loadPlatformConnections();
+      const existing = connections.find(c => c.channel === Channel.WHATSAPP);
+      const credentials: any = {
+        ...existing?.whatsappCredentials,
+        accessToken: tokens.accessToken,
+      };
+      await savePlatformConnection({
+        channel: Channel.WHATSAPP,
+        status: PlatformStatus.CONNECTED,
+        accountName: accountData.accountName || accountData.phone || '',
+        connectedAt: Date.now(),
+        provider: 'whatsapp',
+        whatsappCredentials: credentials,
+        healthStatus: 'healthy',
+        lastTested: Date.now(),
+      });
+    } else if (service === 'wechat') {
+      const connections = await loadPlatformConnections();
+      const existing = connections.find(c => c.channel === Channel.WECHAT);
+      const credentials: any = {
+        ...existing?.wechatCredentials,
+        accessToken: tokens.accessToken,
+        accessTokenExpiry: tokens.expiryDate,
+      };
+      await savePlatformConnection({
+        channel: Channel.WECHAT,
+        status: PlatformStatus.CONNECTED,
+        accountName: accountData.accountName || accountData.wechatId || '',
+        connectedAt: Date.now(),
+        provider: 'wechat',
+        wechatCredentials: credentials,
+        healthStatus: 'healthy',
+        lastTested: Date.now(),
+      });
+    }
+  } catch (error) {
+    Logger.error(`[SecurityService] Failed to save ${service} tokens:`, error);
+    throw error;
+  }
+};
+
+export const loadIntegrationTokens = async (
+  service: 'outlook' | 'whatsapp' | 'wechat'
+): Promise<{ accessToken: string; refreshToken?: string; expiryDate?: number } | null> => {
+  try {
+    if (service === 'outlook') {
+      const conn = await loadEmailConnection();
+      if (!conn?.emailCredentials) return null;
+      return {
+        accessToken: conn.emailCredentials.accessToken,
+        refreshToken: conn.emailCredentials.refreshToken,
+        expiryDate: conn.emailCredentials.expiryDate,
+      };
+    } else {
+      const connections = await loadPlatformConnections();
+      const conn = connections.find(c => c.channel === (service === 'whatsapp' ? Channel.WHATSAPP : Channel.WECHAT));
+      if (service === 'whatsapp' && conn?.whatsappCredentials) {
+        return {
+          accessToken: conn.whatsappCredentials.accessToken,
+        };
+      } else if (service === 'wechat' && conn?.wechatCredentials?.accessToken) {
+        return {
+          accessToken: conn.wechatCredentials.accessToken,
+          expiryDate: conn.wechatCredentials.accessTokenExpiry,
+        };
+      }
+    }
+    return null;
+  } catch (error) {
+    Logger.error(`[SecurityService] Failed to load ${service} tokens:`, error);
+    return null;
+  }
+};
+
+export const refreshIntegrationToken = async (
+  service: 'outlook' | 'whatsapp' | 'wechat'
+): Promise<{ accessToken: string; refreshToken?: string; expiryDate?: number } | null> => {
+  try {
+    const { IntegrationServiceFactory } = await import('./integrationService');
+    const integrationService = IntegrationServiceFactory.getService(service);
+    
+    const tokens = await loadIntegrationTokens(service);
+    if (!tokens?.refreshToken && service !== 'whatsapp' && service !== 'wechat') {
+      throw new Error('No refresh token available');
+    }
+    
+    if (service === 'outlook' && tokens?.refreshToken) {
+      const newTokens = await integrationService.refreshToken(tokens.refreshToken);
+      const conn = await loadEmailConnection();
+      if (conn) {
+        await saveEmailConnection({
+          ...conn,
+          emailCredentials: {
+            ...conn.emailCredentials!,
+            accessToken: newTokens.accessToken,
+            refreshToken: newTokens.refreshToken || tokens.refreshToken,
+            expiryDate: newTokens.expiryDate,
+          },
+        });
+      }
+      return newTokens;
+    } else if (service === 'wechat') {
+      const newTokens = await integrationService.refreshToken('');
+      const connections = await loadPlatformConnections();
+      const conn = connections.find(c => c.channel === Channel.WECHAT);
+      if (conn?.wechatCredentials) {
+        await savePlatformConnection({
+          ...conn,
+          wechatCredentials: {
+            ...conn.wechatCredentials,
+            accessToken: newTokens.accessToken,
+            accessTokenExpiry: newTokens.expiryDate,
+          },
+        });
+      }
+      return newTokens;
+    }
+    
+    return null;
+  } catch (error) {
+    Logger.error(`[SecurityService] Failed to refresh ${service} token:`, error);
+    return null;
+  }
+};
+
+export const revokeIntegrationToken = async (
+  service: 'outlook' | 'whatsapp' | 'wechat'
+): Promise<void> => {
+  try {
+    const { IntegrationServiceFactory } = await import('./integrationService');
+    const integrationService = IntegrationServiceFactory.getService(service);
+    await integrationService.disconnect();
+  } catch (error) {
+    Logger.error(`[SecurityService] Failed to revoke ${service} token:`, error);
+    throw error;
   }
 };
 

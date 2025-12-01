@@ -1,236 +1,356 @@
-
-// Use types from emailTypes instead of emailService to avoid Vite analyzing emailService.ts
-import type { EmailMessage } from './emailTypes';
-import { Channel } from '../types';
+import { OutlookEmailService, EmailReadResult } from './outlookEmailService';
+import { loadEmailConnection } from './securityService';
+import { Logger } from './loggerService';
+import { Importer, LeadStatus, Message, Channel } from '../types';
 import { PlatformService } from './platformService';
 
-export type EmailIngestionCallback = (message: EmailMessage) => Promise<void>;
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_EMAILS_PER_POLL = 50;
 
-let ingestionCallbacks: EmailIngestionCallback[] = [];
 let pollingInterval: NodeJS.Timeout | null = null;
-let imapIdleConnection: any = null;
+let isPolling = false;
+let lastPollTime: number | null = null;
+let processedEmailIds = new Set<string>(); // Track processed emails to avoid duplicates
+
+export interface EmailIngestionConfig {
+  enabled: boolean;
+  autoReply: boolean;
+  draftApprovalRequired: boolean;
+  pollInterval?: number;
+}
 
 /**
  * Email Ingestion Service
- * Handles reading emails from multiple providers in real-time or via polling
+ * Polls inbox for new emails, matches them to leads, and triggers AI reply generation
  */
 export const EmailIngestionService = {
   /**
-   * Registers a callback for incoming emails
+   * Starts polling inbox for new emails
    */
-  onEmailReceived: (callback: EmailIngestionCallback) => {
-    ingestionCallbacks.push(callback);
-  },
-
-  /**
-   * Removes a callback
-   */
-  removeCallback: (callback: EmailIngestionCallback) => {
-    ingestionCallbacks = ingestionCallbacks.filter(cb => cb !== callback);
-  },
-
-  /**
-   * Starts polling for emails (fallback method)
-   */
-  startPolling: async (intervalMinutes: number = 5) => {
+  startPolling: async (config?: EmailIngestionConfig): Promise<void> => {
     if (pollingInterval) {
-      clearInterval(pollingInterval);
+      Logger.warn('[EmailIngestion] Polling already started');
+      return;
     }
 
-    const poll = async () => {
-      try {
-        const { EmailIPCService } = await import('./emailIPCService');
-        const connection = await EmailIPCService.getEmailConnection();
-        if (!connection?.emailCredentials) {
-          console.warn('[EmailIngestion] No email connection found');
-          return;
-        }
-
-        const credentials = connection.emailCredentials;
-        let result;
-
-        if (credentials.provider === 'gmail') {
-          result = await EmailIPCService.readViaGmail(credentials, 10, 'is:unread');
-        } else if (credentials.provider === 'imap' || credentials.provider === 'outlook') {
-          result = await EmailIPCService.readViaIMAP(credentials, 10);
-        } else {
-          console.warn('[EmailIngestion] Polling not supported for provider:', credentials.provider);
-          return;
-        }
-
-        if (result.success && result.messages) {
-          for (const message of result.messages) {
-            // Process each message through callbacks
-            for (const callback of ingestionCallbacks) {
-              try {
-                await callback(message);
-              } catch (error) {
-                console.error('[EmailIngestion] Callback error:', error);
-              }
-            }
-          }
-        } else if (!result.success) {
-          // Handle errors with exponential backoff
-          console.warn('[EmailIngestion] Polling failed:', result.error);
-          // In production, implement exponential backoff here
-        }
-      } catch (error: any) {
-        console.error('[EmailIngestion] Polling error:', error);
-        // Rate limit handling - increase interval on rate limit errors
-        if (error.message?.includes('rate limit') || error.message?.includes('quota')) {
-          console.warn('[EmailIngestion] Rate limited, will retry with longer interval');
-          // Could implement dynamic interval adjustment here
-        }
-      }
+    const ingestionConfig = config || {
+      enabled: true,
+      autoReply: false,
+      draftApprovalRequired: true,
+      pollInterval: POLL_INTERVAL_MS,
     };
 
-    // Poll immediately, then on interval
-    await poll();
-    pollingInterval = setInterval(poll, intervalMinutes * 60 * 1000);
+    if (!ingestionConfig.enabled) {
+      Logger.info('[EmailIngestion] Polling disabled in config');
+      return;
+    }
+
+    Logger.info('[EmailIngestion] Starting inbox polling', {
+      interval: ingestionConfig.pollInterval,
+      autoReply: ingestionConfig.autoReply,
+    });
+
+    // Initial poll
+    await EmailIngestionService.pollInbox(ingestionConfig);
+
+    // Set up interval
+    pollingInterval = setInterval(async () => {
+      await EmailIngestionService.pollInbox(ingestionConfig);
+    }, ingestionConfig.pollInterval || POLL_INTERVAL_MS);
   },
 
   /**
-   * Stops polling
+   * Stops polling inbox
    */
-  stopPolling: () => {
+  stopPolling: (): void => {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       pollingInterval = null;
+      Logger.info('[EmailIngestion] Polling stopped');
     }
   },
 
   /**
-   * Starts IMAP IDLE for real-time email notifications
+   * Polls inbox for new emails
    */
-  startIMAPIdle: async () => {
+  pollInbox: async (config?: EmailIngestionConfig): Promise<void> => {
+    if (isPolling) {
+      Logger.debug('[EmailIngestion] Poll already in progress, skipping');
+      return;
+    }
+
     try {
-      const { EmailIPCService } = await import('./emailIPCService');
-      const connection = await EmailIPCService.getEmailConnection();
-      if (!connection?.emailCredentials || connection.emailCredentials.provider !== 'imap') {
-        console.warn('[EmailIngestion] IMAP IDLE requires IMAP provider');
+      isPolling = true;
+      lastPollTime = Date.now();
+
+      // Load email connection
+      const emailConn = await loadEmailConnection();
+      if (!emailConn || !emailConn.emailCredentials) {
+        Logger.debug('[EmailIngestion] No email connection, skipping poll');
         return;
       }
 
-      const credentials = connection.emailCredentials;
-      if (!credentials.imapHost || !credentials.username) {
-        console.warn('[EmailIngestion] IMAP credentials incomplete');
+      // Refresh token if needed
+      let credentials = emailConn.emailCredentials;
+      const refreshed = await refreshEmailTokens(credentials);
+      if (refreshed) {
+        credentials = refreshed;
+        // Update connection with refreshed credentials
+        const { saveEmailConnection } = await import('./securityService');
+        await saveEmailConnection(refreshed, emailConn.accountName);
+      }
+
+      // Read emails from inbox
+      const result = await OutlookEmailService.readEmails(credentials, {
+        maxResults: MAX_EMAILS_PER_POLL,
+        unreadOnly: true,
+        folder: 'inbox',
+      });
+
+      if (!result.success || !result.messages) {
+        Logger.warn('[EmailIngestion] Failed to read emails:', result.error);
         return;
       }
 
-      // Note: Full IMAP IDLE implementation would require the imap library
-      // This is a simplified version - in production, you'd use the imap library's IDLE feature
-      console.log('[EmailIngestion] IMAP IDLE started (using polling fallback)');
-      await EmailIngestionService.startPolling(1); // Poll every minute as fallback
-    } catch (error) {
-      console.error('[EmailIngestion] IMAP IDLE error:', error);
-    }
-  },
+      Logger.info('[EmailIngestion] Polled inbox', { count: result.messages.length });
 
-  /**
-   * Stops IMAP IDLE
-   */
-  stopIMAPIdle: () => {
-    EmailIngestionService.stopPolling();
-    if (imapIdleConnection) {
-      // Close IMAP connection if exists
-      imapIdleConnection = null;
-    }
-  },
-
-  /**
-   * Processes a single email message (called by webhooks or manual ingestion)
-   */
-  processEmail: async (message: EmailMessage) => {
-    for (const callback of ingestionCallbacks) {
-      try {
-        await callback(message);
-      } catch (error) {
-        console.error('[EmailIngestion] Callback error:', error);
-      }
-    }
-  },
-
-  /**
-   * Manually fetch and process emails
-   */
-  fetchAndProcess: async (maxResults: number = 10, query?: string) => {
-    try {
-      const { EmailIPCService } = await import('./emailIPCService');
-      const connection = await EmailIPCService.getEmailConnection();
-      if (!connection?.emailCredentials) {
-        return { success: false, error: 'Email not connected' };
-      }
-
-      const credentials = connection.emailCredentials;
-      let result;
-
-      if (credentials.provider === 'gmail') {
-        result = await EmailIPCService.readViaGmail(credentials, maxResults, query);
-      } else if (credentials.provider === 'imap' || credentials.provider === 'outlook') {
-        result = await EmailIPCService.readViaIMAP(credentials, maxResults);
-      } else {
-        return { success: false, error: 'Provider not supported for reading' };
-      }
-
-      if (result.success && result.messages) {
-        for (const message of result.messages) {
-          await EmailIngestionService.processEmail(message);
+      // Process each email
+      for (const email of result.messages) {
+        // Skip if already processed
+        if (processedEmailIds.has(email.id)) {
+          continue;
         }
-        return { success: true, count: result.messages.length };
+
+        await EmailIngestionService.processEmail(email, credentials, config);
+        processedEmailIds.add(email.id);
       }
 
-      return result;
+      // Clean up old processed IDs (keep last 1000)
+      if (processedEmailIds.size > 1000) {
+        const idsArray = Array.from(processedEmailIds);
+        processedEmailIds = new Set(idsArray.slice(-1000));
+      }
     } catch (error: any) {
-      console.error('[EmailIngestion] Fetch error:', error);
-      return { success: false, error: error.message };
+      Logger.error('[EmailIngestion] Poll inbox failed:', error);
+    } finally {
+      isPolling = false;
     }
   },
 
   /**
-   * Initializes email ingestion based on provider capabilities
+   * Processes a single email
    */
-  initialize: async () => {
+  processEmail: async (
+    email: EmailReadResult,
+    credentials: any,
+    config?: EmailIngestionConfig
+  ): Promise<void> => {
     try {
-      const { EmailIPCService } = await import('./emailIPCService');
-      const connection = await EmailIPCService.getEmailConnection();
-      if (!connection?.emailCredentials) {
-        console.log('[EmailIngestion] No email connection, skipping initialization');
+      const senderEmail = email.from?.emailAddress?.address;
+      if (!senderEmail) {
+        Logger.warn('[EmailIngestion] Email missing sender address', { emailId: email.id });
         return;
       }
 
-      const credentials = connection.emailCredentials;
+      // Find matching importer by email
+      const importers = await EmailIngestionService.findImportersByEmail(senderEmail);
+      
+      if (importers.length === 0) {
+        Logger.debug('[EmailIngestion] No matching lead found for email', { senderEmail });
+        return;
+      }
 
-      // Gmail: Use polling with exponential backoff on errors
-      if (credentials.provider === 'gmail') {
-        console.log('[EmailIngestion] Starting Gmail polling');
-        await EmailIngestionService.startPolling(5); // Poll every 5 minutes
+      // Process for each matching importer (in case of multiple leads with same email)
+      for (const importer of importers) {
+        await EmailIngestionService.handleLeadEmail(importer, email, credentials, config);
       }
-      // Outlook: Use polling (similar to Gmail)
-      else if (credentials.provider === 'outlook') {
-        console.log('[EmailIngestion] Starting Outlook polling');
-        await EmailIngestionService.startPolling(5); // Poll every 5 minutes
-      }
-      // IMAP: Use IDLE if available, fallback to polling
-      else if (credentials.provider === 'imap') {
-        console.log('[EmailIngestion] Starting IMAP IDLE');
-        await EmailIngestionService.startIMAPIdle();
-      }
-      // SMTP-only: Cannot read emails
-      else if (credentials.provider === 'smtp') {
-        console.warn('[EmailIngestion] SMTP provider cannot read emails');
-      }
-    } catch (error) {
-      console.error('[EmailIngestion] Initialization error:', error);
+    } catch (error: any) {
+      Logger.error('[EmailIngestion] Process email failed:', error);
     }
   },
 
   /**
-   * Shuts down all ingestion processes
+   * Finds importers by email address
    */
-  shutdown: () => {
-    EmailIngestionService.stopPolling();
-    EmailIngestionService.stopIMAPIdle();
-    ingestionCallbacks = [];
+  findImportersByEmail: async (email: string): Promise<Importer[]> => {
+    try {
+      // Load importers from storage
+      const { StorageService } = await import('./storageService');
+      const allImporters = StorageService.loadImporters() || [];
+      
+      // Match by email field or contactDetail
+      return allImporters.filter(imp => {
+        const importerEmail = imp.email || (imp.contactDetail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(imp.contactDetail) ? imp.contactDetail : null);
+        return importerEmail && importerEmail.toLowerCase() === email.toLowerCase();
+      });
+    } catch (error: any) {
+      Logger.error('[EmailIngestion] Find importers by email failed:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Handles an email from a lead
+   */
+  handleLeadEmail: async (
+    importer: Importer,
+    email: EmailReadResult,
+    credentials: any,
+    config?: EmailIngestionConfig
+  ): Promise<void> => {
+    try {
+      // Extract email content
+      const emailBody = email.body?.content || '';
+      const emailSubject = email.subject || '(No Subject)';
+      
+      // Add message to chat history
+      const newMessage: Message = {
+        id: `email_${email.id}_${Date.now()}`,
+        sender: 'importer',
+        content: emailBody,
+        timestamp: new Date(email.receivedDateTime).getTime(),
+        channel: Channel.EMAIL,
+        status: 'delivered',
+      };
+
+      // Update importer
+      const updatedImporter: Importer = {
+        ...importer,
+        chatHistory: [...importer.chatHistory, newMessage],
+        status: importer.status === LeadStatus.PENDING ? LeadStatus.ENGAGED : importer.status,
+        lastContacted: new Date(email.receivedDateTime).getTime(),
+      };
+
+      // Save updated importer
+      const { StorageService } = await import('./storageService');
+      const allImporters = StorageService.loadImporters() || [];
+      const updatedImporters = allImporters.map(imp => imp.id === updatedImporter.id ? updatedImporter : imp);
+      StorageService.saveImporters(updatedImporters);
+
+      Logger.info('[EmailIngestion] Processed email from lead', {
+        importerId: importer.id,
+        emailId: email.id,
+        subject: emailSubject,
+      });
+
+      // Trigger AI reply generation if auto-reply is enabled
+      const ingestionConfig = config || {
+        enabled: true,
+        autoReply: await PlatformService.getAppConfig('emailAutoReply', false),
+        draftApprovalRequired: await PlatformService.getAppConfig('emailDraftApproval', true),
+      };
+
+      if (ingestionConfig.autoReply) {
+        await EmailIngestionService.generateAndSendReply(
+          updatedImporter,
+          email,
+          credentials,
+          ingestionConfig.draftApprovalRequired
+        );
+      } else {
+        // Even if auto-reply is disabled, we can still generate a draft for user review
+        if (ingestionConfig.draftApprovalRequired) {
+          await EmailIngestionService.generateDraftReply(updatedImporter, email);
+        }
+      }
+    } catch (error: any) {
+      Logger.error('[EmailIngestion] Handle lead email failed:', error);
+    }
+  },
+
+  /**
+   * Generates and sends AI reply
+   */
+  generateAndSendReply: async (
+    importer: Importer,
+    email: EmailReadResult,
+    credentials: any,
+    requireApproval: boolean
+  ): Promise<void> => {
+    try {
+      // Generate reply using AI
+      const { GeminiService } = await import('./geminiService');
+      const replyContent = await GeminiService.generateEmailReply(
+        importer,
+        email.body?.content || '',
+        email.subject || ''
+      );
+
+      if (!replyContent) {
+        Logger.warn('[EmailIngestion] Failed to generate reply');
+        return;
+      }
+
+      if (requireApproval) {
+        // Store draft for user approval (would need UI to show drafts)
+        Logger.info('[EmailIngestion] Draft reply generated, awaiting approval', {
+          importerId: importer.id,
+          emailId: email.id,
+        });
+        // TODO: Store draft in a drafts queue/UI
+        return;
+      }
+
+      // Send reply immediately
+      const result = await OutlookEmailService.replyToEmail(
+        email.id,
+        replyContent,
+        'html',
+        credentials
+      );
+
+      if (result.success) {
+        Logger.info('[EmailIngestion] Auto-reply sent', {
+          importerId: importer.id,
+          emailId: email.id,
+        });
+      } else {
+        Logger.error('[EmailIngestion] Failed to send auto-reply:', result.error);
+      }
+    } catch (error: any) {
+      Logger.error('[EmailIngestion] Generate and send reply failed:', error);
+    }
+  },
+
+  /**
+   * Generates draft reply (for user review)
+   */
+  generateDraftReply: async (
+    importer: Importer,
+    email: EmailReadResult
+  ): Promise<void> => {
+    try {
+      const { GeminiService } = await import('./geminiService');
+      const replyContent = await GeminiService.generateEmailReply(
+        importer,
+        email.body?.content || '',
+        email.subject || ''
+      );
+
+      if (replyContent) {
+        Logger.info('[EmailIngestion] Draft reply generated', {
+          importerId: importer.id,
+          emailId: email.id,
+        });
+        // TODO: Store draft in UI for user review
+      }
+    } catch (error: any) {
+      Logger.error('[EmailIngestion] Generate draft reply failed:', error);
+    }
+  },
+
+  /**
+   * Gets polling status
+   */
+  getStatus: (): {
+    isPolling: boolean;
+    lastPollTime: number | null;
+    processedCount: number;
+  } => {
+    return {
+      isPolling: pollingInterval !== null,
+      lastPollTime,
+      processedCount: processedEmailIds.size,
+    };
   },
 };
-

@@ -9,7 +9,7 @@ export interface ParsedLink {
   code?: string;
   state?: string;
   email?: string;
-  provider?: 'gmail' | 'outlook' | 'custom';
+  provider?: 'gmail' | 'outlook'; // Only OAuth 2.0 providers supported
   params?: Record<string, string>;
 }
 
@@ -82,7 +82,7 @@ export const LinkHandlerService = {
           type: 'magic-link',
           token: params.token,
           email: params.email,
-          provider: params.provider as 'gmail' | 'outlook' | 'custom' || 'custom',
+          provider: (params.provider as 'gmail' | 'outlook') || 'gmail', // Default to gmail if not specified
           params,
         };
       } else if (params.code && params.state) {
@@ -196,7 +196,7 @@ export const LinkHandlerService = {
   /**
    * Extracts email and provider from link
    */
-  extractEmailInfo: (link: ParsedLink): { email?: string; provider?: 'gmail' | 'outlook' | 'custom' } => {
+  extractEmailInfo: (link: ParsedLink): { email?: string; provider?: 'gmail' | 'outlook' } => {
     if (link.type === 'magic-link' && link.token) {
       const validation = MagicLinkService.validateMagicLink(link.token);
       if (validation.valid && validation.payload) {
@@ -215,12 +215,11 @@ export const LinkHandlerService = {
 
   /**
    * Detects provider from email address in link
+   * DEPRECATED: Email functionality removed - always returns null
    */
-  detectProviderFromEmail: async (email?: string): Promise<'gmail' | 'outlook' | 'custom'> => {
-    if (!email) return 'custom';
-    const { EmailAuthService } = await import('./emailAuthService');
-    return EmailAuthService.detectEmailProvider(email) === 'gmail' ? 'gmail' :
-           EmailAuthService.detectEmailProvider(email) === 'outlook' ? 'outlook' : 'custom';
+  detectProviderFromEmail: async (email?: string): Promise<'gmail' | 'outlook' | null> => {
+    // Email functionality removed
+    return null;
   },
 };
 

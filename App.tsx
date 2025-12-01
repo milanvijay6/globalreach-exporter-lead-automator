@@ -64,9 +64,9 @@ const MOCK_IMPORTERS: Importer[] = [
     quantity: '20 MT',
     priceRange: 'Market Rate',
     status: LeadStatus.ENGAGED,
-    chatHistory: [{id: 'm1', content: 'Hi', sender: 'agent', timestamp: Date.now(), channel: Channel.EMAIL, status: MessageStatus.READ}],
+    chatHistory: [{id: 'm1', content: 'Hi', sender: 'agent', timestamp: Date.now(), channel: Channel.WHATSAPP, status: MessageStatus.READ}],
     activityLog: [{id: 'log2', timestamp: Date.now() - 200000, type: 'system', description: 'Lead imported'}],
-    preferredChannel: Channel.EMAIL,
+    preferredChannel: Channel.WHATSAPP,
     channelSelectionMode: 'auto',
     validation: { isValid: true, errors: [], checkedAt: Date.now() },
     leadScore: 65,
@@ -78,7 +78,7 @@ const DEFAULT_REPORT_CONFIG: ReportConfig = {
     timeFrame: '30d',
     kpis: { revenue: true, conversion: true, leads: true },
     exportSchedule: 'weekly',
-    emailRecipients: ''
+    emailRecipients: '' // Deprecated - email functionality removed
 };
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
@@ -243,55 +243,34 @@ const App: React.FC = () => {
                 const savedPlatforms = await loadPlatformConnections();
                 if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
 
-                // Auto-connect email if not already connected
-                const autoConnectEnabled = await PlatformService.getAppConfig('autoConnectEmail', true);
-                if (autoConnectEnabled) {
-                    try {
-                        const { EmailIPCService } = await import('./services/emailIPCService');
-                        const existingEmailConnection = await EmailIPCService.getEmailConnection();
-                        
-                        if (!existingEmailConnection || !existingEmailConnection.emailCredentials) {
-                            console.log('[App] No email connection found, attempting auto-connect...');
-                            
-                            // Import default credentials
-                            const { getDefaultEmailCredentials } = await import('./services/emailConfig');
-                            const defaultCredentials = getDefaultEmailCredentials();
-                            
-                            // Test connection first
-                            const testResult = await EmailIPCService.testConnection(defaultCredentials);
-                            
-                            if (testResult.success) {
-                                console.log('[App] Email connection test successful, storing credentials...');
-                                
-                                // Store credentials securely
-                                const { EmailAuthService } = await import('./services/emailAuthService');
-                                const { Channel, PlatformStatus } = await import('./types');
-                                
-                                const emailConnection = await EmailAuthService.storeCredentialsSecurely(
-                                    defaultCredentials,
-                                    {
-                                        channel: Channel.EMAIL,
-                                        status: PlatformStatus.CONNECTED,
-                                    }
-                                );
-                                
-                                // Update connected platforms state
-                                setConnectedPlatforms(prev => {
-                                    const filtered = prev.filter(p => p.channel !== Channel.EMAIL);
-                                    return [...filtered, emailConnection];
-                                });
-                                
-                                console.log('[App] Email auto-connected successfully');
-                            } else {
-                                console.warn('[App] Email auto-connect failed:', testResult.error);
-                            }
-                        } else {
-                            console.log('[App] Email already connected, skipping auto-connect');
-                        }
-                    } catch (error: any) {
-                        // Non-blocking: log error but don't prevent app startup
-                        console.error('[App] Email auto-connect error (non-blocking):', error);
-                    }
+                // Start token refresh service
+                if (isDesktop()) {
+                  const { TokenRefreshService } = await import('./services/tokenRefreshService');
+                  const tokenRefreshService = TokenRefreshService.getInstance();
+                  tokenRefreshService.start();
+                  console.log('[App] Token refresh service started');
+                }
+                
+                // Load email connection and start ingestion if connected
+                const { loadEmailConnection } = await import('./services/securityService');
+                const emailConn = await loadEmailConnection();
+                if (emailConn) {
+                  // Add email connection to connected platforms if not already there
+                  if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
+                    setConnectedPlatforms([...savedPlatforms, emailConn]);
+                  }
+                  
+                  // Start email ingestion polling
+                  const { EmailIngestionService } = await import('./services/emailIngestionService');
+                  const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
+                  const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
+                  
+                  EmailIngestionService.startPolling({
+                    enabled: true,
+                    autoReply,
+                    draftApprovalRequired: draftApproval,
+                    pollInterval: 5 * 60 * 1000, // 5 minutes
+                  });
                 }
 
                 const savedImporters = StorageService.loadImporters();
@@ -315,6 +294,20 @@ const App: React.FC = () => {
           if (user && connectedPlatforms.length > 0) {
               const refreshed = await refreshPlatformTokens(connectedPlatforms);
               setConnectedPlatforms(refreshed);
+              
+              // Also refresh email connection separately if it exists
+              const emailConn = refreshed.find(p => p.channel === Channel.EMAIL);
+              if (emailConn && emailConn.emailCredentials) {
+                const { refreshEmailTokens, saveEmailConnection } = await import('./services/securityService');
+                const refreshedEmail = await refreshEmailTokens(emailConn.emailCredentials);
+                if (refreshedEmail) {
+                  const updatedEmailConn = { ...emailConn, emailCredentials: refreshedEmail };
+                  await saveEmailConnection(refreshedEmail, emailConn.accountName);
+                  setConnectedPlatforms(refreshed.map(p => 
+                    p.channel === Channel.EMAIL ? updatedEmailConn : p
+                  ));
+                }
+              }
           }
       }, 5 * 60 * 1000); // Every 5 minutes
       return () => clearInterval(interval);
@@ -496,170 +489,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Email Ingestion Setup
-  // Use ref to access latest importers without causing re-renders
-  const importersForEmailRef = useRef(importers);
-  useEffect(() => {
-    importersForEmailRef.current = importers;
-  }, [importers]);
-
-  useEffect(() => {
-    const setupEmailIngestion = async () => {
-      const { EmailIngestionService } = await import('./services/emailIngestionService');
-      const { EmailClassificationService } = await import('./services/emailClassificationService');
-      const { EmailAutoReplyService } = await import('./services/emailAutoReplyService');
-      const { EmailRoutingService } = await import('./services/emailRoutingService');
-      const { EmailConversionService } = await import('./services/emailConversionService');
-      
-      // Register email ingestion callback
-      EmailIngestionService.onEmailReceived(async (message) => {
-        try {
-          // Quick spam check
-          if (EmailClassificationService.isLikelySpam(message)) {
-            console.log('[App] Spam email detected, ignoring:', message.from.email);
-            return;
-          }
-          
-          // Classify email
-          const classification = await EmailClassificationService.classifyEmail(message);
-          
-          // Route email
-          const routing = EmailRoutingService.routeEmail(message, classification);
-          
-          // Find or create importer - use ref to get latest state
-          const emailAddress = message.from.email.toLowerCase();
-          const currentImporters = importersForEmailRef.current; // Use ref instead of closure
-          let importer = currentImporters.find(i => 
-            i.contactDetail.toLowerCase() === emailAddress
-          );
-          
-          const newMessage: Message = {
-            id: message.id,
-            content: message.body.text || message.body.html?.replace(/<[^>]*>/g, '') || '',
-            sender: 'importer',
-            timestamp: message.date.getTime(),
-            channel: Channel.EMAIL,
-            status: MessageStatus.DELIVERED,
-          };
-          
-          if (!importer) {
-            // Create new importer from email
-            const newImporter: Importer = {
-              id: `email-${Date.now()}`,
-              name: message.from.name || emailAddress.split('@')[0],
-              companyName: classification.extractedData.companyName || 'Unknown',
-              country: 'Unknown',
-              contactDetail: emailAddress,
-              productsImported: classification.topics.join(', ') || '',
-              quantity: classification.extractedData.quantities || '',
-              priceRange: '',
-              status: EmailClassificationService.classificationToLeadStatus(classification),
-              chatHistory: [newMessage],
-              activityLog: [{
-                id: `log-${Date.now()}`,
-                timestamp: Date.now(),
-                type: 'system',
-                description: `Incoming email: ${classification.category}`
-              }],
-              preferredChannel: Channel.EMAIL,
-              channelSelectionMode: 'auto',
-              validation: { isValid: true, errors: [], checkedAt: Date.now(), emailMxValid: true },
-              leadScore: classification.leadScore,
-              satisfactionIndex: 50,
-              sentimentAnalysis: classification.sentiment,
-              detectedEmotions: classification.emotions,
-              needsHumanReview: classification.requiresHumanReview,
-            };
-            
-            setImporters(prev => [...prev, newImporter]);
-            importer = newImporter;
-          } else {
-            // Add message to existing importer
-            setImporters(prev => prev.map(i => 
-              i.id === importer!.id 
-                ? { 
-                    ...i, 
-                    chatHistory: [...i.chatHistory, newMessage],
-                    lastContacted: message.date.getTime(),
-                    status: EmailClassificationService.classificationToLeadStatus(classification),
-                    leadScore: classification.leadScore,
-                    sentimentAnalysis: classification.sentiment,
-                    detectedEmotions: classification.emotions,
-                    needsHumanReview: classification.requiresHumanReview || i.needsHumanReview,
-                  }
-                : i
-            ));
-            // Update importer reference
-            importer = {
-              ...importer,
-              chatHistory: [...importer.chatHistory, newMessage],
-              lastContacted: message.date.getTime(),
-              status: EmailClassificationService.classificationToLeadStatus(classification),
-              leadScore: classification.leadScore,
-              sentimentAnalysis: classification.sentiment,
-              detectedEmotions: classification.emotions,
-              needsHumanReview: classification.requiresHumanReview || importer.needsHumanReview,
-            };
-          }
-          
-          // Auto-reply if appropriate
-          if (routing.route === 'sales' && !classification.requiresHumanReview && user && canSendMessages(user)) {
-            const shouldReply = EmailAutoReplyService.shouldAutoReply(message, classification);
-            if (shouldReply.shouldReply) {
-              setTimeout(async () => {
-                // Use the importer we just created/updated (captured in closure)
-                if (importer) {
-                  const replyResult = await EmailAutoReplyService.sendAutoReply(
-                    message,
-                    classification,
-                    importer,
-                    templates,
-                    importer.chatHistory,
-                    { requireApproval: false }
-                  );
-                  if (replyResult.success) {
-                    console.log('[App] Auto-reply sent to', emailAddress);
-                  }
-                }
-              }, 2000); // Wait for state to update
-            }
-          }
-          
-          // Check for conversion workflows
-          if (classification.leadScore >= 60 && importer) {
-            setTimeout(async () => {
-              const conversionResult = await EmailConversionService.checkAndTriggerConversion(
-                importer,
-                classification,
-                [message], // Email history
-                EmailConversionService.getDefaultWorkflows(),
-                templates
-              );
-              if (conversionResult.triggered) {
-                console.log('[App] Conversion workflow triggered:', conversionResult.workflowId);
-              }
-            }, 1000);
-          }
-        } catch (error) {
-          console.error('[App] Email processing error:', error);
-        }
-      });
-      
-      // Initialize email ingestion
-      await EmailIngestionService.initialize();
-    };
-    
-    if (isSetupComplete && user) {
-      setupEmailIngestion();
-    }
-    
-    return () => {
-      // Cleanup on unmount
-      import('./services/emailIngestionService').then(({ EmailIngestionService }) => {
-        EmailIngestionService.shutdown();
-      });
-    };
-  }, [isSetupComplete, user, templates]); // Removed importers from dependencies
+  // Email functionality removed - all email ingestion code has been removed
 
   // Campaign Heartbeat - use ref to avoid dependency on importers
   const importersForCampaignRef = useRef(importers);
@@ -1186,6 +1016,29 @@ const App: React.FC = () => {
   };
 
   const handlePlatformUpdate = async (newConn: PlatformConnection) => {
+    // Handle email connection updates
+    if (newConn.channel === Channel.EMAIL) {
+      // Start or stop email ingestion based on connection status
+      const { EmailIngestionService } = await import('./services/emailIngestionService');
+      
+      if (newConn.status === PlatformStatus.CONNECTED && newConn.emailCredentials) {
+        // Start email ingestion polling
+        const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
+        const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
+        
+        EmailIngestionService.startPolling({
+          enabled: true,
+          autoReply,
+          draftApprovalRequired: draftApproval,
+          pollInterval: 5 * 60 * 1000,
+        });
+      } else {
+        // Stop polling if disconnected
+        EmailIngestionService.stopPolling();
+      }
+    }
+    
+    // Original handlePlatformUpdate logic
       setConnectedPlatforms(prev => {
           const updated = [...prev.filter(p => p.channel !== newConn.channel), newConn];
           savePlatformConnections(updated);
@@ -1230,7 +1083,7 @@ const App: React.FC = () => {
 
   const addMessage = (importerId: string, content: string, sender: 'agent' | 'importer' | 'system', channelOverride?: Channel, initialStatus?: MessageStatus) => {
     const newMessage: Message = {
-      id: Date.now().toString(), content, sender, timestamp: Date.now(), channel: channelOverride || Channel.EMAIL, status: initialStatus
+      id: Date.now().toString(), content, sender, timestamp: Date.now(), channel: channelOverride || Channel.WHATSAPP, status: initialStatus
     };
     setImporters(prev => prev.map(imp => {
       if (imp.id !== importerId) return imp;

@@ -405,9 +405,15 @@ const LeadImportWizard: React.FC<LeadImportWizardProps> = ({ isOpen, onClose, on
                           {item.validation.isValid ? (
                             <span className="text-green-500"><CheckCircle className="w-4 h-4" /></span>
                           ) : (
-                            <span className="text-red-500 flex items-center gap-1 text-xs font-bold">
-                              <AlertTriangle className="w-4 h-4" /> <span className="truncate max-w-[120px]">{item.validation.errors[0]}</span>
-                            </span>
+                            <div className="text-red-500 flex items-start gap-1 text-xs" title={item.validation.errors.join('\n')}>
+                              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="font-bold truncate max-w-[120px]">{item.validation.errors[0]}</span>
+                                {item.validation.errors.length > 1 && (
+                                  <span className="text-[10px] text-red-400">+{item.validation.errors.length - 1} more issue{item.validation.errors.length > 2 ? 's' : ''}</span>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </td>
                         <td className="p-2 sm:p-3 font-medium text-slate-800 truncate max-w-[150px] sm:max-w-none">{item.companyName}</td>

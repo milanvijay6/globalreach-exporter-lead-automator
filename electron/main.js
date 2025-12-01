@@ -5,6 +5,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const winston = require('winston');
 const { autoUpdater } = require('electron-updater');
+const { spawn } = require('child_process');
+const http = require('http');
 
 // --- CONFIGURATION ---
 const DEFAULT_PORT = 4000;
@@ -21,6 +23,7 @@ if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }
 
+// Create logger with safe error handling
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -30,8 +33,45 @@ const logger = winston.createLogger({
   transports: [
     new winston.transports.File({ filename: path.join(logDir, 'error.log'), level: 'error' }),
     new winston.transports.File({ filename: path.join(logDir, 'combined.log') }),
-    new winston.transports.Console({ format: winston.format.simple() })
+    new winston.transports.Console({ 
+      format: winston.format.simple(),
+      handleExceptions: true,
+      handleRejections: true
+    })
+  ],
+  exceptionHandlers: [
+    new winston.transports.File({ filename: path.join(logDir, 'exceptions.log') })
+  ],
+  rejectionHandlers: [
+    new winston.transports.File({ filename: path.join(logDir, 'rejections.log') })
   ]
+});
+
+// Catch EPIPE errors globally to prevent app crashes
+process.on('uncaughtException', (err) => {
+  if (err.code === 'EPIPE' || err.code === 'ECONNRESET') {
+    // Silently ignore broken pipe errors - these happen when streams are closed
+    return;
+  }
+  // Log other uncaught exceptions
+  try {
+    fs.appendFileSync(path.join(logDir, 'error.log'), `\n[${new Date().toISOString()}] Uncaught exception: ${err.message}\n${err.stack}\n`);
+  } catch (fileErr) {
+    // Ignore if we can't write to file
+  }
+});
+
+// Also catch unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  if (reason && typeof reason === 'object' && (reason.code === 'EPIPE' || reason.code === 'ECONNRESET')) {
+    // Ignore EPIPE errors
+    return;
+  }
+  try {
+    fs.appendFileSync(path.join(logDir, 'error.log'), `\n[${new Date().toISOString()}] Unhandled rejection: ${reason}\n`);
+  } catch (fileErr) {
+    // Ignore
+  }
 });
 
 // Generate encryption key after logger is initialized
@@ -75,6 +115,194 @@ function setConfig(key, value) {
 
 // --- EXPRESS SERVER ---
 let serverInstance;
+let cloudflareProcess = null;
+let cloudflareUrl = null;
+
+/**
+ * Starts Cloudflare Tunnel automatically
+ */
+async function startCloudflareTunnel(port) {
+  try {
+    // Check if auto-start is enabled (default: true)
+    // Support both old 'autoStartNgrok' and new 'autoStartTunnel' config keys
+    const autoStartTunnel = getConfig('autoStartTunnel', getConfig('autoStartNgrok', true));
+    
+    if (!autoStartTunnel) {
+      logger.info('[Cloudflare] Auto-start disabled in settings');
+      return null;
+    }
+
+    logger.info('[Cloudflare] Starting Cloudflare Tunnel for port', port);
+
+    // Find cloudflared executable
+    const { execSync } = require('child_process');
+    const os = require('os');
+    const cloudflaredPaths = [
+      path.join(os.homedir(), 'Downloads', 'cloudflared.exe'), // Windows default
+      'cloudflared', // In PATH
+      path.join(process.cwd(), 'cloudflared.exe'), // Current directory
+    ];
+
+    let cloudflaredPath = null;
+    for (const testPath of cloudflaredPaths) {
+      try {
+        if (testPath === 'cloudflared') {
+          execSync('cloudflared --version', { stdio: 'ignore' });
+          cloudflaredPath = 'cloudflared';
+          break;
+        } else if (fs.existsSync(testPath)) {
+          cloudflaredPath = testPath;
+          break;
+        }
+      } catch (err) {
+        // Continue to next path
+      }
+    }
+
+    if (!cloudflaredPath) {
+      logger.warn('[Cloudflare] cloudflared not found. Please download it from: https://github.com/cloudflare/cloudflared/releases/latest');
+      logger.warn('[Cloudflare] Expected location:', path.join(os.homedir(), 'Downloads', 'cloudflared.exe'));
+      return null;
+    }
+
+    logger.info('[Cloudflare] Using cloudflared at:', cloudflaredPath);
+
+    // Start Cloudflare Tunnel process
+    cloudflareProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${port}`], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false
+    });
+
+    let stdoutOutput = '';
+    let stderrOutput = '';
+    
+    cloudflareProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      stdoutOutput += output;
+      logger.debug('[Cloudflare] stdout:', output);
+    });
+
+    cloudflareProcess.stderr.on('data', (data) => {
+      const output = data.toString();
+      stderrOutput += output;
+      logger.debug('[Cloudflare] stderr:', output);
+      
+      // Parse URL from Cloudflare Tunnel output
+      // Format: "https://xxxxx-xxxxx-xxxxx.trycloudflare.com"
+      const urlMatch = output.match(/https:\/\/[^\s]+\.trycloudflare\.com/);
+      if (urlMatch && !cloudflareUrl) {
+        cloudflareUrl = urlMatch[0];
+        setConfig('cloudflareUrl', cloudflareUrl);
+        setConfig('ngrokUrl', cloudflareUrl); // Keep for backward compatibility
+        setConfig('webhookUrl', `${cloudflareUrl}/webhooks/whatsapp`);
+        setConfig('oauthCallbackUrl', `${cloudflareUrl}/api/oauth/callback`);
+        
+        logger.info('[Cloudflare] ✅ Tunnel started:', cloudflareUrl);
+        logger.info('[Cloudflare] Webhook URL:', `${cloudflareUrl}/webhooks/whatsapp`);
+        logger.info('[Cloudflare] OAuth Callback URL:', `${cloudflareUrl}/api/oauth/callback`);
+        
+        // Notify renderer if window exists
+        if (mainWindow) {
+          mainWindow.webContents.send('ngrok-started', { 
+            url: cloudflareUrl, 
+            webhookUrl: `${cloudflareUrl}/webhooks/whatsapp`,
+            oauthCallbackUrl: `${cloudflareUrl}/api/oauth/callback`
+          });
+        }
+      }
+    });
+
+    cloudflareProcess.on('error', (err) => {
+      logger.error('[Cloudflare] Failed to start:', err);
+      cloudflareProcess = null;
+    });
+
+    cloudflareProcess.on('exit', (code, signal) => {
+      if (code !== null && code !== 0) {
+        logger.warn('[Cloudflare] Tunnel process exited with code:', code);
+      }
+      if (signal) {
+        logger.info('[Cloudflare] Tunnel process terminated by signal:', signal);
+      }
+      cloudflareProcess = null;
+      cloudflareUrl = null;
+    });
+
+    // Wait for Cloudflare Tunnel to start and extract URL
+    // Cloudflare outputs the URL to stderr, so we wait a bit for it to appear
+    await new Promise((resolve) => setTimeout(resolve, 8000)); // Wait 8 seconds for URL to appear
+
+    // If URL wasn't found in stderr, try parsing from accumulated output
+    if (!cloudflareUrl && stderrOutput) {
+      const urlMatch = stderrOutput.match(/https:\/\/[^\s]+\.trycloudflare\.com/);
+      if (urlMatch) {
+        cloudflareUrl = urlMatch[0];
+        setConfig('cloudflareUrl', cloudflareUrl);
+        setConfig('ngrokUrl', cloudflareUrl); // Keep for backward compatibility
+        setConfig('webhookUrl', `${cloudflareUrl}/webhooks/whatsapp`);
+        setConfig('oauthCallbackUrl', `${cloudflareUrl}/api/oauth/callback`);
+        
+        logger.info('[Cloudflare] ✅ Tunnel started (parsed from output):', cloudflareUrl);
+        
+        if (mainWindow) {
+          mainWindow.webContents.send('ngrok-started', { 
+            url: cloudflareUrl, 
+            webhookUrl: `${cloudflareUrl}/webhooks/whatsapp`,
+            oauthCallbackUrl: `${cloudflareUrl}/api/oauth/callback`
+          });
+        }
+      }
+    }
+
+    if (!cloudflareUrl) {
+      logger.warn('[Cloudflare] URL not found in output. Tunnel may still be starting...');
+      // Try again after a delay
+      setTimeout(() => {
+        if (stderrOutput) {
+          const urlMatch = stderrOutput.match(/https:\/\/[^\s]+\.trycloudflare\.com/);
+          if (urlMatch && !cloudflareUrl) {
+            cloudflareUrl = urlMatch[0];
+            setConfig('cloudflareUrl', cloudflareUrl);
+            setConfig('ngrokUrl', cloudflareUrl);
+            setConfig('webhookUrl', `${cloudflareUrl}/webhooks/whatsapp`);
+            setConfig('oauthCallbackUrl', `${cloudflareUrl}/api/oauth/callback`);
+            
+            logger.info('[Cloudflare] ✅ Tunnel started (retry):', cloudflareUrl);
+            
+            if (mainWindow) {
+              mainWindow.webContents.send('ngrok-started', { 
+                url: cloudflareUrl, 
+                webhookUrl: `${cloudflareUrl}/webhooks/whatsapp`,
+                oauthCallbackUrl: `${cloudflareUrl}/api/oauth/callback`
+              });
+            }
+          }
+        }
+      }, 5000);
+    }
+    
+    return cloudflareUrl;
+  } catch (error) {
+    logger.error('[Cloudflare] Error starting tunnel:', error);
+    return null;
+  }
+}
+
+/**
+ * Stops Cloudflare Tunnel
+ */
+function stopCloudflareTunnel() {
+  if (cloudflareProcess) {
+    try {
+      cloudflareProcess.kill();
+      logger.info('[Cloudflare] Tunnel stopped');
+      cloudflareProcess = null;
+      cloudflareUrl = null;
+    } catch (error) {
+      logger.error('[Cloudflare] Error stopping tunnel:', error);
+    }
+  }
+}
 
 function startServer(startingPort) {
   const appServer = express();
@@ -224,8 +452,10 @@ function startServer(startingPort) {
     }
   });
 
-  // OAuth Callback Routes
-  appServer.get('/auth/oauth/callback', async (req, res) => {
+  // OAuth Callback Routes - Handle /api/oauth/callback
+  // Also add alternative paths for Azure caching workaround
+  appServer.get('/api/oauth/callback', async (req, res) => {
+    // Wrap entire handler in try-catch to prevent crashes
     try {
       const { code, state, error } = req.query;
       
@@ -264,38 +494,91 @@ function startServer(startingPort) {
         `);
       }
 
-      logger.info('OAuth callback received', { hasCode: !!code, hasState: !!state });
+      logger.info('OAuth callback received', { hasCode: !!code, hasState: !!state, state: state?.substring(0, 50) });
 
       // Parse state to determine provider
       let provider = 'gmail';
       try {
-        const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
-        provider = stateData.provider || 'gmail';
-      } catch {
+        // Try to parse state as base64url JSON first
+        try {
+          const stateData = JSON.parse(Buffer.from(state, 'base64url').toString());
+          provider = stateData.provider || 'gmail';
+          logger.info('Parsed provider from state JSON', { provider });
+        } catch (parseError) {
+          // If JSON parsing fails, try string detection
+          logger.warn('Could not parse state as JSON, trying string detection', parseError);
+          if (state && (state.includes('outlook') || state.includes('microsoft'))) {
+            provider = 'outlook';
+            logger.info('Detected Outlook provider from state string');
+          }
+        }
+      } catch (err) {
+        logger.error('Error parsing state for provider detection', err);
         // Default to gmail if state parsing fails
       }
 
+      try {
+        logger.info('Sending OAuth callback to renderer', { provider, hasCode: !!code, hasState: !!state });
+      } catch (logErr) {
+        // Ignore logging errors - don't crash on EPIPE
+      }
+
       // Send to renderer process
-      if (mainWindow) {
-        mainWindow.webContents.send('oauth-callback', {
-          success: true,
-          code: code,
-          state: state,
-          provider: provider,
-        });
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try {
+          mainWindow.webContents.send('oauth-callback', {
+            success: true,
+            code: code,
+            state: state,
+            provider: provider,
+          });
+          try {
+            logger.info('OAuth callback IPC message sent to renderer');
+          } catch (logErr) {
+            // Ignore logging errors
+          }
+        } catch (sendErr) {
+          // Log error but don't crash
+          try {
+            logger.error('Failed to send OAuth callback to renderer', sendErr);
+          } catch (logErr) {
+            // Ignore
+          }
+        }
+      } else {
+        try {
+          logger.error('Cannot send OAuth callback: mainWindow is null or destroyed');
+        } catch (logErr) {
+          // Ignore logging errors
+        }
       }
 
       res.send(`
         <html>
-          <body>
-            <h2>Authentication Successful</h2>
+          <head>
+            <title>Authentication Successful</title>
+          </head>
+          <body style="font-family: Arial, sans-serif; padding: 20px; text-align: center;">
+            <h2>✅ Authentication Successful</h2>
             <p>You can close this window and return to the application.</p>
-            <script>setTimeout(() => window.close(), 2000);</script>
+            <p style="color: #666; font-size: 12px;">This window will close automatically...</p>
+            <script>
+              setTimeout(() => {
+                try { window.close(); } catch(e) {}
+              }, 2000);
+            </script>
           </body>
         </html>
       `);
     } catch (err) {
-      logger.error('OAuth callback handler error:', err);
+      // Safely log error without crashing on EPIPE
+      try {
+        logger.error('OAuth callback handler error:', err);
+      } catch (logErr) {
+        // Ignore logger errors (EPIPE, etc.)
+      }
+      
+      // Always send error response
       res.send(`
         <html>
           <body>
@@ -480,6 +763,272 @@ function startServer(startingPort) {
     }
   });
 
+  // ============================================
+  // UNIFIED INTEGRATIONS API ROUTES
+  // ============================================
+  
+  // POST /api/integrations/:service/authorize - Get OAuth URL
+  appServer.post('/api/integrations/:service/authorize', async (req, res) => {
+    try {
+      const { service } = req.params;
+      if (!['outlook', 'whatsapp', 'wechat'].includes(service)) {
+        return res.status(400).json({ success: false, error: 'Invalid service. Must be outlook, whatsapp, or wechat' });
+      }
+      
+      // Use IPC to call the integration service
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'integration-authorize',
+          params: { service },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, authUrl: data });
+            } else {
+              res.status(400).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error(`[API] Error in POST /api/integrations/${req.params.service}/authorize:`, error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // GET /api/integrations/:service/callback - Exchange OAuth code
+  appServer.get('/api/integrations/:service/callback', async (req, res) => {
+    try {
+      const { service } = req.params;
+      const { code, state } = req.query;
+      
+      if (!['outlook', 'whatsapp', 'wechat'].includes(service)) {
+        return res.status(400).json({ success: false, error: 'Invalid service' });
+      }
+      
+      if (!code) {
+        return res.status(400).json({ success: false, error: 'Missing authorization code' });
+      }
+      
+      // Use IPC to call the integration service
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'integration-exchange',
+          params: { service, code, state },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, tokens: data });
+            } else {
+              res.status(400).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error(`[API] Error in GET /api/integrations/${req.params.service}/callback:`, error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // POST /api/integrations/:service/refresh - Refresh token
+  appServer.post('/api/integrations/:service/refresh', async (req, res) => {
+    try {
+      const { service } = req.params;
+      const { refreshToken } = req.body;
+      
+      if (!['outlook', 'whatsapp', 'wechat'].includes(service)) {
+        return res.status(400).json({ success: false, error: 'Invalid service' });
+      }
+      
+      if (!refreshToken && service === 'outlook') {
+        return res.status(400).json({ success: false, error: 'Missing refresh token' });
+      }
+      
+      // Use IPC to call the integration service
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'integration-refresh',
+          params: { service, refreshToken },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, tokens: data });
+            } else {
+              res.status(400).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error(`[API] Error in POST /api/integrations/${req.params.service}/refresh:`, error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // POST /api/integrations/:service/disconnect - Disconnect service
+  appServer.post('/api/integrations/:service/disconnect', async (req, res) => {
+    try {
+      const { service } = req.params;
+      
+      if (!['outlook', 'whatsapp', 'wechat'].includes(service)) {
+        return res.status(400).json({ success: false, error: 'Invalid service' });
+      }
+      
+      // Use IPC to call the integration service
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'integration-disconnect',
+          params: { service },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true });
+            } else {
+              res.status(400).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error(`[API] Error in POST /api/integrations/${req.params.service}/disconnect:`, error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // GET /api/integrations/status - Get all services status
+  appServer.get('/api/integrations/status', async (req, res) => {
+    try {
+      // Use IPC to call the integration service
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'integration-status',
+          params: {},
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 10000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, status: data });
+            } else {
+              res.status(500).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error('[API] Error in GET /api/integrations/status:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // POST /api/leads/:id/send - Auto-route by priority (enhance existing)
+  appServer.post('/api/leads/:id/send', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { message } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ success: false, error: 'Message is required' });
+      }
+      
+      // Use IPC to get lead data and send message
+      if (mainWindow) {
+        mainWindow.webContents.send('api-request', {
+          type: 'lead-send',
+          params: { id, message },
+          requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        });
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            ipcMain.removeAllListeners('api-response');
+            res.status(500).json({ success: false, error: 'Request timeout' });
+            resolve();
+          }, 30000);
+          
+          ipcMain.once('api-response', (event, { requestId, success, data, error }) => {
+            clearTimeout(timeout);
+            if (success) {
+              res.json({ success: true, data });
+            } else {
+              res.status(400).json({ success: false, error });
+            }
+            resolve();
+          });
+        });
+      } else {
+        res.status(503).json({ success: false, error: 'Application not ready' });
+      }
+    } catch (error) {
+      logger.error('[API] Error in POST /api/leads/:id/send:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // GET /api/products/search - Search products
   // Serve product photos
   appServer.get('/api/product-photos/:productId/:fileName', (req, res) => {
@@ -655,6 +1204,11 @@ async function createWindow() {
     dialog.showErrorBox('Server Error', 'Failed to start local backend. Check logs.');
     return;
   }
+
+  // 1.5. Start Cloudflare Tunnel automatically (for webhooks)
+  startCloudflareTunnel(port).catch(err => {
+    logger.error('[Cloudflare] Failed to start automatically:', err);
+  });
 
   // 2. Create Window
   mainWindow = new BrowserWindow({
@@ -971,6 +1525,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
   if (serverInstance) serverInstance.close();
+  stopCloudflareTunnel(); // Stop Cloudflare Tunnel when app closes
+});
+
+app.on('before-quit', () => {
+  stopCloudflareTunnel(); // Ensure Cloudflare Tunnel stops before app quits
 });
 
 // Enhanced auto-update handlers
@@ -1002,6 +1561,22 @@ autoUpdater.on('update-downloaded', (info) => {
 // --- IPC HANDLERS ---
 ipcMain.handle('get-config', (event, key) => getConfig(key));
 ipcMain.handle('set-config', (event, key, value) => setConfig(key, value));
+
+// Tunnel handlers (backward compatible with ngrok naming)
+ipcMain.handle('ngrok-get-url', () => cloudflareUrl);
+ipcMain.handle('ngrok-get-webhook-url', () => cloudflareUrl ? `${cloudflareUrl}/webhooks/whatsapp` : null);
+ipcMain.handle('ngrok-get-oauth-callback-url', () => cloudflareUrl ? `${cloudflareUrl}/api/oauth/callback` : null);
+ipcMain.handle('ngrok-start', async (event, port) => {
+  if (!cloudflareProcess) {
+    return await startCloudflareTunnel(port || getConfig('serverPort', DEFAULT_PORT));
+  }
+  return cloudflareUrl;
+});
+ipcMain.handle('ngrok-stop', async () => {
+  stopCloudflareTunnel();
+  return true;
+});
+ipcMain.handle('ngrok-is-running', () => cloudflareProcess !== null && cloudflareUrl !== null);
 
 ipcMain.handle('secure-save', async (event, key, value) => {
   if (safeStorage.isEncryptionAvailable()) {
@@ -1201,9 +1776,6 @@ ipcMain.on('log-message', (event, level, message, data) => {
   logger.log(level, message, data);
 });
 
-// Load EmailService from main process
-const EmailService = require('./services/emailService');
-
 // Helper function to load platform connections from main process
 // Uses the same secure storage mechanism as securityService
 function loadPlatformConnectionsFromMain() {
@@ -1250,198 +1822,6 @@ function savePlatformConnectionsToMain(connections) {
     return false;
   }
 }
-
-// Helper function to get email connection
-function getEmailConnectionFromMain() {
-  const connections = loadPlatformConnectionsFromMain();
-  const emailConnection = connections.find(conn => 
-    (conn.channel === 'EMAIL' || conn.channel === 'email') && 
-    (conn.status === 'Connected' || conn.status === 'connected') && 
-    conn.emailCredentials
-  ) || null;
-  return emailConnection;
-}
-
-// Email connection test handler (runs in main process where Node.js modules are available)
-ipcMain.handle('email-test-connection', async (event, credentials) => {
-  try {
-    logger.info('Email test connection requested:', { 
-      provider: credentials?.provider,
-      smtpHost: credentials?.smtpHost,
-      username: credentials?.username ? credentials.username.substring(0, 3) + '***' : 'missing'
-    });
-
-    if (!credentials) {
-      return { success: false, error: 'No credentials provided' };
-    }
-
-    // Validate credentials structure
-    if (!credentials.username || !credentials.password) {
-      return { success: false, error: 'Username and password are required' };
-    }
-
-    if (!credentials.smtpHost) {
-      return { success: false, error: 'SMTP host is required' };
-    }
-
-    const result = await EmailService.testConnection(credentials, getConfig);
-    
-    if (result.success) {
-      logger.info('Email connection test successful');
-    } else {
-      logger.warn('Email connection test failed:', result.error?.substring(0, 200));
-    }
-    
-    // Return the error message from EmailService which should already be user-friendly
-    return result;
-  } catch (error) {
-    logger.error('Email test connection error:', {
-      message: error.message,
-      code: error.code,
-      responseCode: error.responseCode,
-      stack: error.stack
-    });
-    
-    let errorMessage = error.message || 'Connection test failed';
-    
-    if (error.code === 'ECONNREFUSED') {
-      errorMessage = 'Connection refused. Please check if the SMTP host and port are correct.';
-    } else if (error.code === 'ETIMEDOUT') {
-      errorMessage = 'Connection timeout. Please check your internet connection and firewall settings.';
-    } else if (error.code === 'ENOTFOUND') {
-      errorMessage = `SMTP host not found: ${credentials?.smtpHost || 'unknown'}. Please check the hostname.`;
-    } else if (error.responseCode === 535 || error.message?.includes('authentication')) {
-      errorMessage = 'Authentication failed. Please check your username/email and password. For Gmail/Outlook with 2FA, use an App Password.';
-    } else if (error.responseCode === 554) {
-      errorMessage = 'SMTP server rejected the connection. Please check your server settings.';
-    }
-    
-    return { 
-      success: false, 
-      error: errorMessage 
-    };
-  }
-});
-
-// Email send via SMTP handler
-ipcMain.handle('email-send-smtp', async (event, credentials, options) => {
-  try {
-    logger.info('Email send via SMTP requested:', {
-      provider: credentials?.provider,
-      smtpHost: credentials?.smtpHost,
-      to: options?.to
-    });
-
-    if (!credentials || !options) {
-      return { success: false, error: 'Invalid parameters' };
-    }
-
-    const result = await EmailService.sendViaSMTP(credentials, options);
-    return result;
-  } catch (error) {
-    logger.error('Email send SMTP error:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to send email via SMTP' 
-    };
-  }
-});
-
-// Email send via Gmail API handler
-ipcMain.handle('email-send-gmail', async (event, credentials, options) => {
-  try {
-    logger.info('Email send via Gmail requested:', {
-      to: options?.to
-    });
-
-    if (!credentials || !options) {
-      return { success: false, error: 'Invalid parameters' };
-    }
-
-    const result = await EmailService.sendViaGmail(
-      credentials, 
-      options, 
-      getConfig, 
-      loadPlatformConnectionsFromMain, 
-      savePlatformConnectionsToMain
-    );
-    return result;
-  } catch (error) {
-    logger.error('Email send Gmail error:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to send email via Gmail' 
-    };
-  }
-});
-
-// Email read via IMAP handler
-ipcMain.handle('email-read-imap', async (event, credentials, maxResults = 10) => {
-  try {
-    logger.info('Email read via IMAP requested:', {
-      provider: credentials?.provider,
-      imapHost: credentials?.imapHost,
-      maxResults
-    });
-
-    if (!credentials) {
-      return { success: false, error: 'No credentials provided' };
-    }
-
-    const result = await EmailService.readViaIMAP(credentials, maxResults);
-    return result;
-  } catch (error) {
-    logger.error('Email read IMAP error:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to read emails via IMAP' 
-    };
-  }
-});
-
-// Email read via Gmail API handler
-ipcMain.handle('email-read-gmail', async (event, credentials, maxResults = 10, query) => {
-  try {
-    logger.info('Email read via Gmail requested:', {
-      maxResults,
-      query
-    });
-
-    if (!credentials) {
-      return { success: false, error: 'No credentials provided' };
-    }
-
-    const result = await EmailService.readViaGmail(
-      credentials, 
-      maxResults, 
-      query, 
-      getConfig, 
-      loadPlatformConnectionsFromMain, 
-      savePlatformConnectionsToMain
-    );
-    return result;
-  } catch (error) {
-    logger.error('Email read Gmail error:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to read emails via Gmail' 
-    };
-  }
-});
-
-// Get email connection handler
-ipcMain.handle('email-get-connection', async (event) => {
-  try {
-    const connection = getEmailConnectionFromMain();
-    return { success: true, connection };
-  } catch (error) {
-    logger.error('Email get connection error:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Failed to get email connection' 
-    };
-  }
-});
 
 // OAuth IPC Handlers
 ipcMain.handle('oauth-initiate', async (event, { provider, config, email }) => {

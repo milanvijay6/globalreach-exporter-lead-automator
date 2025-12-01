@@ -323,13 +323,36 @@ export const WhatsAppService = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error?.message || errorData.error?.error_user_msg || '';
+        
         if (response.status === 401) {
-          return { success: false, error: 'Invalid access token' };
+          return { 
+            success: false, 
+            error: 'Invalid or expired access token. Generate a new token in Meta for Developers with whatsapp_business_messaging permission.' 
+          };
+        }
+        if (response.status === 403) {
+          return { 
+            success: false, 
+            error: 'Access forbidden. Token missing whatsapp_business_messaging permission. Generate new token with correct permissions.' 
+          };
         }
         if (response.status === 404) {
-          return { success: false, error: 'Phone number ID not found' };
+          return { 
+            success: false, 
+            error: 'Phone Number ID not found. Verify the ID in Meta → WhatsApp → API Setup matches exactly.' 
+          };
         }
-        return { success: false, error: errorData.error?.message || `HTTP ${response.status}` };
+        
+        // Provide more specific error message if available
+        let detailedError = errorMessage || `HTTP ${response.status}`;
+        if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+          detailedError += '. Token needs whatsapp_business_messaging permission.';
+        } else if (errorMessage.includes('does not exist') || errorMessage.includes('not found')) {
+          detailedError += '. Verify Phone Number ID is correct.';
+        }
+        
+        return { success: false, error: detailedError };
       }
 
       const data = await response.json();

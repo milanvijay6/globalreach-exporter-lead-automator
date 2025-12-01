@@ -13,7 +13,7 @@ export interface LinkClickLog {
 
 export interface LoginAttemptLog {
   timestamp: number;
-  provider: 'gmail' | 'outlook' | 'custom';
+  provider: 'gmail' | 'outlook'; // Only OAuth 2.0 providers supported
   method: 'oauth' | 'magic-link' | 'imap' | 'smtp';
   email?: string;
   success: boolean;
@@ -26,7 +26,7 @@ export interface AuthErrorLog {
   timestamp: number;
   errorCode: string;
   errorMessage: string;
-  provider?: 'gmail' | 'outlook' | 'custom';
+  provider?: 'gmail' | 'outlook'; // Only OAuth 2.0 providers supported
   method?: 'oauth' | 'magic-link' | 'imap' | 'smtp';
   stackTrace?: string;
   context?: Record<string, any>;

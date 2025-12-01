@@ -1,0 +1,7 @@
+CURRENT CLOUDFLARE URL (Add this to Azure):
+https://developmental-supplemental-alloy-times.trycloudflare.com/api/oauth/callback
+
+BACKUP LOCALHOST URL (Keep this in Azure):
+http://localhost:4000/api/oauth/callback
+
+Add BOTH URLs to Azure Portal → Authentication → Web platform

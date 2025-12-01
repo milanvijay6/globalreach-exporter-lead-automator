@@ -11,6 +11,24 @@ export const TunnelService = {
    * Gets the current webhook URL (either tunnel URL or production URL)
    */
   getWebhookUrl: async (): Promise<string> => {
+    // Check if ngrok URL is available (auto-started)
+    if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      try {
+        const ngrokUrl = await (window as any).electronAPI.ngrokGetUrl();
+        if (ngrokUrl) {
+          return ngrokUrl;
+        }
+      } catch (e) {
+        // Ignore if not available
+      }
+    }
+    
+    // Check config for ngrok URL (auto-saved)
+    const ngrokUrl = await PlatformService.getAppConfig('ngrokUrl', '');
+    if (ngrokUrl) {
+      return ngrokUrl;
+    }
+    
     const tunnelUrl = await PlatformService.getAppConfig('tunnelUrl', '');
     const productionUrl = await PlatformService.getAppConfig('productionWebhookUrl', '');
     
@@ -51,6 +69,24 @@ export const TunnelService = {
    * Gets the full webhook endpoint URL
    */
   getWebhookEndpoint: async (): Promise<string> => {
+    // Check if ngrok webhook URL is available (auto-started)
+    if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      try {
+        const ngrokWebhookUrl = await (window as any).electronAPI.ngrokGetWebhookUrl();
+        if (ngrokWebhookUrl) {
+          return ngrokWebhookUrl;
+        }
+      } catch (e) {
+        // Ignore if not available
+      }
+    }
+    
+    // Check config for saved webhook URL
+    const savedWebhookUrl = await PlatformService.getAppConfig('webhookUrl', '');
+    if (savedWebhookUrl) {
+      return savedWebhookUrl;
+    }
+    
     const baseUrl = await TunnelService.getWebhookUrl();
     return `${baseUrl}/webhooks/whatsapp`;
   },

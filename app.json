@@ -1,0 +1,57 @@
+{
+  "name": "GlobalReach Exporter Lead Automator",
+  "description": "AI-powered CRM for international importer outreach",
+  "repository": "https://github.com/yourusername/globalreach-exporter-lead-automator",
+  "logo": "https://via.placeholder.com/150",
+  "keywords": ["crm", "whatsapp", "email", "automation", "ai"],
+  "env": {
+    "NODE_ENV": {
+      "description": "Environment",
+      "value": "production"
+    },
+    "PARSE_APPLICATION_ID": {
+      "description": "Back4App Application ID",
+      "required": true
+    },
+    "PARSE_JAVASCRIPT_KEY": {
+      "description": "Back4App JavaScript Key",
+      "required": true
+    },
+    "PARSE_MASTER_KEY": {
+      "description": "Back4App Master Key",
+      "required": true
+    },
+    "PARSE_SERVER_URL": {
+      "description": "Back4App Server URL",
+      "value": "https://parseapi.back4app.com/"
+    },
+    "ENCRYPTION_KEY_SECRET": {
+      "description": "Encryption secret for sensitive data",
+      "required": true
+    },
+    "ENCRYPTION_KEY_SALT": {
+      "description": "Encryption salt",
+      "required": true
+    },
+    "WEBHOOK_TOKEN": {
+      "description": "Webhook verification token",
+      "value": "globalreach_secret_token"
+    },
+    "BASE_URL": {
+      "description": "Your app URL (will be set automatically by Back4App)",
+      "required": false
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "free"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ]
+}
+

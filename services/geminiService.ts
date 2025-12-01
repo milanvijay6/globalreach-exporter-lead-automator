@@ -354,12 +354,20 @@ export const generateIntroMessage = async (
     try {
       const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
       const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-      await recordApiUsage(keyId, false, undefined, error.message);
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
     } catch (trackError) {
       // Ignore tracking errors
     }
     
-    return "Could not generate intro message. Please check API Key.";
+    // Handle structured API errors
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details?.title?.includes('Bad request')) {
+      const detail = error?.details?.detail || error?.details?.title || 'Invalid request';
+      return `Error: ${detail}. Please check your API key and request parameters.`;
+    }
+    
+    const errorMessage = error?.message || error?.error || error?.details?.detail || 'Unknown error';
+    return `Could not generate intro message: ${errorMessage}. Please check your API key and configuration.`;
   }
 };
 
@@ -451,12 +459,232 @@ export const generateAgentReply = async (
     try {
       const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
       const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-      await recordApiUsage(keyId, false, undefined, error.message);
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
     } catch (trackError) {
       // Ignore tracking errors
     }
     
-    return "System Error: AI unavailable.";
+    // Handle structured API errors
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details?.title?.includes('Bad request')) {
+      const detail = error?.details?.detail || error?.details?.title || 'Invalid request';
+      return `Error: ${detail}. Please check your API key and request parameters.`;
+    }
+    
+    const errorMessage = error?.message || error?.error || error?.details?.detail || 'Unknown error';
+    return `System Error: ${errorMessage}. Please check your API key and configuration.`;
+  }
+};
+
+/**
+ * Generates an email message for initial outreach to a lead
+ * Formats the message as HTML email with proper subject line
+ */
+export const generateEmailMessage = async (
+  importer: Importer,
+  myCompany: string | null = null,
+  myProduct: string | null = null,
+  template: string,
+  useResearch: boolean = true
+): Promise<{ subject: string; body: string }> => {
+  
+  if (!checkRateLimit()) {
+    return {
+      subject: 'Re: Your Inquiry',
+      body: 'Error: Rate limit exceeded. Please wait a moment.',
+    };
+  }
+
+  // Generate intro message using existing logic
+  const introContent = await generateIntroMessage(
+    importer,
+    myCompany,
+    myProduct,
+    template,
+    Channel.EMAIL,
+    useResearch
+  );
+
+  // Generate subject line
+  const subjectPrompt = `
+    Generate a professional email subject line for this message:
+    ${introContent.substring(0, 200)}
+    
+    Requirements:
+    - Professional and concise (under 60 characters)
+    - Relevant to the lead's business/industry
+    - Include company name if appropriate
+    - Avoid spam trigger words
+    
+    Output ONLY the subject line, no quotes or extra text.
+  `;
+
+  try {
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const subjectResponse = await client.models.generateContent({
+      model: MODEL_NAME,
+      contents: subjectPrompt,
+    });
+    
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+    
+    const subject = (subjectResponse.text || `Re: ${importer.companyName || importer.name} - Inquiry`).trim();
+    
+    // Format body as HTML
+    const htmlBody = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${introContent.split('\n').map(line => `<p>${line}</p>`).join('\n')}
+        </body>
+      </html>
+    `;
+    
+    return {
+      subject,
+      body: htmlBody,
+    };
+  } catch (error: any) {
+    console.error('[GeminiService] Email message generation error:', error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
+    // Fallback
+    return {
+      subject: `Re: ${importer.companyName || importer.name} - Inquiry`,
+      body: introContent,
+    };
+  }
+};
+
+/**
+ * Generates an email reply based on incoming email and conversation history
+ * Maintains email thread context and professional formatting
+ */
+export const generateEmailReply = async (
+  importer: Importer,
+  incomingEmailBody: string,
+  incomingEmailSubject: string
+): Promise<string> => {
+  
+  if (!checkRateLimit()) {
+    return 'Error: Rate limit exceeded. Please wait a moment.';
+  }
+
+  // Load company details
+  const company = await (await import('./companyConfigService')).CompanyConfigService.getCompanyDetails();
+  const companyName = company?.companyName || 'Our Company';
+  const companyContext = await getCompanyContext();
+
+  // Get relevant products
+  const relevantProducts = await getRelevantProducts(importer.productsImported || '');
+  const productContext = await buildProductContext(importer, relevantProducts);
+
+  // Get conversation history (filter to email messages for context)
+  const emailHistory = importer.chatHistory
+    .filter(m => m.channel === Channel.EMAIL)
+    .slice(-10); // Last 10 email messages
+  
+  const conversation = emailHistory.map(m => 
+    `${m.sender === 'importer' ? 'Customer' : 'You'}: ${m.content}`
+  ).join('\n\n');
+
+  // Build context
+  const contextBlock = `
+    Context Summary: ${importer.conversationSummary || 'Starting conversation.'}
+    Identified Interest: ${importer.interestShownIn || 'Not yet identified.'}
+    Next Goal: ${importer.nextStep || 'Qualify lead.'}
+    ${productContext}
+  `;
+
+  const prompt = `
+    You are a professional sales representative for ${companyName}.
+    
+    ${companyContext}
+    
+    You are replying to an email from a potential customer (lead).
+    
+    Customer Details:
+    Name: ${importer.name} (${importer.companyName}, ${importer.country})
+    Imports: ${importer.productsImported}
+    
+    ${contextBlock}
+    
+    Incoming Email:
+    Subject: ${incomingEmailSubject}
+    Body: ${incomingEmailBody}
+    
+    Previous Email Conversation:
+    ${conversation || 'This is the first email in the conversation.'}
+    
+    Instructions:
+    - Write a professional, helpful email reply
+    - Address their questions and concerns directly
+    - Maintain a friendly but professional tone
+    - Keep it concise but complete (150-300 words)
+    - If they ask for pricing, provide a general range or ask for quantity/Incoterms
+    - Always end with a question or next step to keep the conversation moving
+    - Format as HTML email (use <p> tags for paragraphs)
+    - Do NOT include email headers (To, From, Subject) - just the body content
+    
+    Output ONLY the email body content in HTML format.
+  `;
+
+  try {
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    const response = await client.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+    });
+    
+    const responseTime = Date.now() - startTime;
+    await recordApiUsage(keyId, true, responseTime);
+    
+    let replyBody = response.text || 'Thank you for your email. We will get back to you shortly.';
+    
+    // Ensure it's properly formatted HTML
+    if (!replyBody.includes('<p>') && !replyBody.includes('<html>')) {
+      replyBody = `<html><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${replyBody.split('\n').map(line => line.trim() ? `<p>${line}</p>` : '').join('\n')}</body></html>`;
+    }
+    
+    return replyBody;
+  } catch (error: any) {
+    console.error('[GeminiService] Email reply generation error:', error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
+    // Handle structured API errors
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details?.title?.includes('Bad request')) {
+      const detail = error?.details?.detail || error?.details?.title || 'Invalid request';
+      return `<p>Error: ${detail}. Please check your API key and request parameters.</p>`;
+    }
+    
+    // Fallback reply
+    return `<html><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;"><p>Thank you for your email. We appreciate your interest and will respond to your inquiry shortly.</p><p>Best regards,<br>${companyName}</p></body></html>`;
   }
 };
 
@@ -575,13 +803,25 @@ export const analyzeLeadQuality = async (history: Message[]): Promise<AnalysisRe
     try {
       const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
       const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-      await recordApiUsage(keyId, false, undefined, error.message);
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
     } catch (trackError) {
       // Ignore tracking errors
     }
+    
+    // Log structured error details if available
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details) {
+      console.error("Structured API Error:", {
+        error: error.error,
+        details: error.details,
+        isRetryable: error.isRetryable,
+        isExpected: error.isExpected
+      });
+    }
+    
     return {
       status: LeadStatus.ENGAGED,
-      summary: "Analysis failed",
+      summary: error?.details?.detail || error?.error || "Analysis failed",
       nextStep: "Manual Review",
       interestShownIn: "Unknown",
       requiresHumanReview: true,
@@ -671,9 +911,16 @@ export const analyzeAndOptimize = async (
         try {
           const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
           const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-          await recordApiUsage(keyId, false, undefined, error.message);
+          const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+          await recordApiUsage(keyId, false, undefined, errorMessage);
         } catch (trackError) {
           // Ignore tracking errors
+        }
+        
+        // Handle structured API errors
+        if (error?.error === 'ERROR_BAD_REQUEST' || error?.details) {
+          const detail = error?.details?.detail || error?.details?.title || error?.error || 'Invalid request';
+          throw new Error(`API Error: ${detail}. Please check your API key and request parameters.`);
         }
         
         throw error;
@@ -776,9 +1023,20 @@ export const generateLeadResearch = async (context: any): Promise<{
     try {
       const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
       const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-      await recordApiUsage(keyId, false, undefined, error.message);
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
     } catch (trackError) {
       // Ignore tracking errors
+    }
+    
+    // Log structured error details if available
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details) {
+      console.error("Structured API Error:", {
+        error: error.error,
+        details: error.details,
+        isRetryable: error.isRetryable,
+        isExpected: error.isExpected
+      });
     }
     
     // Return default research
@@ -829,10 +1087,17 @@ export const simulateImporterResponse = async (importer: Importer, history: Mess
     try {
       const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
       const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-      await recordApiUsage(keyId, false, undefined, error.message);
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
     } catch (trackError) {
       // Ignore tracking errors
     }
+    
+    // Handle structured API errors
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details) {
+      console.warn("API Error in simulation:", error?.details?.detail || error?.error);
+    }
+    
     return "Interested, please send details.";
   }
 };
@@ -916,10 +1181,22 @@ export const generateSalesForecast = async (importers: Importer[]): Promise<Sale
         try {
           const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
           const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-          await recordApiUsage(keyId, false, undefined, error.message);
+          const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+          await recordApiUsage(keyId, false, undefined, errorMessage);
         } catch (trackError) {
           // Ignore tracking errors
         }
+        
+        // Log structured error details if available
+        if (error?.error === 'ERROR_BAD_REQUEST' || error?.details) {
+          console.error("Structured API Error:", {
+            error: error.error,
+            details: error.details,
+            isRetryable: error.isRetryable,
+            isExpected: error.isExpected
+          });
+        }
+        
         // Fallback mock data
         return [
             { date: 'Week 1', predictedConversions: 2, confidence: 0.8 },
@@ -1007,10 +1284,22 @@ export const generateTrainingProgram = async (insights: StrategicInsight[]): Pro
     try {
       const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
       const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
-      await recordApiUsage(keyId, false, undefined, error.message);
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
     } catch (trackError) {
       // Ignore tracking errors
     }
+    
+    // Log structured error details if available
+    if (error?.error === 'ERROR_BAD_REQUEST' || error?.details) {
+      console.error("Structured API Error:", {
+        error: error.error,
+        details: error.details,
+        isRetryable: error.isRetryable,
+        isExpected: error.isExpected
+      });
+    }
+    
     // Fallback
     return [];
   }

@@ -219,9 +219,9 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
                 <div className="text-red-600 font-semibold">⚠️ Validation Errors:</div>
               </div>
               <ul className="list-disc list-inside space-y-1">
-                {errors.map((error, i) => (
+              {errors.map((error, i) => (
                   <li key={i} className="text-sm text-red-700">{error}</li>
-                ))}
+              ))}
               </ul>
               <div className="mt-3 text-xs text-red-600">
                 <strong>Required fields:</strong> Product Name, Category, Short Description, Unit

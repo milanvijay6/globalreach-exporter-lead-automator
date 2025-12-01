@@ -262,9 +262,9 @@ The redirect URI is where Microsoft will send users after they authenticate. Thi
 **Redirect URIs** field:
 1. Click in the **"Redirect URIs"** text box
 2. Enter the following URI exactly as shown:
-   ```
-   http://localhost:4000/auth/oauth/callback
-   ```
+     ```
+     http://localhost:4000/auth/oauth/callback
+     ```
 3. ⚠️ **Important**: 
    - Use `http://` (not `https://`) for localhost
    - Use `localhost` (not `127.0.0.1`)
@@ -501,11 +501,12 @@ Now let's test the OAuth connection to make sure everything works!
 
 #### 9.3 Enter Your Email Address
 
-1. You'll see an input field for email address
+1. After selecting **"Sign in with Microsoft"**, you'll see an email input screen
 2. Enter your Outlook email address:
    - Personal: `yourname@outlook.com` or `yourname@hotmail.com`
    - Work/School: `yourname@yourcompany.com`
-3. Click **"Continue"** or **"Next"** button
+3. Click **"Continue with Microsoft"** button
+4. ⚠️ **Note**: If you see IMAP/SMTP configuration form instead of email input, it means OAuth is not configured. Go to Settings > Integrations > OAuth Configuration and enter your Client ID and Client Secret first.
 
 #### 9.4 Complete OAuth Flow
 
@@ -790,7 +791,7 @@ This section covers the most common errors and how to fix them.
    - Try setting a different browser as default
 
 4. **Check App Permissions:**
-   - Verify the app has permission to open external URLs
+- Verify the app has permission to open external URLs
    - Check system security settings
 
 ---

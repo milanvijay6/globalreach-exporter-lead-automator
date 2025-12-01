@@ -23,6 +23,9 @@ import SecurityPinPanel from './SecurityPinPanel';
 import UserManagementPanel from './UserManagementPanel';
 import WhatsAppWebQRModal from './WhatsAppWebQRModal';
 import WhatsAppWebBanRiskDashboard from './WhatsAppWebBanRiskDashboard';
+import EmailOAuthModal from './EmailOAuthModal';
+import IntegrationCard from './IntegrationCard';
+import { IntegrationAnalyticsService } from '../services/integrationAnalyticsService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -108,6 +111,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [whatsappWebSending, setWhatsappWebSending] = useState(false);
   const [whatsappWebSendResult, setWhatsappWebSendResult] = useState<{ success: boolean; message?: string } | null>(null);
 
+  // Email OAuth state
+  const [showEmailOAuthModal, setShowEmailOAuthModal] = useState(false);
+  const [emailConnection, setEmailConnection] = useState<PlatformConnection | null>(null);
+  const [emailAutoReply, setEmailAutoReply] = useState(false);
+  const [emailDraftApproval, setEmailDraftApproval] = useState(true);
+  const [emailLastSync, setEmailLastSync] = useState<number | null>(null);
+  
+  // Integration analytics state
+  const [integrationAnalytics, setIntegrationAnalytics] = useState<{
+    outlook?: any;
+    whatsapp?: any;
+    wechat?: any;
+  }>({});
+  
+  // Global controls state
+  const [globalAutoReply, setGlobalAutoReply] = useState(false);
+  const [globalDailyLimit, setGlobalDailyLimit] = useState(50);
+  const [globalTestMode, setGlobalTestMode] = useState(false);
+  const [globalEmailSignature, setGlobalEmailSignature] = useState('');
+
   useEffect(() => {
     setLocalTemplates(templates);
     if (notificationConfig) setLocalNotifications(notificationConfig);
@@ -143,11 +166,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   setGmailClientSecret(oauthConfig.gmail.clientSecret || '');
                 }
               }
+              // Also try loading from individual config keys
+              const savedClientId = await PlatformService.getAppConfig('outlookClientId', '');
+              const savedClientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
+              const savedTenantId = await PlatformService.getAppConfig('outlookTenantId', '');
+              if (savedClientId && !outlookClientId) {
+                setOutlookClientId(savedClientId);
+                setOutlookClientSecret(savedClientSecret);
+                setOutlookTenantId(savedTenantId || 'common');
+              }
             } catch (e) {
               console.error('Failed to load OAuth config:', e);
             }
         };
+
+        // Load email connection
+        const loadEmailConnection = async () => {
+          try {
+            const { loadEmailConnection } = await import('../services/securityService');
+            const conn = await loadEmailConnection();
+            setEmailConnection(conn);
+            if (conn?.emailCredentials) {
+              setEmailLastSync(conn.lastTested || null);
+              // Load email settings
+              const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
+              const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
+              setEmailAutoReply(autoReply);
+              setEmailDraftApproval(draftApproval);
+            }
+          } catch (error) {
+            console.error('Failed to load email connection:', error);
+          }
+        };
+
         loadSystem();
+        loadEmailConnection();
     }
   }, [templates, notificationConfig, isOpen]);
 
@@ -442,13 +495,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       switch(channel) {
           case Channel.WHATSAPP: return 'bg-green-100 text-green-600';
           case Channel.WECHAT: return 'bg-emerald-100 text-emerald-600';
-          case Channel.EMAIL: return 'bg-blue-100 text-blue-600';
           default: return 'bg-slate-100 text-slate-600';
       }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[100] bg-white overflow-hidden" style={{ 
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: '100vw', 
+      height: '100vh',
+      margin: 0,
+      padding: 0,
+      zIndex: 100
+    }}>
       <PlatformConnectModal 
         isOpen={connectModalOpen} 
         onClose={() => setConnectModalOpen(false)}
@@ -464,9 +527,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           isOpen={showMfaModal}
           onClose={() => setShowMfaModal(false)}
           user={user}
-          onMfaEnabled={() => {
+          onMfaEnabled={async () => {
             // Reload user session to get updated MFA status
-            const { loadUserSession } = require('./../services/securityService');
+            const { loadUserSession } = await import('./../services/securityService');
             loadUserSession().then((updatedUser: User | null) => {
               if (updatedUser) {
                 // Update user in parent component would be needed
@@ -495,8 +558,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[95vh] sm:max-h-[90vh] overflow-hidden" style={{ width: '100%', maxWidth: 'min(95vw, 48rem)', display: 'flex', flexDirection: 'column', maxHeight: '95vh', height: '95vh' }}>
-        <div className="p-4 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0 flex-shrink-0">
+      {/* Full-screen Settings Container */}
+      <div className="w-full h-full flex flex-col overflow-hidden bg-white" style={{ 
+        width: '100%', 
+        height: '100%',
+        minWidth: '100vw',
+        minHeight: '100vh',
+        maxWidth: '100vw',
+        maxHeight: '100vh'
+      }}>
+        {/* Header - Fixed at top */}
+        <div className="p-4 sm:p-6 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-slate-50 to-white shrink-0 flex-shrink-0 shadow-sm">
           <h2 className="text-lg sm:text-xl font-bold text-slate-800">{t('settings', language)}</h2>
           <button onClick={onClose} aria-label="Close settings" className="p-2 hover:bg-slate-200 rounded-full transition-colors">
             <X className="w-5 h-5 text-slate-500" />
@@ -529,11 +601,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             })}
         </div>
 
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-6 min-h-0 pb-20" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch', flex: '1 1 auto', minHeight: 0 }}>
+        {/* Content Area - Scrollable, Full Height */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 min-h-0" style={{ 
+          overflowY: 'auto', 
+          WebkitOverflowScrolling: 'touch', 
+          flex: '1 1 auto', 
+          minHeight: 0,
+          maxWidth: '100%',
+          width: '100%'
+        }}>
           
           {/* GENERAL */}
           {activeTab === 'general' && (
-            <div className="space-y-4 sm:space-y-6" style={{ overflow: 'visible' }}>
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                     <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                     <Globe className="w-4 h-4" /> {t('language', language)}
@@ -563,9 +643,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* NOTIFICATIONS */}
           {activeTab === 'notifications' && (
-            <div className="space-y-4" style={{ overflow: 'visible' }}>
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
                 {[
-                    { key: 'emailQualified', icon: Mail, label: 'Qualified Lead Alerts', color: 'blue', desc: 'Email when lead becomes Interested.' },
                     { key: 'pushMessages', icon: Bell, label: 'Push Notifications', color: 'purple', desc: 'Desktop alerts for messages.' },
                     { key: 'dailyDigest', icon: MessageSquare, label: 'Daily Digest', color: 'orange', desc: 'Summary at 9:00 AM.' },
                     { key: 'criticalAlerts', icon: Zap, label: 'Critical Sentiment Alerts', color: 'red', desc: 'Immediate alert for angry leads.' }
@@ -596,7 +675,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* AI TUNING / OPTIMIZATION */}
           {activeTab === 'tuning' && (
-            <div className="space-y-4 sm:space-y-6" style={{ overflow: 'visible' }}>
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
                     <h3 className="text-sm font-bold text-indigo-900 mb-2 flex items-center gap-2">
                         <Brain className="w-5 h-5" /> AI Feedback Loop
@@ -669,587 +748,288 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* INTEGRATIONS */}
           {activeTab === 'integrations' && (
-            <div className="space-y-3 sm:space-y-4" style={{ overflow: 'visible' }}>
-                <p className="text-sm text-slate-600 mb-4">Link accounts to enable automated messaging.</p>
-                {[Channel.WHATSAPP, Channel.WECHAT, Channel.EMAIL].map(channel => {
-                    const connection = getPlatformStatus(channel);
-                    const isConnected = connection.status === PlatformStatus.CONNECTED;
-                    const isWhatsApp = channel === Channel.WHATSAPP;
-                    const whatsappCreds = connection.whatsappCredentials;
-                    
+            <div className="space-y-4 sm:space-y-6 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
+                {/* Unified 3-Card Grid Layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {/* Outlook/Email Card */}
+                  <IntegrationCard
+                    service="outlook"
+                    isConnected={emailConnection?.status === PlatformStatus.CONNECTED}
+                    account={emailConnection?.accountName || emailConnection?.emailCredentials?.userEmail || ''}
+                    lastSync={emailLastSync ? new Date(emailLastSync).toISOString() : null}
+                    dailyLimit={integrationAnalytics.outlook?.dailyUsage || { used: 0, total: globalDailyLimit }}
+                    onConnect={() => setShowEmailOAuthModal(true)}
+                    onDisconnect={async () => {
+                      const { removeEmailConnection } = await import('../services/securityService');
+                      await removeEmailConnection();
+                      setEmailConnection(null);
+                      setEmailLastSync(null);
+                      onUpdateConnection({ ...emailConnection, status: PlatformStatus.DISCONNECTED });
+                    }}
+                    onReconnect={() => setShowEmailOAuthModal(true)}
+                    healthStatus={emailConnection?.healthStatus}
+                    tokenExpiry={emailConnection?.emailCredentials?.expiryDate || null}
+                    analytics={integrationAnalytics.outlook ? {
+                      messagesSent: integrationAnalytics.outlook.messagesSent,
+                      deliveryRate: integrationAnalytics.outlook.deliveryRate,
+                      replyRate: integrationAnalytics.outlook.replyRate,
+                    } : undefined}
+                  />
+                  
+                  {/* WhatsApp Card */}
+                  {(() => {
+                    const whatsappConnection = getPlatformStatus(Channel.WHATSAPP);
                     return (
-                        <div key={channel} className="border border-slate-200 rounded-lg overflow-hidden">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 gap-3 hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center shrink-0 ${getChannelIcon(channel)}`}>
-                                    {channel === Channel.EMAIL ? <Mail className="w-5 h-5 sm:w-6 sm:h-6" /> : <LinkIcon className="w-5 h-5 sm:w-6 sm:h-6" />}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <h4 className="font-bold text-slate-800 truncate">{channel}</h4>
-                                    {isConnected ? (
-                                        <div className="flex flex-col">
-                                            <p className="text-xs text-green-600 flex items-center gap-1 truncate"><CheckCircle className="w-3 h-3 shrink-0" /> <span className="truncate">{connection.accountName}</span></p>
-                                            {connection.provider && <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-0.5 truncate">VIA {connection.provider}</span>}
-                                        </div>
-                                    ) : <p className="text-xs text-slate-500">Not connected</p>}
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => isConnected ? onUpdateConnection({ ...connection, status: PlatformStatus.DISCONNECTED }) : openConnectModal(channel)}
-                                className={`w-full sm:w-auto px-3 py-1.5 text-xs border rounded transition-colors ${isConnected ? 'border-red-200 text-red-600 hover:bg-red-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
-                            >
-                                {isConnected ? 'Disconnect' : 'Connect'}
-                            </button>
+                      <IntegrationCard
+                        service="whatsapp"
+                        isConnected={whatsappConnection.status === PlatformStatus.CONNECTED}
+                        account={whatsappConnection.accountName || ''}
+                        lastSync={whatsappConnection.lastTested ? new Date(whatsappConnection.lastTested).toISOString() : null}
+                        dailyLimit={integrationAnalytics.whatsapp?.dailyUsage || { used: 0, total: globalDailyLimit }}
+                        onConnect={() => openConnectModal(Channel.WHATSAPP)}
+                        onDisconnect={() => onUpdateConnection({ ...whatsappConnection, status: PlatformStatus.DISCONNECTED })}
+                        onReconnect={() => openConnectModal(Channel.WHATSAPP)}
+                        healthStatus={whatsappConnection.healthStatus}
+                        analytics={integrationAnalytics.whatsapp ? {
+                          messagesSent: integrationAnalytics.whatsapp.messagesSent,
+                          deliveryRate: integrationAnalytics.whatsapp.deliveryRate,
+                          replyRate: integrationAnalytics.whatsapp.replyRate,
+                        } : undefined}
+                      />
+                    );
+                  })()}
+                  
+                  {/* WeChat Card */}
+                  {(() => {
+                    const wechatConnection = getPlatformStatus(Channel.WECHAT);
+                    return (
+                      <IntegrationCard
+                        service="wechat"
+                        isConnected={wechatConnection.status === PlatformStatus.CONNECTED}
+                        account={wechatConnection.accountName || ''}
+                        lastSync={wechatConnection.lastTested ? new Date(wechatConnection.lastTested).toISOString() : null}
+                        dailyLimit={integrationAnalytics.wechat?.dailyUsage || { used: 0, total: globalDailyLimit }}
+                        onConnect={() => openConnectModal(Channel.WECHAT)}
+                        onDisconnect={() => onUpdateConnection({ ...wechatConnection, status: PlatformStatus.DISCONNECTED })}
+                        onReconnect={() => openConnectModal(Channel.WECHAT)}
+                        healthStatus={wechatConnection.healthStatus}
+                        analytics={integrationAnalytics.wechat ? {
+                          messagesSent: integrationAnalytics.wechat.messagesSent,
+                          deliveryRate: integrationAnalytics.wechat.deliveryRate,
+                          replyRate: integrationAnalytics.wechat.replyRate,
+                        } : undefined}
+                      />
+                    );
+                  })()}
                             </div>
                             
-                            {/* WhatsApp-specific details */}
-                            {isWhatsApp && (
-                                <div className="border-t border-slate-200 bg-slate-50 p-3 sm:p-4 space-y-3">
-                                    {/* Method Selection */}
-                                    <div className="pb-3 border-b border-slate-200">
-                                        <label className="text-xs font-bold text-slate-700 mb-2 block">WhatsApp Method</label>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={async () => {
-                                                    setWhatsappMethod('cloud_api');
-                                                    await PlatformService.setAppConfig('whatsapp', { method: 'cloud_api' });
+                {/* Global Controls Section */}
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-xl p-4 sm:p-6 space-y-4">
+                  <h4 className="font-bold text-slate-800 text-base mb-4">Global Controls</h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Auto-reply toggle */}
+                    <label className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+                      <div>
+                        <span className="text-sm font-medium text-slate-700">Auto-reply all</span>
+                        <p className="text-xs text-slate-500 mt-0.5">Enable auto-reply for all connected services</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={globalAutoReply}
+                        onChange={async (e) => {
+                          setGlobalAutoReply(e.target.checked);
+                          await PlatformService.setAppConfig('globalAutoReply', e.target.checked);
                                                 }}
-                                                className={`flex-1 px-3 py-2 text-xs rounded transition-colors ${
-                                                    whatsappMethod === 'cloud_api'
-                                                        ? 'bg-indigo-600 text-white'
-                                                        : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                                                }`}
-                                            >
-                                                Cloud API (Recommended)
-                                            </button>
-                                            <button
-                                                onClick={async () => {
-                                                    setWhatsappMethod('web');
-                                                    await PlatformService.setAppConfig('whatsapp', { method: 'web' });
-                                                    // Initialize WhatsApp Web if not already initialized
-                                                    if (isDesktop() && window.electronAPI?.whatsappWebInit) {
-                                                        setShowWhatsAppWebQR(true);
-                                                        setWhatsappWebStatus('waiting');
-                                                        
-                                                        // Check current status first
-                                                        const status = await window.electronAPI.whatsappWebGetStatus?.();
-                                                        if (status?.ready) {
-                                                            setWhatsappWebStatus('connected');
-                                                            setWhatsappWebQRCode(null);
-                                                        } else {
-                                                            const result = await window.electronAPI.whatsappWebInit({});
-                                                            if (result.success) {
-                                                                if (result.qrCode) {
-                                                                    setWhatsappWebQRCode(result.qrCode);
-                                                                    setWhatsappWebStatus('scanning');
-                                                                } else if (result.ready) {
-                                                                    setWhatsappWebStatus('connected');
-                                                                    setWhatsappWebQRCode(null);
-                                                                }
-                                                            } else {
-                                                                setWhatsappWebStatus('error');
-                                                                setWhatsappWebError(result.error);
-                                                            }
-                                                        }
-                                                    }
-                                                }}
-                                                className={`flex-1 px-3 py-2 text-xs rounded transition-colors ${
-                                                    whatsappMethod === 'web'
-                                                        ? 'bg-orange-600 text-white'
-                                                        : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                                                }`}
-                                            >
-                                                WhatsApp Web (Risky)
-                                            </button>
-                                        </div>
-                                        {whatsappMethod === 'web' && (
-                                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-                                                <strong>Warning:</strong> WhatsApp Web automation violates Terms of Service and may result in account bans. Use at your own risk.
-                                            </div>
-                                        )}
+                        className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
+                      />
+                    </label>
+                    
+                    {/* Daily limit */}
+                    <div className="p-3 bg-white rounded-lg border border-slate-200">
+                      <label className="text-sm font-medium text-slate-700 block mb-2">Daily limit (per service)</label>
+                      <input
+                        type="number"
+                        value={globalDailyLimit}
+                        onChange={async (e) => {
+                          const limit = parseInt(e.target.value) || 50;
+                          setGlobalDailyLimit(limit);
+                          await PlatformService.setAppConfig('globalDailyLimit', limit);
+                          // Update all service limits
+                          await IntegrationAnalyticsService.setDailyLimit('outlook', limit);
+                          await IntegrationAnalyticsService.setDailyLimit('whatsapp', limit);
+                          await IntegrationAnalyticsService.setDailyLimit('wechat', limit);
+                        }}
+                        min="1"
+                        max="1000"
+                        className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Default: 50 messages per day per service</p>
                                     </div>
                                     
-                                    {/* Cloud API Details */}
-                                    {isConnected && whatsappCreds && whatsappMethod === 'cloud_api' && (
+                    {/* Test mode toggle */}
+                    <label className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
                                         <div>
-                                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                                            <h5 className="text-xs font-bold text-slate-700">WhatsApp Cloud API Details</h5>
-                                        <button
-                                            onClick={async () => {
-                                                const { WhatsAppService } = await import('../services/whatsappService');
-                                                const result = await WhatsAppService.testConnection(whatsappCreds.phoneNumberId, whatsappCreds.accessToken);
-                                                if (result.success) {
-                                                    alert(`Connection test successful!\nPhone: ${result.phoneNumber || whatsappCreds.phoneNumberId}`);
-                                                } else {
-                                                    alert(`Connection test failed: ${result.error}`);
-                                                }
-                                            }}
-                                            className="w-full sm:w-auto px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
-                                        >
-                                            Test Connection
-                                        </button>
+                        <span className="text-sm font-medium text-slate-700">Test mode</span>
+                        <p className="text-xs text-slate-500 mt-0.5">Send to self first for testing</p>
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs">
-                                        <div className="min-w-0">
-                                            <span className="text-slate-500 block mb-1">Phone Number ID:</span>
-                                            <p className="font-mono text-slate-800 truncate break-all">{whatsappCreds.phoneNumberId}</p>
-                                        </div>
-                                        <div className="min-w-0">
-                                            <span className="text-slate-500 block mb-1">Business Account ID:</span>
-                                            <p className="font-mono text-slate-800 truncate break-all">{whatsappCreds.businessAccountId}</p>
-                                        </div>
-                                    </div>
-                                    <div className="pt-2 border-t border-slate-200">
-                                        <label className="text-xs text-slate-500 font-medium mb-1 block">Webhook URL</label>
-                                        <div className="flex flex-col sm:flex-row gap-2">
                                             <input
-                                                type="text"
-                                                readOnly
-                                                value={webhookUrl}
-                                                className="flex-1 p-2 text-xs border border-slate-300 rounded bg-white font-mono min-w-0"
-                                                id={`webhook-url-${channel}`}
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    const input = document.getElementById(`webhook-url-${channel}`) as HTMLInputElement;
-                                                    if (input) {
-                                                        input.select();
-                                                        document.execCommand('copy');
-                                                        alert('Webhook URL copied to clipboard!');
-                                                    }
-                                                }}
-                                                className="w-full sm:w-auto px-3 py-2 text-xs bg-slate-600 text-white rounded hover:bg-slate-700 transition-colors whitespace-nowrap"
-                                            >
-                                                Copy
-                                            </button>
+                        type="checkbox"
+                        checked={globalTestMode}
+                        onChange={async (e) => {
+                          setGlobalTestMode(e.target.checked);
+                          await PlatformService.setAppConfig('globalTestMode', e.target.checked);
+                        }}
+                        className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
+                      />
+                    </label>
+                    
+                    {/* Signature editor */}
+                    <div className="p-3 bg-white rounded-lg border border-slate-200">
+                      <label className="text-sm font-medium text-slate-700 block mb-2">Email signature</label>
+                      <textarea
+                        value={globalEmailSignature}
+                        onChange={async (e) => {
+                          setGlobalEmailSignature(e.target.value);
+                          await PlatformService.setAppConfig('globalEmailSignature', e.target.value);
+                        }}
+                        placeholder="Enter email signature (HTML supported)"
+                        rows={3}
+                        className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500 text-sm"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">This signature will be added to all outgoing emails</p>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-1 break-words">
-                                            Configure this URL in Meta Business Manager → WhatsApp → Configuration → Webhooks
-                                        </p>
                                     </div>
                                     </div>
-                                    )}
-                                    
-                                    {/* WhatsApp Web Details */}
-                                    {whatsappMethod === 'web' && (
-                                        <div className="space-y-3">
-                                            {/* Phone Number Authentication */}
-                                            {whatsappWebStatus !== 'connected' && (
-                                                <div className="p-3 bg-white rounded border border-slate-200 space-y-3">
-                                                    <h5 className="text-xs font-bold text-slate-700">Login with Phone Number</h5>
-                                                    <p className="text-[10px] text-slate-500">
-                                                        Enter your phone number to receive a pairing code. You'll need to enter this code in WhatsApp on your phone.
+                
+                {/* OAuth Configuration Section - Collapsible */}
+                <div className="border-2 border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                  <details className="group">
+                    <summary className="cursor-pointer flex items-center justify-between p-4 text-sm font-semibold text-slate-700 hover:text-slate-900 bg-white border-b border-slate-200">
+                      <span className="flex items-center gap-2">
+                        <Lock className="w-4 h-4" />
+                        OAuth Configuration (Advanced)
+                      </span>
+                      <span className="text-xs text-slate-500 group-open:hidden">Click to configure</span>
+                      <span className="text-xs text-slate-500 hidden group-open:inline">Click to hide</span>
+                    </summary>
+                    <div className="p-4 space-y-3">
+                      <div>
+                        <h5 className="text-xs font-bold text-slate-700 mb-2">Outlook OAuth Configuration</h5>
+                        <p className="text-[10px] text-slate-500 mb-3">
+                          Configure your Outlook OAuth credentials to connect your email account.
+                        </p>
+                        <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-3">
+                          <p className="text-[10px] text-blue-800 font-semibold mb-1">⚠️ Important Azure Configuration:</p>
+                          <p className="text-[10px] text-blue-700">
+                            In Azure Portal → Authentication → Platform configurations, make sure your redirect URI 
+                            (<code className="bg-blue-100 px-1 rounded">http://localhost:4000/api/oauth/callback</code>) 
+                            is configured as <strong>"Web"</strong> platform type, NOT "Single-page application".
                                                     </p>
-                                                    <div className="flex gap-2">
+                        </div>
+                        <div className="space-y-2 text-xs">
+                          <div>
+                            <label className="text-slate-600 block mb-1">Client ID</label>
                                                         <input
                                                             type="text"
-                                                            value={whatsappWebAuthPhoneNumber}
-                                                            onChange={(e) => setWhatsappWebAuthPhoneNumber(e.target.value)}
-                                                            placeholder="e.g., 12025550108 (country code + number, no symbols)"
-                                                            className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                                                            disabled={whatsappWebRequestingPairingCode}
+                              value={outlookClientId}
+                              onChange={(e) => setOutlookClientId(e.target.value)}
+                              placeholder="Enter Outlook Client ID"
+                              className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-slate-600 block mb-1">Client Secret <span className="text-red-500">*</span></label>
+                            <div className="flex gap-2">
+                              <input
+                                type={showOutlookSecret ? "text" : "password"}
+                                value={outlookClientSecret}
+                                onChange={(e) => setOutlookClientSecret(e.target.value)}
+                                placeholder="Enter Secret VALUE (not Secret ID)"
+                                className="flex-1 px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
                                                         />
                                                         <button
-                                                            onClick={async () => {
-                                                                if (!whatsappWebAuthPhoneNumber.trim()) {
-                                                                    setWhatsappWebError('Please enter a phone number');
-                                                                    return;
-                                                                }
-                                                                
-                                                                if (!isDesktop() || !window.electronAPI?.whatsappWebRequestPairingCode) {
-                                                                    setWhatsappWebError('Phone number authentication is not available');
-                                                                    return;
-                                                                }
-                                                                
-                                                                setWhatsappWebRequestingPairingCode(true);
-                                                                setWhatsappWebError(undefined);
-                                                                
-                                                                try {
-                                                                    const result = await window.electronAPI.whatsappWebRequestPairingCode({
-                                                                        phoneNumber: whatsappWebAuthPhoneNumber.trim(),
-                                                                        showNotification: true,
-                                                                        intervalMs: 180000,
-                                                                    });
-                                                                    
-                                                                    if (result.success && result.pairingCode) {
-                                                                        setWhatsappWebPairingCode(result.pairingCode);
-                                                                        setWhatsappWebStatus('scanning');
-                                                                    } else {
-                                                                        setWhatsappWebError(result.error || 'Failed to request pairing code');
-                                                                    }
-                                                                } catch (error: any) {
-                                                                    setWhatsappWebError(error.message || 'Failed to request pairing code');
-                                                                } finally {
-                                                                    setWhatsappWebRequestingPairingCode(false);
-                                                                }
-                                                            }}
-                                                            disabled={whatsappWebRequestingPairingCode || !whatsappWebAuthPhoneNumber.trim()}
-                                                            className="px-4 py-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                                onClick={() => setShowOutlookSecret(!showOutlookSecret)}
+                                className="px-3 py-2 border border-slate-300 rounded hover:bg-slate-50"
                                                         >
-                                                            {whatsappWebRequestingPairingCode ? 'Requesting...' : 'Get Pairing Code'}
+                                {showOutlookSecret ? 'Hide' : 'Show'}
                                                         </button>
                                                     </div>
-                                                    {whatsappWebPairingCode && (
-                                                        <div className="p-3 bg-indigo-50 border border-indigo-200 rounded">
-                                                            <p className="text-xs font-semibold text-indigo-900 mb-1">Pairing Code:</p>
-                                                            <p className="text-lg font-mono font-bold text-indigo-700 text-center">{whatsappWebPairingCode}</p>
-                                                            <p className="text-[10px] text-indigo-600 mt-2 text-center">
-                                                                Enter this code in WhatsApp → Settings → Linked Devices → Link a Device
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              ⚠️ Important: Enter the Secret <strong>VALUE</strong> (long string), not the Secret ID (GUID).
+                              <br />
+                              In Azure Portal: Certificates & secrets → Copy the <strong>Value</strong> column (not the Secret ID).
                                                             </p>
                                                         </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            
-                                            <div className="flex items-center justify-between">
-                                                <h5 className="text-xs font-bold text-slate-700">WhatsApp Web Status</h5>
-                                                {isDesktop() && window.electronAPI?.whatsappWebGetStatus && (
-                                                    <button
-                                                        onClick={async () => {
-                                                            const status = await window.electronAPI.whatsappWebGetStatus();
-                                                            if (status.qrCode) {
-                                                                setWhatsappWebQRCode(status.qrCode);
-                                                                setShowWhatsAppWebQR(true);
-                                                                setWhatsappWebStatus('scanning');
-                                                            } else if (status.ready) {
-                                                                setWhatsappWebStatus('connected');
-                                                            }
-                                                        }}
-                                                        className="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
-                                                    >
-                                                        Check Status
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <div className="p-3 bg-white rounded border border-slate-200">
-                                                <div className="text-xs text-slate-600 mb-2">
-                                                    Status: <span className={`font-semibold ${
-                                                        whatsappWebStatus === 'connected' ? 'text-green-600' :
-                                                        whatsappWebStatus === 'scanning' ? 'text-yellow-600' :
-                                                        whatsappWebStatus === 'error' ? 'text-red-600' : 'text-slate-600'
-                                                    }`}>
-                                                        {whatsappWebStatus === 'connected' ? 'Connected' :
-                                                         whatsappWebStatus === 'scanning' ? 'Scanning QR Code' :
-                                                         whatsappWebStatus === 'error' ? 'Error' : 'Waiting'}
-                                                    </span>
-                                                </div>
-                                                {whatsappWebStatus === 'scanning' && whatsappWebQRCode && (
-                                                    <button
-                                                        onClick={() => setShowWhatsAppWebQR(true)}
-                                                        className="text-xs text-indigo-600 hover:underline"
-                                                    >
-                                                        Show QR Code
-                                                    </button>
-                                                )}
-                                                {whatsappWebError && (
-                                                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-                                                        {whatsappWebError}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            
-                                            {/* Send Message Section */}
-                                            {whatsappWebStatus === 'connected' && (
-                                                <div className="p-3 bg-white rounded border border-slate-200 space-y-3">
-                                                    <h5 className="text-xs font-bold text-slate-700">Send Test Message</h5>
-                                                    
                                                     <div>
-                                                        <label className="text-xs text-slate-600 mb-1 block">Phone Number</label>
+                            <label className="text-slate-600 block mb-1">Tenant ID (optional)</label>
                                                         <input
                                                             type="text"
-                                                            value={whatsappWebPhoneNumber}
-                                                            onChange={(e) => setWhatsappWebPhoneNumber(e.target.value)}
-                                                            placeholder="e.g., +1234567890 or 1234567890"
-                                                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              value={outlookTenantId}
+                              onChange={(e) => setOutlookTenantId(e.target.value)}
+                              placeholder="common, organizations, or your tenant GUID"
+                              className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
                                                         />
-                                                        <p className="text-[10px] text-slate-500 mt-1">Include country code (e.g., +1 for US)</p>
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              Use "common" for personal accounts, "organizations" for work accounts, or your tenant GUID
+                            </p>
                                                     </div>
-                                                    
-                                                    <div>
-                                                        <label className="text-xs text-slate-600 mb-1 block">Message</label>
-                                                        <textarea
-                                                            value={whatsappWebMessage}
-                                                            onChange={(e) => setWhatsappWebMessage(e.target.value)}
-                                                            placeholder="Type your message here..."
-                                                            rows={3}
-                                                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                                                        />
-                                                    </div>
-                                                    
-                                                    {whatsappWebSendResult && (
-                                                        <div className={`p-2 rounded text-xs ${
-                                                            whatsappWebSendResult.success 
-                                                                ? 'bg-green-50 text-green-700 border border-green-200' 
-                                                                : 'bg-red-50 text-red-700 border border-red-200'
-                                                        }`}>
-                                                            {whatsappWebSendResult.success 
-                                                                ? '✓ Message sent successfully!' 
-                                                                : `✗ Error: ${whatsappWebSendResult.message || 'Failed to send message'}`}
-                                                        </div>
-                                                    )}
-                                                    
                                                     <button
                                                         onClick={async () => {
-                                                            if (!whatsappWebPhoneNumber.trim() || !whatsappWebMessage.trim()) {
-                                                                setWhatsappWebSendResult({ success: false, message: 'Please enter both phone number and message' });
-                                                                return;
+                              setOauthSaveStatus('saving');
+                              try {
+                                const config = {
+                                  outlook: {
+                                    clientId: outlookClientId,
+                                    clientSecret: outlookClientSecret,
+                                    tenantId: outlookTenantId || 'common',
+                                  },
+                                  gmail: {
+                                    clientId: gmailClientId,
+                                    clientSecret: gmailClientSecret,
+                                  },
+                                };
+                                if ((window as any).electronAPI?.setConfig) {
+                                  await (window as any).electronAPI.setConfig('oauthConfig', JSON.stringify(config));
                                                             }
-                                                            
-                                                            if (!isDesktop() || !window.electronAPI?.whatsappWebSend) {
-                                                                setWhatsappWebSendResult({ success: false, message: 'WhatsApp Web is not available' });
-                                                                return;
-                                                            }
-                                                            
-                                                            setWhatsappWebSending(true);
-                                                            setWhatsappWebSendResult(null);
-                                                            
-                                                            try {
-                                                                const result = await window.electronAPI.whatsappWebSend(
-                                                                    whatsappWebPhoneNumber.trim(),
-                                                                    whatsappWebMessage.trim()
-                                                                );
-                                                                
-                                                                if (result.success) {
-                                                                    setWhatsappWebSendResult({ success: true, message: 'Message sent!' });
-                                                                    setWhatsappWebMessage(''); // Clear message after successful send
-                                                                } else {
-                                                                    setWhatsappWebSendResult({ success: false, message: result.error || 'Failed to send message' });
-                                                                }
+                                await PlatformService.setAppConfig('outlookClientId', outlookClientId);
+                                await PlatformService.setAppConfig('outlookClientSecret', outlookClientSecret);
+                                await PlatformService.setAppConfig('outlookTenantId', outlookTenantId || 'common');
+                                setOauthSaveStatus('success');
+                                setOauthSaveMessage('OAuth configuration saved successfully');
+                                setTimeout(() => {
+                                  setOauthSaveStatus('idle');
+                                  setOauthSaveMessage('');
+                                }, 3000);
                                                             } catch (error: any) {
-                                                                setWhatsappWebSendResult({ success: false, message: error.message || 'Failed to send message' });
-                                                            } finally {
-                                                                setWhatsappWebSending(false);
+                                setOauthSaveStatus('error');
+                                setOauthSaveMessage(error.message || 'Failed to save OAuth configuration');
                                                             }
                                                         }}
-                                                        disabled={whatsappWebSending || !whatsappWebPhoneNumber.trim() || !whatsappWebMessage.trim()}
-                                                        className="w-full px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors"
                                                     >
-                                                        {whatsappWebSending ? 'Sending...' : 'Send Message'}
+                            Save OAuth Configuration
                                                     </button>
-                                                </div>
-                                            )}
-                                            
-                                            {/* Ban Risk Dashboard */}
-                                            <div className="pt-3 border-t border-slate-200">
-                                                <h5 className="text-xs font-bold text-slate-700 mb-3">Ban Risk Monitoring</h5>
-                                                <WhatsAppWebBanRiskDashboard />
+                          {oauthSaveStatus !== 'idle' && (
+                            <p className={`text-xs ${
+                              oauthSaveStatus === 'success' ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {oauthSaveMessage}
+                            </p>
+                          )}
                                             </div>
                                         </div>
-                                    )}
                                 </div>
-                            )}
+                  </details>
                         </div>
-                    );
-                })}
 
-                {/* OAuth Configuration Section */}
-                <div className="mt-8 pt-8 border-t border-slate-200">
-                  <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <Lock className="w-4 h-4" /> OAuth Configuration
-                  </h3>
-                  <p className="text-xs text-slate-600 mb-4">
-                    Configure OAuth credentials for email providers. Required for "Sign in with Microsoft" and "Sign in with Google" options.
-                    <span className="text-indigo-600 hover:underline ml-1 cursor-pointer" onClick={() => window.open('https://docs.microsoft.com/en-us/azure/active-directory/develop/', '_blank')}>View setup guide</span>
-                  </p>
-
-                  {/* Outlook OAuth Configuration */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
-                    <h4 className="text-xs font-bold text-blue-900 mb-3 flex items-center gap-2">
-                      <Mail className="w-4 h-4" /> Outlook / Microsoft
-                    </h4>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-700 block mb-1">
-                          Client (Application) ID <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={outlookClientId}
-                          onChange={(e) => setOutlookClientId(e.target.value)}
-                          placeholder="12345678-1234-1234-1234-123456789012"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-700 block mb-1">
-                          Client Secret <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showOutlookSecret ? "text" : "password"}
-                            value={outlookClientSecret}
-                            onChange={(e) => setOutlookClientSecret(e.target.value)}
-                            placeholder="Enter client secret"
-                            className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowOutlookSecret(!showOutlookSecret)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 text-xs"
-                          >
-                            {showOutlookSecret ? 'Hide' : 'Show'}
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-700 block mb-1">
-                          Tenant ID <span className="text-slate-400">(optional)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={outlookTenantId}
-                          onChange={(e) => setOutlookTenantId(e.target.value)}
-                          placeholder="common"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          Use "common" for personal accounts, or your Directory (Tenant) ID for organizational accounts
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Gmail OAuth Configuration */}
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
-                    <h4 className="text-xs font-bold text-red-900 mb-3 flex items-center gap-2">
-                      <Mail className="w-4 h-4" /> Gmail / Google
-                    </h4>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-700 block mb-1">
-                          Client ID <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={gmailClientId}
-                          onChange={(e) => setGmailClientId(e.target.value)}
-                          placeholder="your-gmail-client-id.apps.googleusercontent.com"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-700 block mb-1">
-                          Client Secret <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showGmailSecret ? "text" : "password"}
-                            value={gmailClientSecret}
-                            onChange={(e) => setGmailClientSecret(e.target.value)}
-                            placeholder="Enter client secret"
-                            className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowGmailSecret(!showGmailSecret)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 text-xs"
-                          >
-                            {showGmailSecret ? 'Hide' : 'Show'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Redirect URI Display */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
-                    <label className="text-xs font-medium text-slate-700 block mb-1">
-                      Redirect URI (auto-generated)
-                    </label>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={`http://localhost:${serverPort}/auth/oauth/callback`}
-                        className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-mono min-w-0"
-                      />
-                      <button
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.value = `http://localhost:${serverPort}/auth/oauth/callback`;
-                          document.body.appendChild(input);
-                          input.select();
-                          document.execCommand('copy');
-                          document.body.removeChild(input);
-                          alert('Redirect URI copied to clipboard!');
-                        }}
-                        className="w-full sm:w-auto px-3 py-2 text-xs bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors whitespace-nowrap"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Configure this exact URI in Azure AD (for Outlook) or Google Cloud Console (for Gmail)
-                    </p>
-                  </div>
-
-                  {/* Save Button and Status */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                    <button
-                      onClick={async () => {
-                        // Validate required fields
-                        if (!outlookClientId || !outlookClientSecret) {
-                          setOauthSaveStatus('error');
-                          setOauthSaveMessage('Outlook Client ID and Client Secret are required');
-                          setTimeout(() => {
-                            setOauthSaveStatus('idle');
-                            setOauthSaveMessage('');
-                          }, 3000);
-                          return;
-                        }
-
-                        setOauthSaveStatus('saving');
-                        try {
-                          const oauthConfig = {
-                            outlook: {
-                              clientId: outlookClientId,
-                              clientSecret: outlookClientSecret,
-                              tenantId: outlookTenantId || 'common'
-                            },
-                            gmail: {
-                              clientId: gmailClientId,
-                              clientSecret: gmailClientSecret
-                            },
-                            redirectUri: `http://localhost:${serverPort}/auth/oauth/callback`
-                          };
-
-                          await (window as any).electronAPI?.setConfig('oauthConfig', JSON.stringify(oauthConfig));
-                          setOauthSaveStatus('success');
-                          setOauthSaveMessage('OAuth configuration saved successfully!');
-                          Logger.info('OAuth configuration saved');
-                          
-                          setTimeout(() => {
-                            setOauthSaveStatus('idle');
-                            setOauthSaveMessage('');
-                          }, 3000);
-                        } catch (error: any) {
-                          setOauthSaveStatus('error');
-                          setOauthSaveMessage(`Failed to save: ${error.message}`);
-                          Logger.error('Failed to save OAuth config:', error);
-                          setTimeout(() => {
-                            setOauthSaveStatus('idle');
-                            setOauthSaveMessage('');
-                          }, 5000);
-                        }
-                      }}
-                      disabled={oauthSaveStatus === 'saving'}
-                      className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {oauthSaveStatus === 'saving' ? 'Saving...' : 'Save OAuth Configuration'}
-                    </button>
-                    {oauthSaveMessage && (
-                      <span className={`text-xs font-medium text-center sm:text-left ${oauthSaveStatus === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                        {oauthSaveMessage}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                {/* Legacy sections removed - now using unified cards above */}
             </div>
           )}
 
           {/* SECURITY */}
           {activeTab === 'security' && (
-             <div className="space-y-4 sm:space-y-6" style={{ overflow: 'visible' }}>
+             <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
                  {/* MFA Section */}
                  {user && (
                    <div>
@@ -1333,7 +1113,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* RESOURCES */}
           {activeTab === 'resources' && (
-            <div className="space-y-4 sm:space-y-6" style={{ overflow: 'visible' }}>
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
               <ResourceSettings onSave={() => {}} />
             </div>
           )}
@@ -1422,7 +1202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* SYSTEM */}
           {activeTab === 'system' && (
-            <div className="space-y-4 sm:space-y-6" style={{ overflow: 'visible' }}>
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
                 {!isDesktop() && (
                     <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-lg flex gap-3 items-start">
                         <AlertCircle className="w-5 h-5 text-yellow-600 shrink-0" />
@@ -1530,7 +1310,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* DATA */}
           {activeTab === 'data' && (
-              <div className="space-y-4 sm:space-y-6" style={{ overflow: 'visible' }}>
+              <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
                   <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
                       <h3 className="text-sm font-bold text-indigo-900 mb-2 flex items-center gap-2">
                           <Database className="w-4 h-4" /> Data Backup & Recovery
@@ -1635,7 +1415,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* TEMPLATES */}
           {activeTab === 'templates' && (
-            <div className={userRole !== UserRole.ADMIN ? 'opacity-50 pointer-events-none' : ''} style={{ overflow: 'visible' }}>
+            <div className={`space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full ${userRole !== UserRole.ADMIN ? 'opacity-50 pointer-events-none' : ''}`} style={{ overflow: 'visible', width: '100%' }}>
                 <div className="mb-4 sm:mb-6">
                     <label className="block text-sm font-semibold text-slate-700 mb-2">Intro Message Template</label>
                     <textarea
@@ -1697,7 +1477,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
 
-        <div className="p-4 sm:p-6 border-t border-slate-100 bg-slate-50 rounded-b-xl flex flex-col sm:flex-row justify-between gap-3 shrink-0" style={{ flexShrink: 0, position: 'sticky', bottom: 0, zIndex: 10, backgroundColor: 'rgb(248 250 252)' }}>
+        {/* Footer - Fixed at bottom */}
+        <div className="p-4 sm:p-6 border-t-2 border-slate-200 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row justify-between gap-3 shrink-0 shadow-lg" style={{ flexShrink: 0, zIndex: 10 }}>
           <button onClick={handleReset} disabled={userRole !== UserRole.ADMIN} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 text-sm font-medium disabled:opacity-50 w-full sm:w-auto justify-center sm:justify-start">
             <RefreshCcw className="w-4 h-4" /> Reset to Defaults
           </button>
@@ -1740,6 +1521,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               setWhatsappWebError(result.error);
             }
           }
+        }}
+      />
+
+      <EmailOAuthModal
+        isOpen={showEmailOAuthModal}
+        onClose={() => {
+          setShowEmailOAuthModal(false);
+          // Reload email connection after modal closes
+          (async () => {
+            const { loadEmailConnection } = await import('../services/securityService');
+            const conn = await loadEmailConnection();
+            setEmailConnection(conn);
+            if (conn) {
+              setEmailLastSync(conn.lastTested || null);
+            }
+          })();
+        }}
+        onConnected={(connection) => {
+          setEmailConnection(connection);
+          setEmailLastSync(connection.lastTested || null);
+          onUpdateConnection(connection);
         }}
       />
     </div>

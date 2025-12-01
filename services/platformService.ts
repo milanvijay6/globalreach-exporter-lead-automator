@@ -56,19 +56,33 @@ export const PlatformService = {
       const val = await window.electronAPI.getConfig(key);
       return val !== undefined ? val : defaultValue;
     }
-    // Web Fallback: Handle booleans correctly
-    const val = localStorage.getItem(`config_${key}`);
-    if (val === null) return defaultValue;
-    if (val === 'true') return true;
-    if (val === 'false') return false;
-    return val;
+    // Web: Use API service
+    try {
+      const { ApiService } = await import('./apiService');
+      const val = await ApiService.getConfig(key);
+      return val !== undefined && val !== null ? val : defaultValue;
+    } catch (error) {
+      // Fallback to localStorage if API fails
+      const val = localStorage.getItem(`config_${key}`);
+      if (val === null) return defaultValue;
+      if (val === 'true') return true;
+      if (val === 'false') return false;
+      return val;
+    }
   },
 
   setAppConfig: async (key: string, value: any): Promise<void> => {
     if (window.electronAPI) {
       await window.electronAPI.setConfig(key, value);
     } else {
-      localStorage.setItem(`config_${key}`, String(value));
+      // Web: Use API service
+      try {
+        const { ApiService } = await import('./apiService');
+        await ApiService.setConfig(key, value);
+      } catch (error) {
+        // Fallback to localStorage if API fails
+        localStorage.setItem(`config_${key}`, String(value));
+      }
     }
   },
 

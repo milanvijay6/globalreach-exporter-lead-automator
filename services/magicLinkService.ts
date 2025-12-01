@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 
 export interface MagicLinkPayload {
   email: string;
-  provider: 'gmail' | 'outlook' | 'custom';
+  provider: 'gmail' | 'outlook'; // Only OAuth 2.0 providers supported
   nonce: string;
   timestamp: number;
   purpose: 'email_connection' | 'user_login';
@@ -65,7 +65,7 @@ export const MagicLinkService = {
    */
   generateMagicLink: (
     email: string,
-    provider: 'gmail' | 'outlook' | 'custom',
+    provider: 'gmail' | 'outlook', // Only OAuth 2.0 providers supported
     purpose: 'email_connection' | 'user_login' = 'email_connection',
     expirationMinutes: number = 15
   ): MagicLinkResult => {
@@ -169,92 +169,18 @@ export const MagicLinkService = {
 
   /**
    * Sends a magic link via email
+   * DEPRECATED: Email functionality removed - this function always returns an error
    */
   sendMagicLink: async (
     toEmail: string,
-    provider: 'gmail' | 'outlook' | 'custom',
+    provider: 'gmail' | 'outlook', // Only OAuth 2.0 providers supported
     purpose: 'email_connection' | 'user_login' = 'email_connection'
   ): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const { token, url, expiresAt } = MagicLinkService.generateMagicLink(
-        toEmail,
-        provider,
-        purpose
-      );
-
-      // Get email service to send the magic link
-      const { EmailSendingService } = await import('./emailSendingService');
-      
-      const subject = purpose === 'email_connection' 
-        ? 'Connect Your Email Account - GlobalReach'
-        : 'Login to GlobalReach';
-
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .button { display: inline-block; padding: 12px 24px; background-color: #6366f1; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-            .button:hover { background-color: #4f46e5; }
-            .footer { margin-top: 30px; font-size: 12px; color: #666; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h2>${purpose === 'email_connection' ? 'Connect Your Email Account' : 'Login to GlobalReach'}</h2>
-            <p>Click the button below to ${purpose === 'email_connection' ? 'connect your email account' : 'log in to your account'}:</p>
-            <a href="${url}" class="button">${purpose === 'email_connection' ? 'Connect Email' : 'Login'}</a>
-            <p>Or copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; background: #f5f5f5; padding: 10px; border-radius: 4px;">${url}</p>
-            <p><strong>This link will expire in 15 minutes.</strong></p>
-            <p>If you didn't request this ${purpose === 'email_connection' ? 'email connection' : 'login'}, please ignore this email.</p>
-            <div class="footer">
-              <p>This is an automated message from GlobalReach. Please do not reply to this email.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-
-      const textContent = `
-${purpose === 'email_connection' ? 'Connect Your Email Account' : 'Login to GlobalReach'}
-
-Click the link below to ${purpose === 'email_connection' ? 'connect your email account' : 'log in to your account'}:
-${url}
-
-This link will expire in 15 minutes.
-
-If you didn't request this ${purpose === 'email_connection' ? 'email connection' : 'login'}, please ignore this email.
-
-This is an automated message from GlobalReach.
-      `;
-
-      // Note: This requires an existing email connection to send
-      // In production, you might use a separate service email or SMTP
-      const result = await EmailSendingService.sendEmail(
-        { contactDetail: toEmail } as any,
-        textContent,
-        { introTemplate: textContent, agentSystemInstruction: '' },
-        {
-          subject,
-          useHTML: true,
-        }
-      );
-
-      if (result.success) {
-        Logger.info('[MagicLinkService] Magic link sent successfully', { toEmail, provider });
-        return { success: true };
-      } else {
-        Logger.error('[MagicLinkService] Failed to send magic link:', result.error);
-        return { success: false, error: result.error || 'Failed to send email' };
-      }
-    } catch (error: any) {
-      Logger.error('[MagicLinkService] Failed to send magic link:', error);
-      return { success: false, error: error.message || 'Failed to send magic link' };
-    }
+    Logger.warn('[MagicLinkService] sendMagicLink called but email functionality is removed');
+    return { 
+      success: false, 
+      error: 'Email functionality has been removed from the application. Magic links are no longer supported.' 
+    };
   },
 
   /**

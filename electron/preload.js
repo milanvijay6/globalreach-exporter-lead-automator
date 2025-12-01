@@ -19,6 +19,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Webhooks
   onWebhookPayload: (callback) => ipcRenderer.on('webhook-payload', callback),
   
+  // Ngrok
+  ngrokGetUrl: () => ipcRenderer.invoke('ngrok-get-url'),
+  ngrokGetWebhookUrl: () => ipcRenderer.invoke('ngrok-get-webhook-url'),
+  ngrokStart: (port) => ipcRenderer.invoke('ngrok-start', port),
+  ngrokStop: () => ipcRenderer.invoke('ngrok-stop'),
+  ngrokIsRunning: () => ipcRenderer.invoke('ngrok-is-running'),
+  onNgrokStarted: (callback) => ipcRenderer.on('ngrok-started', (event, data) => callback(event, data)),
+  
   // Backup & Restore
   backupData: (data) => ipcRenderer.invoke('create-backup', data),
   restoreData: () => ipcRenderer.invoke('restore-backup'),
