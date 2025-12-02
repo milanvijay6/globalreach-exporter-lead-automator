@@ -27,9 +27,9 @@ ENV BUILD_OUT_DIR=build
 RUN npx vite build
 
 # Remove dev dependencies to reduce image size
-RUN npm prune --production
+RUN npm prune --omit=dev
 WORKDIR /app/server
-RUN npm prune --production
+RUN npm prune --omit=dev
 WORKDIR /app
 
 # Expose port (Back4App will set PORT env var)
