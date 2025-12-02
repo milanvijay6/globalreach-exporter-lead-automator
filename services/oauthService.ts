@@ -401,11 +401,11 @@ export const OAuthService = {
         
         // Provide helpful error message for SPA client type issue
         // ONLY show SPA error if we're CERTAIN it's an SPA issue (very specific checks)
-          const isSpaError = errorMessage.includes('AADSTS9002326') || 
-                             errorMessage.includes('Cross-origin token redemption') ||
+        const isSpaError = errorMessage.includes('AADSTS9002326') || 
+                           errorMessage.includes('Cross-origin token redemption') ||
                            (errorMessage.includes('Single-Page Application') && (errorMessage.includes('redirect_uri') || errorMessage.includes('redirect URI'))) ||
                            (errorMessage.includes('Single-page application') && (errorMessage.includes('redirect_uri') || errorMessage.includes('redirect URI'))) ||
-                             errorMessage.includes('AADSTS700054');
+                           errorMessage.includes('AADSTS700054');
           
         // Only show SPA fix instructions if we're certain it's an SPA error
         if (isSpaError) {
@@ -481,7 +481,6 @@ export const OAuthService = {
           const errorCodeInfo = errorData.error ? `\n\nError Code: ${errorData.error}` : '';
           const errorSubcode = errorData.error_subcode ? `\nError Subcode: ${errorData.error_subcode}` : '';
           errorMessage = `OAuth authentication failed: ${errorDescription}${errorCodeInfo}${errorSubcode}${troubleshootingTips}`;
-          }
         }
         
         throw new Error(errorMessage);
