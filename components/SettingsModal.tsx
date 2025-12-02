@@ -131,6 +131,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [globalTestMode, setGlobalTestMode] = useState(false);
   const [globalEmailSignature, setGlobalEmailSignature] = useState('');
 
+  // Check for OAuth callback in URL parameters when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const oauthCallback = urlParams.get('oauth_callback');
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      
+      if (oauthCallback === 'true' && code && state) {
+        // Open EmailOAuthModal to handle the callback
+        setShowEmailOAuthModal(true);
+        // Switch to integrations tab to show the email connection
+        setActiveTab('integrations');
+      }
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     setLocalTemplates(templates);
     if (notificationConfig) setLocalNotifications(notificationConfig);

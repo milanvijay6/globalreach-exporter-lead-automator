@@ -3,7 +3,7 @@ import { X, Loader2, CheckCircle, AlertCircle, Mail } from 'lucide-react';
 import { OAuthService, OAuthConfig } from '../services/oauthService';
 import { saveEmailConnection, loadEmailConnection } from '../services/securityService';
 import { OutlookEmailCredentials, PlatformConnection, PlatformStatus, Channel } from '../types';
-import { PlatformService } from '../services/platformService';
+import { PlatformService, isDesktop } from '../services/platformService';
 import { Logger } from '../services/loggerService';
 
 interface EmailOAuthModalProps {
@@ -74,11 +74,22 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
       const serverPort = await PlatformService.getAppConfig('serverPort', 4000);
 
-      // Use Cloudflare Tunnel URL if available, otherwise fallback to localhost
+      // Determine redirect URI:
+      // 1. Use Cloudflare Tunnel URL if available (for Electron with tunnel)
+      // 2. Use current window location if in web environment (for Back4App/web hosting)
+      // 3. Fallback to localhost for Electron without tunnel
       const cloudflareUrl = await PlatformService.getAppConfig('cloudflareUrl', '');
-      const redirectUri = cloudflareUrl 
-        ? `${cloudflareUrl}/api/oauth/callback`
-        : `http://localhost:${serverPort}/api/oauth/callback`;
+      let redirectUri: string;
+      
+      if (cloudflareUrl) {
+        redirectUri = `${cloudflareUrl}/api/oauth/callback`;
+      } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
+        // Web environment - use current URL
+        redirectUri = `${window.location.origin}/api/oauth/callback`;
+      } else {
+        // Electron without tunnel - use localhost
+        redirectUri = `http://localhost:${serverPort}/api/oauth/callback`;
+      }
       
       Logger.info('[EmailOAuthModal] OAuth configuration', {
         clientId: clientId ? `${clientId.substring(0, 8)}...` : 'missing',
@@ -193,6 +204,38 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
     }
   }, [onConnected, onClose]);
 
+  // Check for OAuth callback in URL parameters (for web apps)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Check URL parameters for OAuth callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthCallback = urlParams.get('oauth_callback');
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const provider = urlParams.get('provider') || 'outlook';
+
+    if (oauthCallback === 'true' && code && state) {
+      Logger.info('[EmailOAuthModal] OAuth callback detected in URL parameters', {
+        hasCode: !!code,
+        hasState: !!state,
+        provider
+      });
+
+      // Process the callback
+      handleOAuthCallback({
+        success: true,
+        code,
+        state,
+        provider
+      });
+
+      // Clean up URL parameters
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [isOpen, handleOAuthCallback]);
+
   // Set up OAuth callback listener when modal opens
   useEffect(() => {
     if (!isOpen) return;
@@ -262,11 +305,22 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         throw new Error('Outlook OAuth credentials not configured. Please configure Client ID and Client Secret in Settings → Integrations → Email & OAuth.');
       }
 
-      // Use Cloudflare Tunnel URL if available, otherwise fallback to localhost
+      // Determine redirect URI:
+      // 1. Use Cloudflare Tunnel URL if available (for Electron with tunnel)
+      // 2. Use current window location if in web environment (for Back4App/web hosting)
+      // 3. Fallback to localhost for Electron without tunnel
       const cloudflareUrl = await PlatformService.getAppConfig('cloudflareUrl', '');
-      const redirectUri = cloudflareUrl 
-        ? `${cloudflareUrl}/api/oauth/callback`
-        : `http://localhost:${serverPort}/api/oauth/callback`;
+      let redirectUri: string;
+      
+      if (cloudflareUrl) {
+        redirectUri = `${cloudflareUrl}/api/oauth/callback`;
+      } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
+        // Web environment - use current URL
+        redirectUri = `${window.location.origin}/api/oauth/callback`;
+      } else {
+        // Electron without tunnel - use localhost
+        redirectUri = `http://localhost:${serverPort}/api/oauth/callback`;
+      }
 
       const config: OAuthConfig = {
         clientId,

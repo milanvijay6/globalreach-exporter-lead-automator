@@ -288,6 +288,24 @@ const App: React.FC = () => {
     init();
   }, []);
 
+  // Check for OAuth callback in URL parameters and open modal
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthCallback = urlParams.get('oauth_callback');
+    
+    if (oauthCallback === 'true' && isSetupComplete) {
+      // Open settings modal and email OAuth modal
+      setShowSettingsModal(true);
+      // The EmailOAuthModal will detect the URL parameters when it opens
+      
+      // Clean up URL parameters after a short delay to allow modal to read them
+      setTimeout(() => {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }, 100);
+    }
+  }, [isSetupComplete]);
+
   useEffect(() => {
       // Background Token Refresh Loop
       const interval = setInterval(async () => {

@@ -45,7 +45,12 @@ router.get('/callback', async (req, res) => {
 
     // Store OAuth code in session or return to frontend
     // For web app, we'll redirect back to frontend with code
-    const redirectUrl = `${req.protocol}://${req.get('host')}/?oauth_callback=true&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&provider=${provider}`;
+    // Use https in production, http in development
+    const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const host = req.get('host') || req.get('x-forwarded-host') || 'localhost:4000';
+    const redirectUrl = `${protocol}://${host}/?oauth_callback=true&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&provider=${provider}`;
+    
+    console.log('[OAuth] Redirecting to frontend:', redirectUrl.replace(/code=[^&]+/, 'code=***'));
     res.redirect(redirectUrl);
   } catch (err) {
     res.send(`
@@ -62,4 +67,5 @@ router.get('/callback', async (req, res) => {
 });
 
 module.exports = router;
+
 

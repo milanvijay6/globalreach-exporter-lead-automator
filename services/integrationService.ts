@@ -4,7 +4,7 @@ import { WhatsAppService } from './whatsappService';
 import { WeChatService } from './wechatService';
 import { Logger } from './loggerService';
 import { loadEmailConnection, loadPlatformConnections } from './securityService';
-import { PlatformService } from './platformService';
+import { PlatformService, isDesktop } from './platformService';
 
 export interface TokenResponse {
   accessToken: string;
@@ -51,11 +51,23 @@ class OutlookIntegrationService implements IntegrationService {
       const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
       // Get actual server port from config
       const serverPort = await PlatformService.getAppConfig('serverPort', 4000);
-      // Use Cloudflare Tunnel URL if available, otherwise fallback to localhost
+      
+      // Determine redirect URI:
+      // 1. Use Cloudflare Tunnel URL if available (for Electron with tunnel)
+      // 2. Use current window location if in web environment (for Back4App/web hosting)
+      // 3. Fallback to localhost for Electron without tunnel
       const cloudflareUrl = await PlatformService.getAppConfig('cloudflareUrl', '');
-      const redirectUri = cloudflareUrl 
-        ? `${cloudflareUrl}/api/oauth/callback`
-        : `http://localhost:${serverPort}/api/oauth/callback`;
+      let redirectUri: string;
+      
+      if (cloudflareUrl) {
+        redirectUri = `${cloudflareUrl}/api/oauth/callback`;
+      } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
+        // Web environment - use current URL
+        redirectUri = `${window.location.origin}/api/oauth/callback`;
+      } else {
+        // Electron without tunnel - use localhost
+        redirectUri = `http://localhost:${serverPort}/api/oauth/callback`;
+      }
       
       if (!clientId) {
         throw new Error('Outlook Client ID not configured. Please configure OAuth credentials in Settings.');
