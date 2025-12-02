@@ -1,134 +1,115 @@
 # Back4App Quick Start Guide
 
-## 🚀 Deploy in 5 Minutes
+This guide will help you deploy GlobalReach to Back4App.
 
-### Step 1: Create Back4App Account & App
+## Prerequisites
 
-1. Go to [https://www.back4app.com](https://www.back4app.com) and sign up
-2. Click **"Create a new app"**
-3. Choose **"Backend as a Service"**
-4. Name: `globalreach-exporter-lead-automator`
-5. Click **"Create"**
+1. **Back4App Account**: Sign up at https://www.back4app.com
+2. **Git Repository**: Your code should be in a Git repository (GitHub, GitLab, etc.)
 
-### Step 2: Get Your Parse Keys
+## Step 1: Create Back4App App
 
-1. In Back4App dashboard, go to **App Settings → Security & Keys**
-2. Copy these values:
-   - **Application ID** pN84Fu9R4Xv24p8UBl3r7Nf9r1cdCHqxaqI252iS
-   - **JavaScript Key** WjEDPaX3iId5lqKm7icRhkcyD2AsGRoNMF0Me4c1
-   - **Master Key**5JqCg7goUSyhLHz00KJ3GVgAL2NDRzrW7E4rwiDS
-   - **Server URL** API URL: https://parseapi.back4app.com
+1. Log in to Back4App dashboard
+2. Click "New App"
+3. Choose "Backend as a Service"
+4. Enter app name: `globalreach-exporter-lead-automator`
+5. Click "Create"
 
-### Step 3: Set Environment Variables
+## Step 2: Get Parse Keys
 
-In Back4App dashboard → **App Settings → Environment Variables**, add:
+1. In your Back4App app dashboard, go to **Server Settings** → **Security & Keys**
+2. Copy the following:
+   - **Application ID**
+   - **JavaScript Key**
+   - **Master Key** (keep this secret!)
+
+## Step 3: Configure Environment Variables
+
+In Back4App dashboard, go to **Server Settings** → **Environment Variables** and add:
 
 ```
-PARSE_APPLICATION_ID=pN84Fu9R4Xv24p8UBl3r7Nf9r1cdCHqxaqI252iS
-PARSE_JAVASCRIPT_KEY=WjEDPaX3iId5lqKm7icRhkcyD2AsGRoNMF0Me4c1
-PARSE_MASTER_KEY=5JqCg7goUSyhLHz00KJ3GVgAL2NDRzrW7E4rwiDS
-PARSE_SERVER_URL=https://parseapi.back4app.com
+PARSE_APPLICATION_ID=your_application_id_here
+PARSE_JAVASCRIPT_KEY=your_javascript_key_here
+PARSE_MASTER_KEY=your_master_key_here
+PARSE_SERVER_URL=https://parseapi.back4app.com/
+WEBHOOK_TOKEN=your_webhook_verification_token_here
 NODE_ENV=production
-ENCRYPTION_KEY_SECRET=vijayvargiya24
-ENCRYPTION_KEY_SALT=vijayvargiya24
-WEBHOOK_TOKEN=globalreach_secret_token
 ```
 
-**Generate secrets:**
+## Step 4: Deploy to Back4App
+
+### Option A: Deploy via Git (Recommended)
+
+1. In Back4App dashboard, go to **Server Settings** → **Deployment**
+2. Connect your Git repository
+3. Select branch: `main`
+4. Set build command: `npm install && npm run build:web`
+5. Set start command: `npm start`
+6. Click "Deploy"
+
+### Option B: Deploy via Back4App CLI
+
 ```bash
-# Generate random secrets (run in terminal)
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Install Back4App CLI
+npm install -g back4app-cli
+
+# Login
+back4app login
+
+# Deploy
+back4app deploy
 ```
 
-### Step 4: Deploy
+## Step 5: Update Webhook URLs
 
-#### Option A: Using Git (Recommended)
+After deployment, Back4App will provide you with a URL like:
+`https://your-app-name.b4a.app`
 
-1. **Push to GitHub:**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/yourusername/your-repo.git
-   git push -u origin main
-   ```
+1. **WhatsApp Webhook URL**: `https://your-app-name.b4a.app/webhooks/whatsapp`
+   - Update this in Meta for Developers → Your App → Webhooks
 
-2. **Connect in Back4App:**
-   - Go to **App Settings → Deployment**
-   - Click **"Connect GitHub"**
-   - Select your repository
-   - Set:
-     - **Branch**: `main`
-     - **Build Command**: `npm install && npm run build:web`
-     - **Start Command**: `npm start`
-   - Click **"Deploy"**
+2. **WeChat Webhook URL**: `https://your-app-name.b4a.app/webhooks/wechat`
+   - Update this in WeChat Official Account settings
 
-#### Option B: Using Back4App CLI
+## Step 6: Test the Deployment
 
-1. **Install CLI:**
-   ```bash
-   npm install -g back4app-cli
-   ```
+1. Visit your app URL: `https://your-app-name.b4a.app`
+2. Verify webhooks are working:
+   - Test WhatsApp webhook verification
+   - Test WeChat webhook verification
 
-2. **Login:**
-   ```bash
-   back4app login
-   ```
+## Troubleshooting
 
-3. **Deploy:**
-   ```bash
-   back4app deploy
-   ```
+### Build Fails
 
-### Step 5: Update Webhook URLs
+- Check that all dependencies are in `package.json`
+- Verify Node.js version is 18.x
+- Check build logs in Back4App dashboard
 
-After deployment, update your webhook URLs:
+### App Won't Start
 
-1. **WhatsApp (Meta):**
-   - Go to [Meta for Developers](https://developers.facebook.com)
-   - Your App → Webhooks
-   - Update callback URL: `https://your-app-name.back4app.io/webhooks/whatsapp`
-   - Verify token: `globalreach_secret_token` (or your custom token)
-
-2. **Azure OAuth:**
-   - Azure Portal → App registrations → Your app → Authentication
-   - Add redirect URI: `https://your-app-name.back4app.io/api/oauth/callback`
-
-### Step 6: Test
-
-1. Visit: `https://your-app-name.back4app.io`
-2. Health check: `https://your-app-name.back4app.io/api/health`
-3. Should return: `{"status":"ok","timestamp":"...","version":"1.0.2"}`
-
-## ✅ Done!
-
-Your app is now live on Back4App! 🎉
-
-## 📝 Next Steps
-
-- [ ] Migrate existing data using `npm run migrate:parse`
-- [ ] Set up custom domain (optional)
-- [ ] Configure email/WhatsApp integrations
-- [ ] Test webhooks
-
-## 🆘 Troubleshooting
-
-**App won't start?**
-- Check Back4App logs: Dashboard → Logs
 - Verify all environment variables are set
-- Ensure Node.js version is 18+
+- Check server logs in Back4App dashboard
+- Ensure `server/index.js` is the entry point
 
-**Webhooks not working?**
-- Verify URL is correct: `https://your-app.back4app.io/webhooks/whatsapp`
-- Check `WEBHOOK_TOKEN` matches
-- Review logs for errors
+### Webhooks Not Working
 
-**Parse errors?**
-- Verify Parse credentials in environment variables
-- Check Parse classes exist in Database → Browser
+- Verify webhook URLs are correct
+- Check `WEBHOOK_TOKEN` matches in both app and Meta/WeChat
+- Review server logs for errors
 
-## 📚 More Help
+## Data Migration
 
-- Full deployment guide: See `BACK4APP_DEPLOYMENT.md`
-- Back4App docs: [https://www.back4app.com/docs](https://www.back4app.com/docs)
+If you have existing data from the Electron app:
+
+1. Export data from Electron app (Settings → Backup)
+2. Use the migration script: `npm run migrate:parse`
+3. Or manually import via Back4App dashboard
+
+## Support
+
+For issues:
+- Check Back4App documentation: https://www.back4app.com/docs
+- Review server logs in Back4App dashboard
+- Check GitHub issues
 

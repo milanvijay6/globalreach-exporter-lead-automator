@@ -1,22 +1,21 @@
 {
-  "name": "globalreach-exporter-lead-automator",
+  "name": "shreenathji-app",
   "version": "1.0.2",
+  "main": "server/index.js",
   "description": "GlobalReach Exporter Lead Automator - AI-powered CRM",
-  "main": "electron/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node server/index.js",
     "dev": "vite",
     "build:react": "set NODE_OPTIONS=--max-old-space-size=4096 && vite build",
-    "build:electron": "set NODE_OPTIONS=--max-old-space-size=4096 && vite build",
+    "build:web": "set NODE_OPTIONS=--max-old-space-size=4096 && cross-env BUILD_OUT_DIR=build vite build",
     "preview": "vite preview",
-    "start:server": "cd server && node index.js",
-    "start:dev": "cd server && nodemon index.js",
     "build": "electron-builder",
     "build:installer": "node scripts/build-installer.js",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
     "version:major": "npm version major && git push && git push --tags",
-    "deploy": "npm run build:react && git add . && git commit -m 'chore: build update' && git push"
+    "deploy": "npm run build:react && git add . && git commit -m 'chore: build update' && git push",
+    "migrate:parse": "node scripts/migrate-to-parse.js"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
@@ -42,7 +41,7 @@
     "nodemailer": "^7.0.10",
     "otplib": "^12.0.1",
     "papaparse": "^5.5.3",
-    "parse": "^5.4.0",
+    "parse": "^3.5.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

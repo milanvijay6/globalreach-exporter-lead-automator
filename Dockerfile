@@ -1,0 +1,43 @@
+# Use Node.js 18 LTS as base image
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first (for better layer caching)
+COPY package*.json ./
+COPY server/package*.json ./server/
+
+# Install ALL dependencies (needed for build)
+RUN npm ci
+
+# Install server dependencies
+WORKDIR /app/server
+RUN npm ci
+
+# Return to root directory
+WORKDIR /app
+
+# Copy all source files
+COPY . .
+
+# Build the React frontend (set NODE_OPTIONS for build)
+ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV BUILD_OUT_DIR=build
+RUN npx vite build
+
+# Remove dev dependencies to reduce image size
+RUN npm prune --production
+WORKDIR /app/server
+RUN npm prune --production
+WORKDIR /app
+
+# Expose port (Back4App will set PORT env var)
+EXPOSE 4000
+
+# Set environment to production
+ENV NODE_ENV=production
+
+# Start the server
+CMD ["node", "server/index.js"]
+

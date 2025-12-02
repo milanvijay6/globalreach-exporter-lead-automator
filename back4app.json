@@ -1,12 +1,7 @@
 {
   "appName": "globalreach-exporter-lead-automator",
-  "description": "GlobalReach Exporter Lead Automator - AI-powered CRM for international importer outreach",
-  "version": "1.0.2",
   "nodeVersion": "18.x",
-  "startCommand": "npm start",
   "buildCommand": "npm install && npm run build:web",
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "startCommand": "npm start",
+  "dockerfile": "Dockerfile"
 }
-

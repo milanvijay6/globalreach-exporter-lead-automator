@@ -7,10 +7,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
-  base: process.env.BUILD_BASE || './',
+  base: './',
   plugins: [react()],
   build: {
-    outDir: path.resolve(__dirname, 'electron/build'),
+    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'build'),
     emptyOutDir: true,
     // Always enable source maps for better error debugging
     sourcemap: true,

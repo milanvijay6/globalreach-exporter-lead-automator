@@ -1,86 +1,157 @@
-# GlobalReach - Back4App Deployment
+# Back4App Deployment
 
-This app is configured for deployment on Back4App.
+This app is configured to run on Back4App, a Backend as a Service (BaaS) platform that provides Parse Server hosting.
 
-## Quick Deploy
+## Architecture
 
-See `BACK4APP_QUICK_START.md` for a 5-minute deployment guide.
+- **Frontend**: React app built with Vite, served as static files
+- **Backend**: Express.js server with Parse Database integration
+- **Database**: Parse Database (MongoDB) via Back4App
+- **File Storage**: Back4App File Storage for product photos
 
-## Project Structure
+## Key Features
+
+- ✅ RESTful API endpoints
+- ✅ Parse Database for data persistence
+- ✅ Webhook support (WhatsApp, WeChat)
+- ✅ OAuth callback handling
+- ✅ Static file serving
+- ✅ CORS enabled for web access
+
+## Environment Variables
+
+Required environment variables in Back4App:
 
 ```
-.
-├── server/              # Backend Express server
-│   ├── index.js        # Main server entry point
-│   ├── config/         # Configuration files
-│   ├── models/         # Parse database models
-│   ├── services/       # Business logic services
-│   ├── routes/         # API route handlers
-│   └── middleware/     # Express middleware
-├── build/              # Frontend build (created by npm run build:web)
-├── components/         # React components
-├── services/           # Frontend services
-└── package.json        # Root package.json
-```
-
-## Environment Variables Required
-
-Set these in Back4App dashboard → App Settings → Environment Variables:
-
-- `PARSE_APPLICATION_ID` - Your Back4App Application ID
-- `PARSE_JAVASCRIPT_KEY` - Your Back4App JavaScript Key
-- `PARSE_MASTER_KEY` - Your Back4App Master Key
-- `PARSE_SERVER_URL` - Usually `https://parseapi.back4app.com/`
-- `ENCRYPTION_KEY_SECRET` - Random secret for encryption
-- `ENCRYPTION_KEY_SALT` - Random salt for encryption
-- `WEBHOOK_TOKEN` - Token for webhook verification
-- `BASE_URL` - Your app URL (auto-set by Back4App)
-
-## Build Commands
-
-```bash
-# Build frontend for web deployment
-npm run build:web
-
-# Start server locally
-npm start
-
-# Start server in development mode
-npm run start:dev
+PARSE_APPLICATION_ID=your_app_id
+PARSE_JAVASCRIPT_KEY=your_js_key
+PARSE_MASTER_KEY=your_master_key
+PARSE_SERVER_URL=https://parseapi.back4app.com/
+WEBHOOK_TOKEN=your_webhook_token
+NODE_ENV=production
 ```
 
 ## Deployment
 
-Back4App will automatically:
-1. Run `npm install` to install dependencies
-2. Run `npm run build:web` to build frontend
-3. Run `npm start` to start the server
-
-## Database Schema
-
-The app uses Parse Database with these classes:
-- `Config` - Application configuration
-- `Product` - Product catalog
-- `Lead` - Customer/lead information
-- `Integration` - OAuth tokens and integrations
-- `Message` - Messages/conversations
-- `WebhookLog` - Webhook event logs
-
-These are created automatically on first use, or you can create them manually in Back4App dashboard → Database → Browser.
+See [BACK4APP_QUICK_START.md](BACK4APP_QUICK_START.md) for detailed deployment instructions.
 
 ## API Endpoints
 
-- `GET /api/health` - Health check
-- `GET /api/products` - List products
-- `GET /api/integrations/status` - Get integration status
-- `POST /api/integrations/:service/authorize` - Get OAuth URL
-- `GET /api/oauth/callback` - OAuth callback handler
+### Webhooks
 - `GET /webhooks/whatsapp` - WhatsApp webhook verification
 - `POST /webhooks/whatsapp` - WhatsApp webhook handler
+- `GET /webhooks/wechat` - WeChat webhook verification
+- `POST /webhooks/wechat` - WeChat webhook handler
 
-## Support
+### Products
+- `GET /api/products` - List products
+- `GET /api/products/:id` - Get product
+- `POST /api/products` - Create product
+- `PUT /api/products/:id` - Update product
+- `DELETE /api/products/:id` - Delete product
+- `GET /api/products/search` - Search products
 
-- Quick Start: `BACK4APP_QUICK_START.md`
-- Full Guide: `BACK4APP_DEPLOYMENT.md`
-- Back4App Docs: https://www.back4app.com/docs
+### Integrations
+- `GET /api/integrations/status` - Get integration status
+- `POST /api/integrations/:service/authorize` - Get OAuth URL
+- `GET /api/integrations/:service/callback` - OAuth callback
+- `POST /api/integrations/:service/refresh` - Refresh token
+- `POST /api/integrations/:service/disconnect` - Disconnect service
+
+### Config
+- `GET /api/config/:key` - Get config value
+- `POST /api/config/:key` - Set config value
+- `GET /api/config` - Get all config
+
+### OAuth
+- `GET /api/oauth/callback` - OAuth callback handler
+
+## Data Models
+
+### Config
+- `key` (String) - Config key
+- `value` (Any) - Config value
+
+### Product
+- `name` (String)
+- `description` (String)
+- `price` (Number)
+- `category` (String)
+- `tags` (Array)
+- `photos` (Array of File objects)
+- `status` (String)
+
+### Lead
+- `name` (String)
+- `email` (String)
+- `phone` (String)
+- `company` (String)
+- `status` (String)
+- `notes` (String)
+
+### Integration
+- `service` (String) - 'outlook', 'whatsapp', or 'wechat'
+- `tokens` (Object) - OAuth tokens
+- `tokenExpiry` (Date)
+- `errorMessage` (String)
+
+### Message
+- `leadId` (Pointer to Lead)
+- `channel` (String)
+- `content` (String)
+- `status` (String)
+- `timestamp` (Date)
+
+### WebhookLog
+- `channel` (String)
+- `payload` (Object)
+- `timestamp` (Date)
+
+## Migration
+
+To migrate existing data from Electron app:
+
+```bash
+npm run migrate:parse
+```
+
+This will migrate config.json data to Parse Database.
+
+## Development
+
+For local development:
+
+```bash
+# Install dependencies
+npm install
+
+# Set environment variables
+export PARSE_APPLICATION_ID=your_app_id
+export PARSE_JAVASCRIPT_KEY=your_js_key
+export PARSE_MASTER_KEY=your_master_key
+export PARSE_SERVER_URL=https://parseapi.back4app.com/
+
+# Build frontend
+npm run build:web
+
+# Start server
+npm start
+```
+
+## Troubleshooting
+
+### Build fails
+- Ensure all dependencies are in package.json
+- Check Node.js version (18.x required)
+- Review build logs
+
+### Server won't start
+- Verify all environment variables are set
+- Check Parse initialization
+- Review server logs
+
+### Webhooks not working
+- Verify webhook URLs are correct
+- Check WEBHOOK_TOKEN matches
+- Review webhook logs
 

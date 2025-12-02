@@ -1,0 +1,58 @@
+# Dependencies
+node_modules
+server/node_modules
+npm-debug.log
+yarn-error.log
+
+# Build outputs (will be built in Docker)
+build
+dist
+electron/build
+
+# Development files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Electron specific
+electron
+dist
+*.exe
+*.dmg
+*.app
+
+# Logs
+logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests
+*.test.js
+*.spec.js
+
+# Config files (will use env vars)
+config.json
+secrets.json
+
+# Docker (keep Dockerfile for build)
+docker-compose.yml
+

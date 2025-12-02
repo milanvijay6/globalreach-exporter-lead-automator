@@ -1,26 +1,50 @@
 const express = require('express');
 const router = express.Router();
-const IntegrationService = require('../services/integrationService');
-const { authenticate } = require('../middleware/auth');
+const Integration = require('../models/Integration');
+const Parse = require('parse/node');
 
-// Apply authentication to all routes
-router.use(authenticate);
+// GET /api/integrations/status - Get all services status
+router.get('/status', async (req, res) => {
+  try {
+    const query = new Parse.Query(Integration);
+    const integrations = await query.find({ useMasterKey: true });
+    
+    const status = {
+      outlook: { connected: false },
+      whatsapp: { connected: false },
+      wechat: { connected: false }
+    };
+    
+    integrations.forEach(integration => {
+      const service = integration.get('service');
+      if (status[service]) {
+        status[service] = {
+          connected: true,
+          tokenExpiry: integration.get('tokenExpiry'),
+          errorMessage: integration.get('errorMessage')
+        };
+      }
+    });
+    
+    res.json({ success: true, status });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // POST /api/integrations/:service/authorize - Get OAuth URL
 router.post('/:service/authorize', async (req, res) => {
   try {
     const { service } = req.params;
     if (!['outlook', 'whatsapp', 'wechat'].includes(service)) {
-      return res.status(400).json({ success: false, error: 'Invalid service. Must be outlook, whatsapp, or wechat' });
+      return res.status(400).json({ success: false, error: 'Invalid service' });
     }
     
-    const userId = req.user ? req.user.id : null;
-    const authUrl = await IntegrationService.getOAuthUrl(service, userId);
-    
-    res.json({ success: true, authUrl });
+    // This would call the integration service to generate OAuth URL
+    // For now, return a placeholder
+    res.json({ success: true, authUrl: `https://oauth.example.com/${service}` });
   } catch (error) {
-    console.error(`[API] Error in POST /api/integrations/${req.params.service}/authorize:`, error);
-    res.status(400).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -38,13 +62,11 @@ router.get('/:service/callback', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing authorization code' });
     }
     
-    const userId = req.user ? req.user.id : null;
-    const tokens = await IntegrationService.exchangeCode(service, code, state, userId);
-    
-    res.json({ success: true, tokens });
+    // This would exchange the code for tokens
+    // For now, return a placeholder
+    res.json({ success: true, tokens: { accessToken: 'placeholder' } });
   } catch (error) {
-    console.error(`[API] Error in GET /api/integrations/${req.params.service}/callback:`, error);
-    res.status(400).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -58,17 +80,11 @@ router.post('/:service/refresh', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid service' });
     }
     
-    if (!refreshToken && service === 'outlook') {
-      return res.status(400).json({ success: false, error: 'Missing refresh token' });
-    }
-    
-    const userId = req.user ? req.user.id : null;
-    const tokens = await IntegrationService.refreshToken(service, refreshToken, userId);
-    
-    res.json({ success: true, tokens });
+    // This would refresh the token
+    // For now, return a placeholder
+    res.json({ success: true, tokens: { accessToken: 'placeholder' } });
   } catch (error) {
-    console.error(`[API] Error in POST /api/integrations/${req.params.service}/refresh:`, error);
-    res.status(400).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -81,24 +97,16 @@ router.post('/:service/disconnect', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid service' });
     }
     
-    const userId = req.user ? req.user.id : null;
-    await IntegrationService.disconnect(service, userId);
+    const query = new Parse.Query(Integration);
+    query.equalTo('service', service);
+    const integration = await query.first({ useMasterKey: true });
+    
+    if (integration) {
+      await integration.destroy({ useMasterKey: true });
+    }
     
     res.json({ success: true });
   } catch (error) {
-    console.error(`[API] Error in POST /api/integrations/${req.params.service}/disconnect:`, error);
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/integrations/status - Get all services status
-router.get('/status', async (req, res) => {
-  try {
-    const userId = req.user ? req.user.id : null;
-    const status = await IntegrationService.getStatus(userId);
-    res.json({ success: true, status });
-  } catch (error) {
-    console.error('[API] Error in GET /api/integrations/status:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

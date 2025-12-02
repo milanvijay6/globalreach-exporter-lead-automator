@@ -16,52 +16,33 @@ AI-powered CRM that automates international importer outreach via WhatsApp and E
 - 🔄 **Automated Workflows** - Drip campaigns, follow-ups, and trigger-based automation
 - 🔒 **Security & Compliance** - CAN-SPAM, GDPR compliance, secure credential storage
 
-## 🖥️ PC Desktop App (Electron)
-
-This is a **desktop application** that runs on your PC. All data is stored locally.
-
-### Quick Start
+## Run Locally
 
 **Prerequisites:** Node.js >= 18.0.0
 
-1. **Install dependencies:**
+1. Install dependencies:
    ```bash
    npm install
    ```
 
-2. **Build the React app:**
+2. Build the React app:
    ```bash
    npm run build:react
    ```
 
-3. **Run the Electron desktop app:**
+3. Set your Gemini API key (optional, for AI features):
+   - Create `.env.local` file
+   - Add: `API_KEY=your_gemini_api_key`
+
+4. Run the Electron app:
    ```bash
    npm start
    ```
 
-The app will:
-- ✅ Start a local server on port 4000
-- ✅ Automatically start Cloudflare Tunnel for webhooks
-- ✅ Store all data locally on your PC
-- ✅ Work offline (except webhooks)
-
-### Development Mode
-
-For development with hot reload:
-```bash
-npm run dev  # Terminal 1: Start Vite dev server
-npm start    # Terminal 2: Start Electron app
-```
-
-### Building Windows Installer
-
-```bash
-npm run build:installer
-```
-
-Creates installer in `dist/` directory.
-
-📖 **See [PC_HOSTING_GUIDE.md](PC_HOSTING_GUIDE.md) for detailed PC hosting instructions.**
+5. For development with hot reload:
+   ```bash
+   npm run dev
+   ```
 
 ## Deployment to GitHub
 

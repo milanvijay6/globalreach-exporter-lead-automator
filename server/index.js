@@ -3,46 +3,39 @@ const path = require('path');
 const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const cors = require('cors');
-const auth = require('basic-auth');
+const crypto = require('crypto');
+const winston = require('winston');
+const Parse = require('parse/node');
 
 // Initialize Parse
 require('./config/parse');
 
-// Import routes
-const webhookRoutes = require('./routes/webhooks');
-const productRoutes = require('./routes/products');
-const integrationRoutes = require('./routes/integrations');
-const leadRoutes = require('./routes/leads');
-const oauthRoutes = require('./routes/oauth');
-const configRoutes = require('./routes/config');
-
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Security: Basic Auth (Protect the CRM if hosted publicly)
-const USER = process.env.BASIC_AUTH_USER;
-const PASS = process.env.BASIC_AUTH_PASS;
+// Logger setup
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.simple(),
+      handleExceptions: true,
+      handleRejections: true
+    })
+  ]
+});
 
-if (USER && PASS) {
-  app.use((req, res, next) => {
-    // Allow webhooks to bypass auth so Meta/WeChat can reach them
-    if (req.path.startsWith('/webhooks/')) return next();
-    // Allow OAuth callbacks
-    if (req.path.startsWith('/api/oauth/')) return next();
-    // Allow health check
-    if (req.path === '/api/health') return next();
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: false, // Allow inline scripts for React
+  crossOriginEmbedderPolicy: false
+}));
 
-    const user = auth(req);
-    if (!user || user.name !== USER || user.pass !== PASS) {
-      res.set('WWW-Authenticate', 'Basic realm="GlobalReach CRM"');
-      return res.status(401).send('Access denied.');
-    }
-    next();
-  });
-}
-
-// Security: Rate limiting
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
@@ -53,77 +46,31 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// Security: Enhanced Helmet configuration
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-    },
-  },
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true,
-  },
-  noSniff: true,
-  xssFilter: true,
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-}));
-
-// CORS configuration
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
-  credentials: true,
-}));
-
-// Middleware
+// Compression
 app.use(compression());
+
+// Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Security: Input validation middleware
+// CORS for web app
 app.use((req, res, next) => {
-  // Basic XSS protection
-  const sanitize = (obj) => {
-    if (typeof obj === 'string') {
-      return obj.replace(/<script[^>]*>.*?<\/script>/gi, '')
-                .replace(/javascript:/gi, '')
-                .replace(/on\w+\s*=/gi, '');
-    }
-    if (Array.isArray(obj)) {
-      return obj.map(sanitize);
-    }
-    if (obj && typeof obj === 'object') {
-      const sanitized = {};
-      for (const key in obj) {
-        sanitized[key] = sanitize(obj[key]);
-      }
-      return sanitized;
-    }
-    return obj;
-  };
-  
-  if (req.body) {
-    req.body = sanitize(req.body);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
   }
-  if (req.query) {
-    req.query = sanitize(req.query);
-  }
-  
   next();
 });
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    version: '1.0.2'
-  });
-});
+// Import routes
+const webhookRoutes = require('./routes/webhooks');
+const productRoutes = require('./routes/products');
+const integrationRoutes = require('./routes/integrations');
+const leadRoutes = require('./routes/leads');
+const oauthRoutes = require('./routes/oauth');
+const configRoutes = require('./routes/config');
 
 // API Routes
 app.use('/webhooks', webhookRoutes);
@@ -133,72 +80,58 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/config', configRoutes);
 
-// Serve Static Assets (in production)
-// Check both root build and electron/build for compatibility
-const fs = require('fs');
-const rootBuildPath = path.join(__dirname, '..', 'build');
-const electronBuildPath = path.join(__dirname, '..', 'electron', 'build');
-const buildPath = fs.existsSync(rootBuildPath) ? rootBuildPath : electronBuildPath;
-const indexPath = path.join(buildPath, 'index.html');
-const isDev = !fs.existsSync(buildPath) || !fs.existsSync(indexPath) || process.env.NODE_ENV === 'development';
+// Serve static files from build directory
+const buildPath = path.join(__dirname, '..', 'build');
+app.use(express.static(buildPath));
 
-if (!isDev && fs.existsSync(buildPath) && fs.existsSync(indexPath)) {
-  console.log(`Production mode: Serving static files from: ${buildPath}`);
-  app.use(express.static(buildPath, {
-    maxAge: '1y',
-    etag: true,
-  }));
-}
+// Serve product photos
+app.get('/api/product-photos/:productId/:fileName', async (req, res) => {
+  try {
+    const { productId, fileName } = req.params;
+    const Product = Parse.Object.extend('Product');
+    const query = new Parse.Query(Product);
+    query.equalTo('objectId', productId);
+    const product = await query.first({ useMasterKey: true });
+    
+    if (!product) {
+      return res.status(404).send('Product not found');
+    }
+    
+    const photos = product.get('photos') || [];
+    const photo = photos.find(p => p.fileName === fileName);
+    
+    if (!photo || !photo.url) {
+      return res.status(404).send('Photo not found');
+    }
+    
+    // Redirect to Parse file URL
+    res.redirect(photo.url);
+  } catch (error) {
+    logger.error('[ProductPhoto] Serve photo error:', error);
+    res.status(500).send('Error serving photo');
+  }
+});
 
-// SPA Fallback - serve index.html for all non-API routes
+// React Router fallback - serve index.html for all non-API routes
 app.get('*', (req, res) => {
   // Don't serve index.html for API routes
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  
-  if (req.path.startsWith('/webhooks/')) {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/webhooks/')) {
     return res.sendStatus(404);
   }
   
-  // Only serve index.html in production mode when build exists
-  if (!isDev && fs.existsSync(buildPath) && fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    // Development mode: Don't serve fallback, Vite dev server handles routing
-    res.sendStatus(404);
-  }
+  const indexPath = path.join(buildPath, 'index.html');
+  res.sendFile(indexPath);
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
+  logger.error('Unhandled error:', err);
+  res.status(500).json({ success: false, error: err.message || 'Internal server error' });
 });
 
 // Start server
-// Back4App requires binding to 0.0.0.0
-const HOST = process.env.HOST || '0.0.0.0';
-
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 GlobalReach Server running on ${HOST}:${PORT}`);
-  console.log(`📁 Serving files from: ${buildPath}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Health check: http://${HOST}:${PORT}/api/health`);
-  console.log(`🔗 Parse Server: ${process.env.PARSE_SERVER_URL || 'Not configured'}`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  process.exit(0);
+app.listen(PORT, () => {
+  logger.info(`Server running on port ${PORT}`);
+  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

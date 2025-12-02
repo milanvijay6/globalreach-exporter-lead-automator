@@ -1,14 +1,9 @@
 {
-  "name": "GlobalReach Exporter Lead Automator",
-  "description": "AI-powered CRM for international importer outreach",
+  "name": "globalreach-exporter-lead-automator",
+  "description": "GlobalReach Exporter Lead Automator - AI-powered CRM",
   "repository": "https://github.com/yourusername/globalreach-exporter-lead-automator",
-  "logo": "https://via.placeholder.com/150",
-  "keywords": ["crm", "whatsapp", "email", "automation", "ai"],
+  "keywords": ["crm", "whatsapp", "email", "automation"],
   "env": {
-    "NODE_ENV": {
-      "description": "Environment",
-      "value": "production"
-    },
     "PARSE_APPLICATION_ID": {
       "description": "Back4App Application ID",
       "required": true
@@ -23,23 +18,16 @@
     },
     "PARSE_SERVER_URL": {
       "description": "Back4App Server URL",
-      "value": "https://parseapi.back4app.com/"
-    },
-    "ENCRYPTION_KEY_SECRET": {
-      "description": "Encryption secret for sensitive data",
-      "required": true
-    },
-    "ENCRYPTION_KEY_SALT": {
-      "description": "Encryption salt",
+      "value": "https://parseapi.back4app.com/",
       "required": true
     },
     "WEBHOOK_TOKEN": {
       "description": "Webhook verification token",
-      "value": "globalreach_secret_token"
+      "required": true
     },
-    "BASE_URL": {
-      "description": "Your app URL (will be set automatically by Back4App)",
-      "required": false
+    "NODE_ENV": {
+      "description": "Node environment",
+      "value": "production"
     }
   },
   "formation": {

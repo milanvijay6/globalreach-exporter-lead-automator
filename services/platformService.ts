@@ -58,11 +58,12 @@ export const PlatformService = {
     }
     // Web: Use API service
     try {
-      const { ApiService } = await import('./apiService');
-      const val = await ApiService.getConfig(key);
-      return val !== undefined && val !== null ? val : defaultValue;
+      const { apiService } = await import('./apiService');
+      const response = await apiService.get<{ success: boolean; value: any }>(`/api/config/${key}?default=${encodeURIComponent(JSON.stringify(defaultValue))}`);
+      return response.success ? response.value : defaultValue;
     } catch (error) {
-      // Fallback to localStorage if API fails
+      console.warn('Failed to get config from API, using localStorage fallback:', error);
+      // Fallback to localStorage
       const val = localStorage.getItem(`config_${key}`);
       if (val === null) return defaultValue;
       if (val === 'true') return true;
@@ -77,10 +78,11 @@ export const PlatformService = {
     } else {
       // Web: Use API service
       try {
-        const { ApiService } = await import('./apiService');
-        await ApiService.setConfig(key, value);
+        const { apiService } = await import('./apiService');
+        await apiService.post(`/api/config/${key}`, { value });
       } catch (error) {
-        // Fallback to localStorage if API fails
+        console.warn('Failed to set config via API, using localStorage fallback:', error);
+        // Fallback to localStorage
         localStorage.setItem(`config_${key}`, String(value));
       }
     }
