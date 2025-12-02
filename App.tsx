@@ -214,6 +214,8 @@ const App: React.FC = () => {
   
   // isSetupComplete is null initially to represent "loading" state
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
+  // Track if setup is needed after login
+  const [needsSetup, setNeedsSetup] = useState<boolean>(false);
 
   // Campaigns & Calendar
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -224,65 +226,75 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
         try {
-            // Check configuration first
+            // Check for existing user session first
+            const savedUser = await loadUserSession();
+            
+            // Check setup status
             const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
             console.log("[App] Loaded Setup Status:", setupStatus);
             setIsSetupComplete(setupStatus === true);
 
-            // If setup is complete, load other data
-            if (setupStatus === true) {
-                const savedUser = await loadUserSession();
-                if (savedUser) {
+            // If user session exists, check if setup is complete
+            if (savedUser) {
+                if (setupStatus === true) {
+                    // User exists and setup is complete - load data and proceed
                     setUser(savedUser);
                     logSecurityEvent('SESSION_RESTORE', savedUser.id, 'Restored from secure storage');
                     
                     // Load PIN verifications
                     const { PinService } = await import('./services/pinService');
                     await PinService.loadPinVerifications();
-                }
-                const savedPlatforms = await loadPlatformConnections();
-                if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
+                    
+                    // Load platform connections
+                    const savedPlatforms = await loadPlatformConnections();
+                    if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
 
-                // Start token refresh service
-                if (isDesktop()) {
-                  const { TokenRefreshService } = await import('./services/tokenRefreshService');
-                  const tokenRefreshService = TokenRefreshService.getInstance();
-                  tokenRefreshService.start();
-                  console.log('[App] Token refresh service started');
-                }
-                
-                // Load email connection and start ingestion if connected
-                const { loadEmailConnection } = await import('./services/securityService');
-                const emailConn = await loadEmailConnection();
-                if (emailConn) {
-                  // Add email connection to connected platforms if not already there
-                  if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
-                    setConnectedPlatforms([...savedPlatforms, emailConn]);
-                  }
-                  
-                  // Start email ingestion polling
-                  const { EmailIngestionService } = await import('./services/emailIngestionService');
-                  const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
-                  const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
-                  
-                  EmailIngestionService.startPolling({
-                    enabled: true,
-                    autoReply,
-                    draftApprovalRequired: draftApproval,
-                    pollInterval: 5 * 60 * 1000, // 5 minutes
-                  });
-                }
+                    // Start token refresh service
+                    if (isDesktop()) {
+                      const { TokenRefreshService } = await import('./services/tokenRefreshService');
+                      const tokenRefreshService = TokenRefreshService.getInstance();
+                      tokenRefreshService.start();
+                      console.log('[App] Token refresh service started');
+                    }
+                    
+                    // Load email connection and start ingestion if connected
+                    const { loadEmailConnection } = await import('./services/securityService');
+                    const emailConn = await loadEmailConnection();
+                    if (emailConn) {
+                      // Add email connection to connected platforms if not already there
+                      if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
+                        setConnectedPlatforms([...savedPlatforms, emailConn]);
+                      }
+                      
+                      // Start email ingestion polling
+                      const { EmailIngestionService } = await import('./services/emailIngestionService');
+                      const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
+                      const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
+                      
+                      EmailIngestionService.startPolling({
+                        enabled: true,
+                        autoReply,
+                        draftApprovalRequired: draftApproval,
+                        pollInterval: 5 * 60 * 1000, // 5 minutes
+                      });
+                    }
 
-                const savedImporters = StorageService.loadImporters();
-                if (savedImporters && savedImporters.length > 0) {
-                    setImporters(savedImporters);
+                    const savedImporters = StorageService.loadImporters();
+                    if (savedImporters && savedImporters.length > 0) {
+                        setImporters(savedImporters);
+                    } else {
+                        setImporters(MOCK_IMPORTERS);
+                    }
                 } else {
-                    setImporters(MOCK_IMPORTERS);
+                    // User exists but setup is not complete - show setup wizard
+                    setUser(savedUser);
+                    setNeedsSetup(true);
                 }
             }
+            // If no user session, LoginScreen will be shown (handled in render logic)
         } catch (e) {
             console.error("Initialization failed", e);
-            setIsSetupComplete(false); // Default to running setup if error
+            setIsSetupComplete(false);
         }
     };
     init();
@@ -1023,9 +1035,63 @@ const App: React.FC = () => {
     saveUserSession(loggedInUser);
     logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
     
-    // Load PIN verifications
-    const { PinService } = await import('./services/pinService');
-    await PinService.loadPinVerifications();
+    // Check if setup is complete after login
+    const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
+    
+    if (setupStatus === true) {
+      // Setup is complete - load data and proceed to main app
+      setIsSetupComplete(true);
+      setNeedsSetup(false);
+      
+      // Load PIN verifications
+      const { PinService } = await import('./services/pinService');
+      await PinService.loadPinVerifications();
+      
+      // Load platform connections
+      const savedPlatforms = await loadPlatformConnections();
+      if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
+
+      // Start token refresh service
+      if (isDesktop()) {
+        const { TokenRefreshService } = await import('./services/tokenRefreshService');
+        const tokenRefreshService = TokenRefreshService.getInstance();
+        tokenRefreshService.start();
+        console.log('[App] Token refresh service started');
+      }
+      
+      // Load email connection and start ingestion if connected
+      const { loadEmailConnection } = await import('./services/securityService');
+      const emailConn = await loadEmailConnection();
+      if (emailConn) {
+        // Add email connection to connected platforms if not already there
+        if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
+          setConnectedPlatforms([...savedPlatforms, emailConn]);
+        }
+        
+        // Start email ingestion polling
+        const { EmailIngestionService } = await import('./services/emailIngestionService');
+        const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
+        const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
+        
+        EmailIngestionService.startPolling({
+          enabled: true,
+          autoReply,
+          draftApprovalRequired: draftApproval,
+          pollInterval: 5 * 60 * 1000, // 5 minutes
+        });
+      }
+
+      const savedImporters = StorageService.loadImporters();
+      if (savedImporters && savedImporters.length > 0) {
+          setImporters(savedImporters);
+      } else {
+          setImporters(MOCK_IMPORTERS);
+      }
+    } else {
+      // Setup is not complete - show setup wizard
+      setIsSetupComplete(false);
+      setNeedsSetup(true);
+    }
   };
 
   const handleLogout = () => {
@@ -1250,16 +1316,68 @@ const App: React.FC = () => {
       );
   }
 
-  // 2. Setup Wizard (First Run)
-  if (!isSetupComplete) {
+  // 2. Login Screen (Show first if not authenticated)
+  if (!user) {
+    return (
+      <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+        <LoginScreen onLogin={handleLogin} />
+      </div>
+    );
+  }
+
+  // 3. Setup Wizard (After login, if setup is not complete)
+  if (user && needsSetup) {
       return (
         <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-          <SetupWizard onComplete={() => setIsSetupComplete(true)} />
+          <SetupWizard onComplete={async () => {
+            // SetupWizard already sets setupComplete to true, just update state
+            setIsSetupComplete(true);
+            setNeedsSetup(false);
+            
+            // Load data after setup completion
+            const savedPlatforms = await loadPlatformConnections();
+            if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
+
+            // Start token refresh service
+            if (isDesktop()) {
+              const { TokenRefreshService } = await import('./services/tokenRefreshService');
+              const tokenRefreshService = TokenRefreshService.getInstance();
+              tokenRefreshService.start();
+              console.log('[App] Token refresh service started');
+            }
+            
+            // Load email connection and start ingestion if connected
+            const { loadEmailConnection } = await import('./services/securityService');
+            const emailConn = await loadEmailConnection();
+            if (emailConn) {
+              if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
+                setConnectedPlatforms([...savedPlatforms, emailConn]);
+              }
+              
+              const { EmailIngestionService } = await import('./services/emailIngestionService');
+              const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
+              const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
+              
+              EmailIngestionService.startPolling({
+                enabled: true,
+                autoReply,
+                draftApprovalRequired: draftApproval,
+                pollInterval: 5 * 60 * 1000,
+              });
+            }
+
+            const savedImporters = StorageService.loadImporters();
+            if (savedImporters && savedImporters.length > 0) {
+                setImporters(savedImporters);
+            } else {
+                setImporters(MOCK_IMPORTERS);
+            }
+          }} />
         </div>
       );
   }
 
-  // 3. PIN Lock Screen
+  // 4. PIN Lock Screen
   if (user && isLocked) {
     return (
       <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
@@ -1272,7 +1390,7 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Owner Admin Panel
+  // 5. Owner Admin Panel
   if (user && showOwnerAdmin) {
     if (OwnerAuthService.isOwner(user)) {
       return (
@@ -1296,15 +1414,6 @@ const App: React.FC = () => {
         </div>
       );
     }
-  }
-
-  // 5. Login Screen (Not Authenticated)
-  if (!user) {
-    return (
-      <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-        <LoginScreen onLogin={handleLogin} />
-      </div>
-    );
   }
 
   // 5. Main Application
