@@ -16,18 +16,28 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
   const [step, setStep] = useState<'init' | 'authenticating' | 'success' | 'error'>('init');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
+  const [isProcessingCallback, setIsProcessingCallback] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       setStep('init');
       setErrorMessage('');
       setUserEmail('');
+      setIsProcessingCallback(false);
     }
   }, [isOpen]);
 
   // OAuth callback handler function - defined before useEffect so it can be used
   // Using useCallback to ensure stable reference
   const handleOAuthCallback = useCallback(async (data: any) => {
+    // Prevent processing callback multiple times
+    if (isProcessingCallback) {
+      Logger.warn('[EmailOAuthModal] Callback already being processed, ignoring duplicate');
+      return;
+    }
+    
+    setIsProcessingCallback(true);
+    
     // IPC sends data directly, not wrapped in event.detail
     const { success, code, state: callbackState, provider, error } = data;
 
@@ -162,11 +172,19 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       // Notify parent
       onConnected(connection);
 
+      Logger.info('[EmailOAuthModal] Outlook connection saved successfully', {
+        email: profile.email,
+        hasAccessToken: !!emailCredentials.accessToken,
+        hasRefreshToken: !!emailCredentials.refreshToken
+      });
+
       // Close after 2 seconds
       setTimeout(() => {
+        setIsProcessingCallback(false);
         onClose();
       }, 2000);
     } catch (error: any) {
+      setIsProcessingCallback(false);
       Logger.error('[EmailOAuthModal] OAuth callback processing failed:', {
         error: error.message,
         stack: error.stack,
@@ -202,7 +220,7 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       
       setErrorMessage(errorMsg);
     }
-  }, [onConnected, onClose]);
+  }, [onConnected, onClose, isProcessingCallback]);
 
   // Check for OAuth callback in URL parameters (for web apps)
   useEffect(() => {
@@ -215,14 +233,21 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
     const state = urlParams.get('state');
     const provider = urlParams.get('provider') || 'outlook';
 
-    if (oauthCallback === 'true' && code && state) {
+    if (oauthCallback === 'true' && code && state && !isProcessingCallback) {
       Logger.info('[EmailOAuthModal] OAuth callback detected in URL parameters', {
         hasCode: !!code,
+        codeLength: code.length,
         hasState: !!state,
-        provider
+        stateLength: state.length,
+        provider,
+        isProcessing: isProcessingCallback
       });
 
-      // Process the callback
+      // Set step to authenticating immediately
+      setStep('authenticating');
+      setErrorMessage('');
+
+      // Process the callback - handleOAuthCallback is async and handles errors internally
       handleOAuthCallback({
         success: true,
         code,
@@ -230,9 +255,11 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         provider
       });
 
-      // Clean up URL parameters
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
+      // Clean up URL parameters after a delay to ensure processing has started
+      setTimeout(() => {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }, 500);
     }
   }, [isOpen, handleOAuthCallback]);
 

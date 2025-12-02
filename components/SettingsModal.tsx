@@ -144,6 +144,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setShowEmailOAuthModal(true);
         // Switch to integrations tab to show the email connection
         setActiveTab('integrations');
+        
+        // Don't clean URL parameters here - let EmailOAuthModal handle it after processing
       }
     }
   }, [isOpen]);

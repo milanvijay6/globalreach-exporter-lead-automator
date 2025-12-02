@@ -304,19 +304,17 @@ const App: React.FC = () => {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthCallback = urlParams.get('oauth_callback');
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
     
-    if (oauthCallback === 'true' && isSetupComplete) {
-      // Open settings modal and email OAuth modal
+    // Always check for OAuth callback, regardless of setup status
+    // But only if user is logged in (OAuth requires authentication)
+    if (oauthCallback === 'true' && code && state && user) {
+      // Open settings modal - it will open EmailOAuthModal to handle the callback
       setShowSettingsModal(true);
-      // The EmailOAuthModal will detect the URL parameters when it opens
-      
-      // Clean up URL parameters after a short delay to allow modal to read them
-      setTimeout(() => {
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
-      }, 100);
+      // The SettingsModal and EmailOAuthModal will detect the URL parameters when they open
     }
-  }, [isSetupComplete]);
+  }, [user]);
 
   useEffect(() => {
       // Background Token Refresh Loop
