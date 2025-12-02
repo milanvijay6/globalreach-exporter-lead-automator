@@ -1,6 +1,6 @@
 {
   "appName": "globalreach-exporter-lead-automator",
-  "nodeVersion": "18.x",
+  "nodeVersion": "20.x",
   "buildCommand": "npm install && npm run build:web",
   "startCommand": "npm start",
   "dockerfile": "Dockerfile"
