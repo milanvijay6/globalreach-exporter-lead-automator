@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -83,7 +84,19 @@ app.use('/api/config', configRoutes);
 app.use('/api/cloudflare-worker', cloudflareWorkerRoutes);
 
 // Serve static files from build directory
-const buildPath = path.join(__dirname, '..', 'build');
+const buildPath = path.resolve(__dirname, '..', 'build');
+const indexPath = path.resolve(buildPath, 'index.html');
+
+// Verify build directory exists on startup
+if (!fs.existsSync(indexPath)) {
+  logger.warn(`[Server] Warning: Build directory not found at ${buildPath}`);
+  logger.warn(`[Server] Index.html not found at ${indexPath}`);
+  logger.warn(`[Server] Static file serving may fail. Ensure the application is built correctly.`);
+} else {
+  logger.info(`[Server] Build directory found at ${buildPath}`);
+  logger.info(`[Server] Index.html found at ${indexPath}`);
+}
+
 app.use(express.static(buildPath));
 
 // Serve product photos
@@ -115,14 +128,33 @@ app.get('/api/product-photos/:productId/:fileName', async (req, res) => {
 });
 
 // React Router fallback - serve index.html for all non-API routes
-app.get('*', (req, res) => {
+app.get('*', (req, res, next) => {
   // Don't serve index.html for API routes
   if (req.path.startsWith('/api/') || req.path.startsWith('/webhooks/')) {
     return res.sendStatus(404);
   }
   
-  const indexPath = path.join(buildPath, 'index.html');
-  res.sendFile(indexPath);
+  // Check if file exists before serving
+  if (!fs.existsSync(indexPath)) {
+    logger.error(`[Server] Cannot serve index.html: File not found at ${indexPath}`);
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Frontend build not found. Please ensure the application is built correctly.' 
+    });
+  }
+  
+  // Use absolute path with error handling
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      logger.error(`[Server] Error serving index.html:`, err);
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          success: false, 
+          error: 'Error serving frontend application' 
+        });
+      }
+    }
+  });
 });
 
 // Error handling middleware

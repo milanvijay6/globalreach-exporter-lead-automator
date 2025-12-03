@@ -30,6 +30,10 @@ ENV NODE_OPTIONS=--max-old-space-size=4096
 ENV BUILD_OUT_DIR=build
 RUN npx vite build
 
+# Verify build output exists
+RUN test -f build/index.html || (echo "ERROR: index.html not found after build" && exit 1)
+RUN ls -la build/ || echo "Build directory check failed"
+
 # Remove dev dependencies to reduce image size
 RUN npm prune --omit=dev
 WORKDIR /app/server
