@@ -97,15 +97,6 @@ try {
   cloudflareWorkerRoutes = cloudflareWorkerRoutes || emptyRouter;
 }
 
-// Root endpoint - simple response for quick health checks
-app.get('/', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok',
-    message: 'GlobalReach API Server',
-    timestamp: new Date().toISOString()
-  });
-});
-
 // Health check endpoint (for Back4App and load balancers)
 app.get('/health', (req, res) => {
   res.status(200).json({ 
