@@ -435,7 +435,7 @@ const App: React.FC = () => {
     
     if (importers.length > 0) {
       // Use a longer timeout to debounce rapid state changes and prevent infinite loops
-      const timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(async () => {
         // Double-check before saving
         if (importInProgressRef.current || saveBlockedRef.current || isSavingRef.current) {
           console.log('[App] ⏸️ Save cancelled - conditions changed');
