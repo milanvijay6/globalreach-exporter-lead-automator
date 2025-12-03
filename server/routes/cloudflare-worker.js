@@ -25,7 +25,15 @@ router.post('/deploy', async (req, res) => {
     if (!process.env.CLOUDFLARE_API_TOKEN) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Cloudflare API token not configured. Set CLOUDFLARE_API_TOKEN environment variable.' 
+        error: 'Cloudflare API token not configured. Set CLOUDFLARE_API_TOKEN environment variable in Back4App.' 
+      });
+    }
+
+    // Check if Parse Master Key is available (required for Config operations)
+    if (!process.env.PARSE_MASTER_KEY) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Parse Master Key not configured. Set PARSE_MASTER_KEY environment variable in Back4App. Go to: App Settings → Security & Keys → Master Key' 
       });
     }
 

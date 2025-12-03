@@ -13,52 +13,89 @@ const fs = require('fs');
 const path = require('path');
 const { getBack4AppUrl } = require('./get-back4app-url');
 
-// Use Config model from server (if available) or Parse directly
+// Initialize Parse FIRST with master key before loading Config model
+const Parse = require('parse/node');
+
+// Check for required Parse environment variables
+const parseAppId = process.env.PARSE_APPLICATION_ID;
+const parseMasterKey = process.env.PARSE_MASTER_KEY;
+const parseJSKey = process.env.PARSE_JAVASCRIPT_KEY || '';
+const parseServerURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
+
+if (!parseAppId) {
+  console.warn('[Deploy Worker] Warning: PARSE_APPLICATION_ID not set');
+}
+
+if (!parseMasterKey) {
+  console.error('[Deploy Worker] ERROR: PARSE_MASTER_KEY not set!');
+  console.error('[Deploy Worker] The deployment script requires PARSE_MASTER_KEY to access Parse Config.');
+  console.error('[Deploy Worker] Please add PARSE_MASTER_KEY to your Back4App environment variables.');
+}
+
+// Initialize Parse with master key
+if (parseAppId) {
+  Parse.initialize(parseAppId, parseJSKey, parseMasterKey);
+  Parse.serverURL = parseServerURL;
+  if (parseMasterKey) {
+    Parse.masterKey = parseMasterKey;
+    console.log('[Deploy Worker] Parse initialized with master key');
+  } else {
+    console.warn('[Deploy Worker] Parse initialized without master key - Config operations will fail');
+  }
+}
+
+// Now load Config model (it will use the initialized Parse instance)
 let Config;
 try {
   // Try to use server Config model first
   Config = require('../server/models/Config');
+  console.log('[Deploy Worker] Using server Config model');
 } catch (error) {
   // Fallback to Parse directly if server model not available
-  const Parse = require('parse/node');
-  if (process.env.PARSE_APPLICATION_ID && process.env.PARSE_MASTER_KEY) {
-    Parse.initialize(
-      process.env.PARSE_APPLICATION_ID,
-      process.env.PARSE_JAVASCRIPT_KEY || '',
-      process.env.PARSE_MASTER_KEY
-    );
-    Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
-    Parse.masterKey = process.env.PARSE_MASTER_KEY;
-  }
+  console.log('[Deploy Worker] Using Parse Config directly');
   Config = Parse.Object.extend('Config');
 }
 
 async function getConfig(key, defaultValue = null) {
   try {
+    // Check if master key is available
+    if (!Parse.masterKey) {
+      console.warn(`[Deploy Worker] Cannot get config ${key}: Master key not set`);
+      return defaultValue;
+    }
+
     // If Config has a get method (from server/models/Config.js), use it
     if (typeof Config.get === 'function') {
       return await Config.get(key, defaultValue);
     }
     // Otherwise, use Parse directly
-    const Parse = require('parse/node');
     const query = new Parse.Query(Config);
     query.equalTo('key', key);
     const config = await query.first({ useMasterKey: true });
     return config ? config.get('value') : defaultValue;
   } catch (error) {
     console.error(`[Deploy Worker] Failed to get config ${key}:`, error.message);
+    if (error.message.includes('Master Key')) {
+      console.error(`[Deploy Worker] Make sure PARSE_MASTER_KEY is set in environment variables`);
+    }
     return defaultValue;
   }
 }
 
 async function setConfig(key, value) {
   try {
+    // Check if master key is available
+    if (!Parse.masterKey) {
+      const error = new Error('Cannot use the Master Key, it has not been provided. Please set PARSE_MASTER_KEY environment variable.');
+      console.error(`[Deploy Worker] Failed to set config ${key}:`, error.message);
+      throw error;
+    }
+
     // If Config has a set method (from server/models/Config.js), use it
     if (typeof Config.set === 'function') {
       return await Config.set(key, value);
     }
     // Otherwise, use Parse directly
-    const Parse = require('parse/node');
     const query = new Parse.Query(Config);
     query.equalTo('key', key);
     let config = await query.first({ useMasterKey: true });
@@ -75,6 +112,10 @@ async function setConfig(key, value) {
     return true;
   } catch (error) {
     console.error(`[Deploy Worker] Failed to set config ${key}:`, error.message);
+    if (error.message.includes('Master Key')) {
+      console.error(`[Deploy Worker] Make sure PARSE_MASTER_KEY is set in Back4App environment variables`);
+      console.error(`[Deploy Worker] Go to: Back4App Dashboard → Your App → App Settings → Environment Variables`);
+    }
     throw error;
   }
 }
