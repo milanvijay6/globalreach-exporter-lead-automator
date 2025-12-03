@@ -331,12 +331,24 @@ const App: React.FC = () => {
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     
-    // Always check for OAuth callback, regardless of setup status
-    // But only if user is logged in (OAuth requires authentication)
-    if (oauthCallback === 'true' && code && state && user) {
-      // Open settings modal - it will open EmailOAuthModal to handle the callback
-      setShowSettingsModal(true);
-      // The SettingsModal and EmailOAuthModal will detect the URL parameters when they open
+    // Always check for OAuth callback
+    // If user is not logged in, we still need to handle the callback (user might log in first)
+    if (oauthCallback === 'true' && code) {
+      console.log('[App] OAuth callback detected in URL', { 
+        hasCode: !!code, 
+        hasState: !!state, 
+        hasUser: !!user 
+      });
+      
+      if (user) {
+        // User is logged in - open settings modal to handle callback
+        setShowSettingsModal(true);
+        // The SettingsModal and EmailOAuthModal will detect the URL parameters when they open
+      } else {
+        // User not logged in yet - store callback info and wait for login
+        // The callback will be processed after user logs in
+        console.log('[App] OAuth callback received but user not logged in - will process after login');
+      }
     }
   }, [user]);
 

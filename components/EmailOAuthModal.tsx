@@ -239,7 +239,8 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
     const state = urlParams.get('state');
     const provider = urlParams.get('provider') || 'outlook';
 
-    if (oauthCallback === 'true' && code && state && !isProcessingCallback) {
+    // Process callback if we have code (state is optional)
+    if (oauthCallback === 'true' && code && !isProcessingCallback) {
       Logger.info('[EmailOAuthModal] OAuth callback detected in URL parameters', {
         hasCode: !!code,
         codeLength: code.length,
