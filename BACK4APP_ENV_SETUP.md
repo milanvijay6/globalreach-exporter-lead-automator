@@ -58,6 +58,8 @@
 
 The Parse Master Key is required for the worker deployment script. Here's how to find it:
 
+### Step-by-Step Guide:
+
 1. **Go to Back4App Dashboard**
    - Visit: https://www.back4app.com
    - Log in to your account
@@ -65,22 +67,49 @@ The Parse Master Key is required for the worker deployment script. Here's how to
 2. **Navigate to Your App**
    - Click on your app: `globalreachexporterleadautomator` (or your app name)
 
-3. **Go to App Settings**
-   - Click on **App Settings** (or **Core Settings**)
-   - Look for **Security & Keys** section (or **Server Settings**)
+3. **Try These Locations (in order):**
 
-4. **Find Master Key**
+   **Option A: App Settings**
+   - Click **App Settings** in the left sidebar
+   - Look for tabs/sections: **Security**, **Keys**, **API Keys**, or **Server Keys**
+   - Click on the relevant tab to find **Master Key**
+
+   **Option B: Core Settings**
+   - Click **Core Settings** in the left sidebar
+   - Look for **Security** or **Keys** section
+   - Find **Master Key** listed there
+
+   **Option C: Server Settings**
+   - Click **Server Settings** in the left sidebar
+   - Look for **Security** tab or **Keys** section
+   - Find **Master Key**
+
+   **Option D: Dashboard Home**
+   - On the main app dashboard
+   - Look for a section showing your app credentials
+   - You should see: **Application ID**, **JavaScript Key**, **Master Key**
+
+   **Option E: Settings Menu**
+   - Click **Settings** (if available)
+   - Look through all tabs/sections for **Security**, **Keys**, or **API**
+
+4. **When You Find It:**
    - Look for **Master Key** or **Master Key (read-only)**
-   - Click **Show** or **Reveal** to see the key
-   - Copy the entire key (it's a long string)
+   - Click **Show**, **Reveal**, or **View** button to see the key
+   - Copy the entire key (it's a long string like: `abc123def456...`)
 
 5. **Add to Environment Variables**
-   - Go to **Environment Variables** section
-   - Add: `PARSE_MASTER_KEY` = [your master key]
+   - Go to **Environment Variables** section (usually in App Settings or Core Settings)
+   - Click **Add Environment Variable** or **Edit**
+   - Add: `PARSE_MASTER_KEY` = [paste your master key]
+   - Click **Save**
 
-**Alternative Location:**
-- Sometimes it's under **Server Settings** → **Security** → **Master Key**
-- Or **App Settings** → **Security** → **Master Key**
+### Still Can't Find It?
+
+- **Check Back4App Documentation**: Search for "Master Key" in their help docs
+- **Contact Back4App Support**: They can guide you to the exact location
+- **Check Your Email**: Sometimes Back4App sends keys in welcome emails
+- **See Detailed Guide**: Check `FIND_BACK4APP_MASTER_KEY.md` for more options
 
 ---
 
