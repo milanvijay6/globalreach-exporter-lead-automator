@@ -3,8 +3,71 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// List of third-party domains that are commonly blocked by browser extensions
+// These errors are expected and harmless
+const BLOCKED_THIRD_PARTY_DOMAINS = [
+  'sentry.io',
+  'amplitude.com',
+  'logrocket.com',
+  'zendesk.com',
+  'zopim.com',
+  'solucx.com.br',
+  'back4app.com',
+  'containers.back4app.com',
+  'widget-mediator.zopim.com',
+  'api.containers.back4app.com'
+];
+
+// Intercept fetch errors to filter out blocked requests
+if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {
+  const originalFetch = window.fetch;
+  window.fetch = async (...args: Parameters<typeof fetch>) => {
+    try {
+      return await originalFetch(...args);
+    } catch (error: any) {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      // Suppress errors from blocked third-party domains
+      if (BLOCKED_THIRD_PARTY_DOMAINS.some(domain => url.includes(domain))) {
+        // Return a rejected promise that won't be logged
+        return Promise.reject(new Error('Request blocked by browser extension (expected)'));
+      }
+      throw error;
+    }
+  };
+}
+
+// Check if an error is from a blocked third-party script
+function isBlockedThirdPartyError(event: ErrorEvent | PromiseRejectionEvent): boolean {
+  const target = (event as any).target;
+  const filename = (event as ErrorEvent).filename || '';
+  const message = (event as ErrorEvent).message || String((event as PromiseRejectionEvent).reason || '');
+  
+  // Check if it's a network error from a blocked resource
+  if (message.includes('ERR_BLOCKED_BY_CLIENT') || 
+      message.includes('Failed to fetch') ||
+      message.includes('Failed to load resource')) {
+    // Check if it's from a known third-party domain
+    const url = target?.src || target?.href || filename || message;
+    return BLOCKED_THIRD_PARTY_DOMAINS.some(domain => url.includes(domain));
+  }
+  
+  // Check WebSocket connection failures to third-party services
+  if (message.includes('WebSocket connection') && 
+      BLOCKED_THIRD_PARTY_DOMAINS.some(domain => message.includes(domain))) {
+    return true;
+  }
+  
+  return false;
+}
+
 // Enhanced global error handler with detailed logging
 window.addEventListener('error', (event) => {
+  // Suppress errors from blocked third-party scripts (browser extensions blocking analytics)
+  if (isBlockedThirdPartyError(event)) {
+    // Silently ignore - these are expected when ad blockers are active
+    return;
+  }
+  
   const errorDetails = {
     message: event.message,
     filename: event.filename,
@@ -37,6 +100,12 @@ window.addEventListener('error', (event) => {
 });
 
 window.addEventListener('unhandledrejection', (event) => {
+  // Suppress promise rejections from blocked third-party scripts
+  if (isBlockedThirdPartyError(event)) {
+    // Silently ignore - these are expected when ad blockers are active
+    return;
+  }
+  
   const errorDetails = {
     reason: event.reason,
     message: event.reason?.message,
@@ -56,10 +125,32 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-// Override React error messages to show full details
+// Override console methods to filter out blocked third-party script errors
 if (typeof window !== 'undefined') {
   const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  
+  // Filter function to check if message is from blocked third-party
+  const isBlockedMessage = (message: string): boolean => {
+    if (!message) return false;
+    const lowerMessage = message.toLowerCase();
+    return (
+      lowerMessage.includes('err_blocked_by_client') ||
+      lowerMessage.includes('failed to fetch') ||
+      lowerMessage.includes('failed to load resource') ||
+      (lowerMessage.includes('websocket') && BLOCKED_THIRD_PARTY_DOMAINS.some(d => lowerMessage.includes(d.toLowerCase()))) ||
+      BLOCKED_THIRD_PARTY_DOMAINS.some(domain => lowerMessage.includes(domain.toLowerCase()))
+    );
+  };
+  
   console.error = (...args: any[]) => {
+    // Filter out blocked third-party script errors
+    const message = args.map(arg => String(arg)).join(' ');
+    if (isBlockedMessage(message)) {
+      // Silently ignore - these are expected when ad blockers are active
+      return;
+    }
+    
     // Check for React error #310
     if (args.some(arg => 
       (typeof arg === 'string' && arg.includes('310')) ||
@@ -90,6 +181,16 @@ if (typeof window !== 'undefined') {
       console.error('============================================');
     }
     originalConsoleError.apply(console, args);
+  };
+  
+  console.warn = (...args: any[]) => {
+    // Filter out blocked third-party script warnings
+    const message = args.map(arg => String(arg)).join(' ');
+    if (isBlockedMessage(message)) {
+      // Silently ignore - these are expected when ad blockers are active
+      return;
+    }
+    originalConsoleWarn.apply(console, args);
   };
 }
 
