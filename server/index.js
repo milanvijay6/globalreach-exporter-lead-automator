@@ -8,13 +8,7 @@ const crypto = require('crypto');
 const winston = require('winston');
 const Parse = require('parse/node');
 
-// Initialize Parse
-require('./config/parse');
-
-const app = express();
-const PORT = process.env.PORT || 4000;
-
-// Logger setup
+// Logger setup (must be before Parse initialization to log errors)
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -29,6 +23,18 @@ const logger = winston.createLogger({
     })
   ]
 });
+
+// Initialize Parse with error handling
+try {
+  require('./config/parse');
+  logger.info('[Server] Parse initialized successfully');
+} catch (error) {
+  logger.error('[Server] Failed to initialize Parse:', error);
+  // Continue anyway - some features may not work, but server should still start
+}
+
+const app = express();
+const PORT = process.env.PORT || 4000;
 
 // Security middleware
 app.use(helmet({
@@ -65,14 +71,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// Import routes
-const webhookRoutes = require('./routes/webhooks');
-const productRoutes = require('./routes/products');
-const integrationRoutes = require('./routes/integrations');
-const leadRoutes = require('./routes/leads');
-const oauthRoutes = require('./routes/oauth');
-const configRoutes = require('./routes/config');
-const cloudflareWorkerRoutes = require('./routes/cloudflare-worker');
+// Import routes with error handling
+let webhookRoutes, productRoutes, integrationRoutes, leadRoutes, oauthRoutes, configRoutes, cloudflareWorkerRoutes;
+
+try {
+  webhookRoutes = require('./routes/webhooks');
+  productRoutes = require('./routes/products');
+  integrationRoutes = require('./routes/integrations');
+  leadRoutes = require('./routes/leads');
+  oauthRoutes = require('./routes/oauth');
+  configRoutes = require('./routes/config');
+  cloudflareWorkerRoutes = require('./routes/cloudflare-worker');
+  logger.info('[Server] All routes loaded successfully');
+} catch (error) {
+  logger.error('[Server] Failed to load routes:', error);
+  // Create empty router as fallback
+  const express = require('express');
+  const emptyRouter = express.Router();
+  webhookRoutes = webhookRoutes || emptyRouter;
+  productRoutes = productRoutes || emptyRouter;
+  integrationRoutes = integrationRoutes || emptyRouter;
+  leadRoutes = leadRoutes || emptyRouter;
+  oauthRoutes = oauthRoutes || emptyRouter;
+  configRoutes = configRoutes || emptyRouter;
+  cloudflareWorkerRoutes = cloudflareWorkerRoutes || emptyRouter;
+}
+
+// Health check endpoint (for Back4App and load balancers)
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
 
 // API Routes
 app.use('/webhooks', webhookRoutes);
@@ -160,52 +192,93 @@ app.get('*', (req, res, next) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);
-  res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  if (!res.headersSent) {
+    res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  }
+});
+
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  // Don't exit - let the server continue running
+  // In production, you might want to exit and let a process manager restart it
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - let the server continue running
 });
 
 // Start server
-app.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  
-  // Note: Cloudflare Worker auto-deployment is disabled on startup to prevent deployment failures
-  // Use the API endpoint POST /api/cloudflare-worker/deploy to deploy manually
-  // Auto-deployment can be enabled by setting ENABLE_AUTO_WORKER_DEPLOY=true
-  if (process.env.NODE_ENV === 'production' && 
-      process.env.CLOUDFLARE_API_TOKEN && 
-      process.env.ENABLE_AUTO_WORKER_DEPLOY === 'true') {
-    // Use setImmediate to ensure server is fully started before attempting deployment
-    setImmediate(async () => {
-      try {
-        // Add a small delay to ensure Parse is fully initialized
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        const Config = require('./models/Config');
-        const existingWorkerUrl = await Config.get('cloudflareWorkerUrl', null);
-        
-        if (!existingWorkerUrl) {
-          logger.info('[Server] Cloudflare Worker URL not found. Attempting auto-deployment...');
-          const { deployWorker } = require('../scripts/deploy-cloudflare-worker');
-          const workerUrl = await deployWorker();
-          if (workerUrl) {
-            logger.info(`[Server] Cloudflare Worker auto-deployed: ${workerUrl}`);
+let server;
+try {
+  server = app.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`Health check available at: http://localhost:${PORT}/health`);
+    
+    // Note: Cloudflare Worker auto-deployment is disabled on startup to prevent deployment failures
+    // Use the API endpoint POST /api/cloudflare-worker/deploy to deploy manually
+    // Auto-deployment can be enabled by setting ENABLE_AUTO_WORKER_DEPLOY=true
+    if (process.env.NODE_ENV === 'production' && 
+        process.env.CLOUDFLARE_API_TOKEN && 
+        process.env.ENABLE_AUTO_WORKER_DEPLOY === 'true') {
+      // Use setImmediate to ensure server is fully started before attempting deployment
+      setImmediate(async () => {
+        try {
+          // Add a small delay to ensure Parse is fully initialized
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          const Config = require('./models/Config');
+          const existingWorkerUrl = await Config.get('cloudflareWorkerUrl', null);
+          
+          if (!existingWorkerUrl) {
+            logger.info('[Server] Cloudflare Worker URL not found. Attempting auto-deployment...');
+            const { deployWorker } = require('../scripts/deploy-cloudflare-worker');
+            const workerUrl = await deployWorker();
+            if (workerUrl) {
+              logger.info(`[Server] Cloudflare Worker auto-deployed: ${workerUrl}`);
+            } else {
+              logger.warn('[Server] Cloudflare Worker auto-deployment skipped (no credentials or deployment failed)');
+            }
           } else {
-            logger.warn('[Server] Cloudflare Worker auto-deployment skipped (no credentials or deployment failed)');
+            logger.info(`[Server] Cloudflare Worker URL found: ${existingWorkerUrl}`);
           }
-        } else {
-          logger.info(`[Server] Cloudflare Worker URL found: ${existingWorkerUrl}`);
+        } catch (error) {
+          // Log error but don't crash the server
+          logger.error('[Server] Cloudflare Worker auto-deployment error:', error.message);
+          if (error.stack) {
+            logger.error('[Server] Stack:', error.stack);
+          }
+          // Continue server operation even if worker deployment fails
         }
-      } catch (error) {
-        // Log error but don't crash the server
-        logger.error('[Server] Cloudflare Worker auto-deployment error:', error.message);
-        if (error.stack) {
-          logger.error('[Server] Stack:', error.stack);
-        }
-        // Continue server operation even if worker deployment fails
-      }
-    });
-  }
-});
+      });
+    }
+  });
+
+  // Handle server errors
+  server.on('error', (error) => {
+    if (error.syscall !== 'listen') {
+      throw error;
+    }
+    
+    switch (error.code) {
+      case 'EACCES':
+        logger.error(`Port ${PORT} requires elevated privileges`);
+        process.exit(1);
+        break;
+      case 'EADDRINUSE':
+        logger.error(`Port ${PORT} is already in use`);
+        process.exit(1);
+        break;
+      default:
+        throw error;
+    }
+  });
+} catch (error) {
+  logger.error('Failed to start server:', error);
+  process.exit(1);
+}
 
 
 
