@@ -132,32 +132,46 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   
-  // Auto-deploy Cloudflare Worker on startup (if credentials available)
-  if (process.env.NODE_ENV === 'production' && process.env.CLOUDFLARE_API_TOKEN) {
-    try {
-      const Config = require('./models/Config');
-      const existingWorkerUrl = await Config.get('cloudflareWorkerUrl', null);
-      
-      if (!existingWorkerUrl) {
-        logger.info('[Server] Cloudflare Worker URL not found. Attempting auto-deployment...');
-        const { deployWorker } = require('../scripts/deploy-cloudflare-worker');
-        const workerUrl = await deployWorker();
-        if (workerUrl) {
-          logger.info(`[Server] Cloudflare Worker auto-deployed: ${workerUrl}`);
+  // Note: Cloudflare Worker auto-deployment is disabled on startup to prevent deployment failures
+  // Use the API endpoint POST /api/cloudflare-worker/deploy to deploy manually
+  // Auto-deployment can be enabled by setting ENABLE_AUTO_WORKER_DEPLOY=true
+  if (process.env.NODE_ENV === 'production' && 
+      process.env.CLOUDFLARE_API_TOKEN && 
+      process.env.ENABLE_AUTO_WORKER_DEPLOY === 'true') {
+    // Use setImmediate to ensure server is fully started before attempting deployment
+    setImmediate(async () => {
+      try {
+        // Add a small delay to ensure Parse is fully initialized
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        const Config = require('./models/Config');
+        const existingWorkerUrl = await Config.get('cloudflareWorkerUrl', null);
+        
+        if (!existingWorkerUrl) {
+          logger.info('[Server] Cloudflare Worker URL not found. Attempting auto-deployment...');
+          const { deployWorker } = require('../scripts/deploy-cloudflare-worker');
+          const workerUrl = await deployWorker();
+          if (workerUrl) {
+            logger.info(`[Server] Cloudflare Worker auto-deployed: ${workerUrl}`);
+          } else {
+            logger.warn('[Server] Cloudflare Worker auto-deployment skipped (no credentials or deployment failed)');
+          }
         } else {
-          logger.warn('[Server] Cloudflare Worker auto-deployment skipped (no credentials or deployment failed)');
+          logger.info(`[Server] Cloudflare Worker URL found: ${existingWorkerUrl}`);
         }
-      } else {
-        logger.info(`[Server] Cloudflare Worker URL found: ${existingWorkerUrl}`);
+      } catch (error) {
+        // Log error but don't crash the server
+        logger.error('[Server] Cloudflare Worker auto-deployment error:', error.message);
+        if (error.stack) {
+          logger.error('[Server] Stack:', error.stack);
+        }
+        // Continue server operation even if worker deployment fails
       }
-    } catch (error) {
-      logger.error('[Server] Cloudflare Worker auto-deployment error:', error.message);
-      // Don't fail server startup if worker deployment fails
-    }
+    });
   }
 });
 

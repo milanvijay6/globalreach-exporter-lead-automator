@@ -93,6 +93,15 @@ async function deployWorker() {
       return null;
     }
 
+    // Check if wrangler is available
+    try {
+      const { execSync } = require('child_process');
+      execSync('wrangler --version', { stdio: 'ignore' });
+    } catch (error) {
+      console.warn('[Deploy Worker] Wrangler CLI not available. Skipping deployment.');
+      return null;
+    }
+
     // Get Back4App URL
     const back4appUrl = getBack4AppUrl();
     console.log('[Deploy Worker] Back4App URL:', back4appUrl);
@@ -146,21 +155,35 @@ async function deployWorker() {
 
     // Deploy worker using Wrangler
     const workerDir = path.join(__dirname, '..', 'cloudflare-worker');
-    const deployCommand = accountId 
-      ? `wrangler deploy --config ${wranglerPath}`
-      : `wrangler deploy --config ${wranglerPath}`;
+    
+    // Check if worker directory exists
+    if (!fs.existsSync(workerDir)) {
+      console.warn('[Deploy Worker] Cloudflare worker directory not found. Skipping deployment.');
+      return null;
+    }
+
+    const deployCommand = `wrangler deploy --config ${wranglerPath}`;
 
     console.log('[Deploy Worker] Deploying worker...');
-    const output = execSync(deployCommand, {
-      cwd: workerDir,
-      env: {
-        ...process.env,
-        CLOUDFLARE_API_TOKEN: apiToken,
-        CLOUDFLARE_ACCOUNT_ID: accountId || ''
-      },
-      encoding: 'utf8',
-      stdio: 'pipe'
-    });
+    let output;
+    try {
+      output = execSync(deployCommand, {
+        cwd: workerDir,
+        env: {
+          ...process.env,
+          CLOUDFLARE_API_TOKEN: apiToken,
+          CLOUDFLARE_ACCOUNT_ID: accountId || ''
+        },
+        encoding: 'utf8',
+        stdio: 'pipe',
+        timeout: 60000 // 60 second timeout
+      });
+    } catch (error) {
+      console.error('[Deploy Worker] Wrangler deployment failed:', error.message);
+      if (error.stdout) console.error('[Deploy Worker] stdout:', error.stdout);
+      if (error.stderr) console.error('[Deploy Worker] stderr:', error.stderr);
+      return null;
+    }
 
     // Extract worker URL from output
     // Wrangler output format: "✨  Deployed to https://worker-name.account.workers.dev"
