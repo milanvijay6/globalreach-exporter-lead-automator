@@ -92,6 +92,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [outlookTenantId, setOutlookTenantId] = useState<string>('common');
   const [gmailClientId, setGmailClientId] = useState<string>('');
   const [gmailClientSecret, setGmailClientSecret] = useState<string>('');
+  const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState<string>('');
   const [showOutlookSecret, setShowOutlookSecret] = useState<boolean>(false);
   const [showGmailSecret, setShowGmailSecret] = useState<boolean>(false);
   const [oauthSaveStatus, setOauthSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -193,6 +194,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 setOutlookClientId(savedClientId);
                 setOutlookClientSecret(savedClientSecret);
                 setOutlookTenantId(savedTenantId || 'common');
+              }
+              // Load Cloudflare Worker URL (try API first for web, then local config)
+              try {
+                const { apiService } = await import('../services/apiService');
+                const workerResponse = await apiService.get<{ success: boolean; url?: string }>('/api/cloudflare-worker/url');
+                if (workerResponse.success && workerResponse.url) {
+                  setCloudflareWorkerUrl(workerResponse.url);
+                  // Also save to local config for offline access
+                  await PlatformService.setAppConfig('cloudflareWorkerUrl', workerResponse.url);
+                } else {
+                  // Fallback to local config
+                  const savedWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
+                  if (savedWorkerUrl) {
+                    setCloudflareWorkerUrl(savedWorkerUrl);
+                  }
+                }
+              } catch (error) {
+                // Fallback to local config if API fails
+                const savedWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
+                if (savedWorkerUrl) {
+                  setCloudflareWorkerUrl(savedWorkerUrl);
+                }
               }
             } catch (e) {
               console.error('Failed to load OAuth config:', e);
@@ -993,6 +1016,92 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               Use "common" for personal accounts, "organizations" for work accounts, or your tenant GUID
                             </p>
                                                     </div>
+                                                    <div className="border-t border-slate-200 pt-3 mt-3">
+                            <h5 className="text-xs font-bold text-slate-700 mb-2">Cloudflare Worker OAuth Proxy</h5>
+                            <p className="text-[10px] text-slate-500 mb-3">
+                              Automatically deploy a permanent Cloudflare Worker URL for OAuth callbacks. This solves the Back4App URL expiration issue.
+                            </p>
+                            <div className="space-y-2">
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={cloudflareWorkerUrl}
+                                  onChange={(e) => setCloudflareWorkerUrl(e.target.value)}
+                                  placeholder="https://your-worker.workers.dev"
+                                  className="flex-1 px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500 text-xs"
+                                />
+                                <button
+                                  onClick={async () => {
+                                    setOauthSaveStatus('saving');
+                                    setOauthSaveMessage('Deploying Cloudflare Worker...');
+                                    try {
+                                      const { apiService } = await import('../services/apiService');
+                                      const response = await apiService.post<{ success: boolean; url?: string; error?: string }>('/api/cloudflare-worker/deploy', {});
+                                      if (response.success && response.url) {
+                                        setCloudflareWorkerUrl(response.url);
+                                        await PlatformService.setAppConfig('cloudflareWorkerUrl', response.url);
+                                        setOauthSaveStatus('success');
+                                        setOauthSaveMessage('Worker deployed successfully!');
+                                      } else {
+                                        setOauthSaveStatus('error');
+                                        setOauthSaveMessage(response.error || 'Failed to deploy worker');
+                                      }
+                                    } catch (error: any) {
+                                      setOauthSaveStatus('error');
+                                      setOauthSaveMessage(error.message || 'Failed to deploy worker');
+                                    }
+                                    setTimeout(() => {
+                                      setOauthSaveStatus('idle');
+                                      setOauthSaveMessage('');
+                                    }, 5000);
+                                  }}
+                                  className="px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700 transition-colors whitespace-nowrap"
+                                  title="Deploy or update Cloudflare Worker"
+                                >
+                                  Deploy
+                                </button>
+                                {cloudflareWorkerUrl && (
+                                  <button
+                                    onClick={async () => {
+                                      setOauthSaveStatus('saving');
+                                      setOauthSaveMessage('Resetting Cloudflare Worker...');
+                                      try {
+                                        const { apiService } = await import('../services/apiService');
+                                        const response = await apiService.post<{ success: boolean; url?: string; error?: string }>('/api/cloudflare-worker/reset', {});
+                                        if (response.success && response.url) {
+                                          setCloudflareWorkerUrl(response.url);
+                                          await PlatformService.setAppConfig('cloudflareWorkerUrl', response.url);
+                                          setOauthSaveStatus('success');
+                                          setOauthSaveMessage('New worker URL generated!');
+                                        } else {
+                                          setOauthSaveStatus('error');
+                                          setOauthSaveMessage(response.error || 'Failed to reset worker');
+                                        }
+                                      } catch (error: any) {
+                                        setOauthSaveStatus('error');
+                                        setOauthSaveMessage(error.message || 'Failed to reset worker');
+                                      }
+                                      setTimeout(() => {
+                                        setOauthSaveStatus('idle');
+                                        setOauthSaveMessage('');
+                                      }, 5000);
+                                    }}
+                                    className="px-3 py-2 bg-orange-600 text-white text-xs font-semibold rounded hover:bg-orange-700 transition-colors whitespace-nowrap"
+                                    title="Generate new worker URL"
+                                  >
+                                    Reset
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-500">
+                                {cloudflareWorkerUrl ? (
+                                  <>✅ Worker URL configured. Add this to Azure: <code className="bg-slate-100 px-1 rounded">{cloudflareWorkerUrl}/auth/outlook/callback</code></>
+                                ) : (
+                                  <>Click "Deploy" to automatically create a permanent OAuth callback URL</>
+                                )}
+                              </p>
+                            </div>
+                                                    </div>
                                                     <button
                                                         onClick={async () => {
                               setOauthSaveStatus('saving');
@@ -1014,6 +1123,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 await PlatformService.setAppConfig('outlookClientId', outlookClientId);
                                 await PlatformService.setAppConfig('outlookClientSecret', outlookClientSecret);
                                 await PlatformService.setAppConfig('outlookTenantId', outlookTenantId || 'common');
+                                await PlatformService.setAppConfig('cloudflareWorkerUrl', cloudflareWorkerUrl || '');
                                 setOauthSaveStatus('success');
                                 setOauthSaveMessage('OAuth configuration saved successfully');
                                 setTimeout(() => {

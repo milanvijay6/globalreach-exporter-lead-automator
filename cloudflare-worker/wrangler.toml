@@ -1,0 +1,16 @@
+name = "shreenathji-oauth-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Account ID (can be set via CLOUDFLARE_ACCOUNT_ID env var or here)
+# account_id = "your-account-id"
+
+# Environment variables
+# BACK4APP_BASE_URL will be set dynamically during deployment
+# Default value (will be overridden by deployment script)
+[vars]
+BACK4APP_BASE_URL = "https://globalreachexporterleadautomator-sozgszuo.b4a.run"
+
+# For production, you can also use secrets:
+# wrangler secret put BACK4APP_BASE_URL
+

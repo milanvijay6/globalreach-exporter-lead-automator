@@ -11,6 +11,10 @@ COPY server/package*.json ./server/
 # Install ALL dependencies (needed for build)
 RUN npm ci
 
+# Install Wrangler CLI globally for Cloudflare Worker deployment (optional)
+# Only installs if CLOUDFLARE_API_TOKEN is set during build
+RUN npm install -g wrangler@latest || echo "Wrangler installation skipped (optional)"
+
 # Install server dependencies
 WORKDIR /app/server
 RUN npm ci

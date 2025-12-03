@@ -249,6 +249,20 @@ const App: React.FC = () => {
                     const savedPlatforms = await loadPlatformConnections();
                     if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
 
+                    // Load Cloudflare Worker URL from Parse Config (for web)
+                    if (!isDesktop()) {
+                      try {
+                        const workerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
+                        if (workerUrl) {
+                          console.log('[App] Cloudflare Worker URL loaded:', workerUrl);
+                          // Store in local config for OAuth to use
+                          await PlatformService.setAppConfig('cloudflareWorkerUrl', workerUrl);
+                        }
+                      } catch (error) {
+                        console.warn('[App] Failed to load Cloudflare Worker URL:', error);
+                      }
+                    }
+
                     // Start token refresh service
                     if (isDesktop()) {
                       const { TokenRefreshService } = await import('./services/tokenRefreshService');

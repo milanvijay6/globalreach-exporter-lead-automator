@@ -84,14 +84,20 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
       const serverPort = await PlatformService.getAppConfig('serverPort', 4000);
 
-      // Determine redirect URI:
-      // 1. Use Cloudflare Tunnel URL if available (for Electron with tunnel)
-      // 2. Use current window location if in web environment (for Back4App/web hosting)
-      // 3. Fallback to localhost for Electron without tunnel
+      // Determine redirect URI priority:
+      // 1. Cloudflare Worker URL (if configured) - Permanent, never expires
+      // 2. Cloudflare Tunnel URL (if available) - For Electron with tunnel
+      // 3. Current window location (web environment) - For Back4App/web hosting
+      // 4. Fallback to localhost - For Electron without tunnel
+      const cloudflareWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
       const cloudflareUrl = await PlatformService.getAppConfig('cloudflareUrl', '');
       let redirectUri: string;
       
-      if (cloudflareUrl) {
+      if (cloudflareWorkerUrl) {
+        // Use Cloudflare Worker URL - permanent solution for Back4App
+        // Worker handles /auth/outlook/callback and forwards to Back4App
+        redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+      } else if (cloudflareUrl) {
         redirectUri = `${cloudflareUrl}/api/oauth/callback`;
       } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
         // Web environment - use current URL
@@ -332,14 +338,20 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         throw new Error('Outlook OAuth credentials not configured. Please configure Client ID and Client Secret in Settings → Integrations → Email & OAuth.');
       }
 
-      // Determine redirect URI:
-      // 1. Use Cloudflare Tunnel URL if available (for Electron with tunnel)
-      // 2. Use current window location if in web environment (for Back4App/web hosting)
-      // 3. Fallback to localhost for Electron without tunnel
+      // Determine redirect URI priority:
+      // 1. Cloudflare Worker URL (if configured) - Permanent, never expires
+      // 2. Cloudflare Tunnel URL (if available) - For Electron with tunnel
+      // 3. Current window location (web environment) - For Back4App/web hosting
+      // 4. Fallback to localhost - For Electron without tunnel
+      const cloudflareWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
       const cloudflareUrl = await PlatformService.getAppConfig('cloudflareUrl', '');
       let redirectUri: string;
       
-      if (cloudflareUrl) {
+      if (cloudflareWorkerUrl) {
+        // Use Cloudflare Worker URL - permanent solution for Back4App
+        // Worker handles /auth/outlook/callback and forwards to Back4App
+        redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+      } else if (cloudflareUrl) {
         redirectUri = `${cloudflareUrl}/api/oauth/callback`;
       } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
         // Web environment - use current URL

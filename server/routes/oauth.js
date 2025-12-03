@@ -50,6 +50,16 @@ router.get('/callback', async (req, res) => {
     const host = req.get('host') || req.get('x-forwarded-host') || 'localhost:4000';
     const redirectUrl = `${protocol}://${host}/?oauth_callback=true&code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&provider=${provider}`;
     
+    // Log if request came from Cloudflare Worker proxy
+    const forwardedFrom = req.get('x-forwarded-for') || req.get('cf-connecting-ip');
+    if (forwardedFrom) {
+      console.log('[OAuth] Callback received (possibly from Cloudflare Worker proxy):', {
+        provider,
+        hasCode: !!code,
+        forwardedFrom: forwardedFrom.substring(0, 50)
+      });
+    }
+    
     console.log('[OAuth] Redirecting to frontend:', redirectUrl.replace(/code=[^&]+/, 'code=***'));
     res.redirect(redirectUrl);
   } catch (err) {
