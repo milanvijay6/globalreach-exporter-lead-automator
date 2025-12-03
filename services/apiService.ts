@@ -21,6 +21,19 @@ class ApiService {
       defaultHeaders['X-Parse-Session-Token'] = sessionToken;
     }
 
+    // Add user ID from session if available
+    try {
+      const sessionData = localStorage.getItem('web_secure_globalreach_user_session');
+      if (sessionData) {
+        const parsed = JSON.parse(atob(sessionData));
+        if (parsed && parsed.user && parsed.user.id) {
+          defaultHeaders['X-User-Id'] = parsed.user.id;
+        }
+      }
+    } catch (error) {
+      // Ignore errors getting user ID
+    }
+
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -61,6 +74,8 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
+
+
 
 
 

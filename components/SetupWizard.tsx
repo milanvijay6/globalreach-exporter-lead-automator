@@ -156,8 +156,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           await PlatformService.setAppConfig('tunnelUrl', tunnelUrl);
           await PlatformService.secureSave('globalreach_platforms', JSON.stringify(connections));
           
-          // Mark complete
+          // Mark complete (will be saved as user-specific if userId is available)
           await PlatformService.setAppConfig('setupComplete', true);
+          console.log(`[SetupWizard] Setup marked complete for user: ${currentUserId || 'unknown'}`);
           
           // Clear wizard draft after successful completion
           if (currentUserId) {

@@ -66,36 +66,62 @@ export const saveUserSession = async (user: User) => {
   try {
     if (!user || !user.id) {
       console.error("[Session] Cannot save session: Invalid user object");
-      return;
+      return false;
     }
 
-    const sessionData = JSON.stringify({
+    const sessionData = {
       user,
       token: `mock-jwt-${Date.now()}`,
       expiry: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
       savedAt: Date.now()
-    });
+    };
+    
+    const sessionDataString = JSON.stringify(sessionData);
     
     // Use Secure Save if available (Electron), else LocalStorage
-    await PlatformService.secureSave(STORAGE_KEY_USER, sessionData);
-    console.log(`[Session] Session saved for user: ${user.id}`);
-  } catch (e: any) {
-    console.error("[Session] Failed to save session:", e);
-    // Try localStorage fallback if secureSave fails
-    if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        const sessionData = JSON.stringify({
-          user,
-          token: `mock-jwt-${Date.now()}`,
-          expiry: Date.now() + (7 * 24 * 60 * 60 * 1000),
-          savedAt: Date.now()
-        });
-        localStorage.setItem(`web_secure_${STORAGE_KEY_USER}`, btoa(sessionData));
-        console.log("[Session] Session saved to localStorage fallback");
-      } catch (fallbackError) {
-        console.error("[Session] Fallback save also failed:", fallbackError);
+    try {
+      await PlatformService.secureSave(STORAGE_KEY_USER, sessionDataString);
+      
+      // Verify session was saved (for web/localStorage)
+      if (typeof window !== 'undefined' && window.localStorage && !window.electronAPI) {
+        const verifyKey = `web_secure_${STORAGE_KEY_USER}`;
+        const saved = localStorage.getItem(verifyKey);
+        if (!saved || atob(saved) !== sessionDataString) {
+          // If verification fails, try direct localStorage save
+          localStorage.setItem(verifyKey, btoa(sessionDataString));
+          console.log("[Session] Session verified and saved to localStorage");
+        }
       }
+      
+      console.log(`[Session] ✓ Session saved successfully for user: ${user.id}`);
+      return true;
+    } catch (primaryError) {
+      console.warn("[Session] Primary save method failed, trying fallback:", primaryError);
+      // Try localStorage fallback if secureSave fails
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          localStorage.setItem(`web_secure_${STORAGE_KEY_USER}`, btoa(sessionDataString));
+          
+          // Verify it was saved
+          const verifyKey = `web_secure_${STORAGE_KEY_USER}`;
+          const saved = localStorage.getItem(verifyKey);
+          if (saved && atob(saved) === sessionDataString) {
+            console.log("[Session] ✓ Session saved to localStorage fallback and verified");
+            return true;
+          } else {
+            console.error("[Session] Session save verification failed");
+            return false;
+          }
+        } catch (fallbackError) {
+          console.error("[Session] Fallback save also failed:", fallbackError);
+          return false;
+        }
+      }
+      return false;
     }
+  } catch (e: any) {
+    console.error("[Session] Unexpected error saving session:", e);
+    return false;
   }
 };
 
@@ -157,10 +183,13 @@ export const loadUserSession = async (): Promise<User | null> => {
     const sessionDuration = 7 * 24 * 60 * 60 * 1000; // 7 days
     if (timeUntilExpiry < (sessionDuration * 0.2)) {
       console.log("[Session] Session close to expiry, refreshing");
-      await saveUserSession(parsed.user);
+      const refreshed = await saveUserSession(parsed.user);
+      if (!refreshed) {
+        console.warn("[Session] Failed to refresh session, but continuing with existing session");
+      }
     }
     
-    console.log(`[Session] Session loaded successfully for user: ${parsed.user.id}`);
+    console.log(`[Session] ✓ Session loaded successfully for user: ${parsed.user.id} (expires in ${Math.round(timeUntilExpiry / (1000 * 60 * 60))} hours)`);
     return parsed.user;
   } catch (e: any) {
     console.error("[Session] Failed to load session:", e);

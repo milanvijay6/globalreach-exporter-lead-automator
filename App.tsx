@@ -229,9 +229,9 @@ const App: React.FC = () => {
             // Check for existing user session first
             const savedUser = await loadUserSession();
             
-            // Check setup status
+            // Check setup status (will be user-specific if user is logged in)
             const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
-            console.log("[App] Loaded Setup Status:", setupStatus);
+            console.log(`[App] Loaded Setup Status for user ${savedUser?.id || 'none'}:`, setupStatus);
             setIsSetupComplete(setupStatus === true);
 
             // If user session exists, check if setup is complete
@@ -1111,11 +1111,15 @@ const App: React.FC = () => {
 
   const handleLogin = async (loggedInUser: User) => {
     setUser(loggedInUser);
-    await saveUserSession(loggedInUser);
+    const sessionSaved = await saveUserSession(loggedInUser);
+    if (!sessionSaved) {
+      console.warn("[App] Failed to save user session after login");
+    }
     logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
     
-    // Check if setup is complete after login
+    // Check if setup is complete after login (will be user-specific)
     const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
+    console.log(`[App] Setup status for user ${loggedInUser.id} after login:`, setupStatus);
     
     if (setupStatus === true) {
       // Setup is complete - load data and proceed to main app

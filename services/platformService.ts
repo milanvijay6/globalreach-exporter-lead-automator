@@ -59,16 +59,84 @@ export const PlatformService = {
     // Web: Use API service
     try {
       const { apiService } = await import('./apiService');
-      const response = await apiService.get<{ success: boolean; value: any }>(`/api/config/${key}?default=${encodeURIComponent(JSON.stringify(defaultValue))}`);
-      return response.success ? response.value : defaultValue;
+      const response = await apiService.get<{ success: boolean; value: any; userId?: string | null }>(`/api/config/${key}?default=${encodeURIComponent(JSON.stringify(defaultValue))}`);
+      if (response.success) {
+        // Also save to localStorage as backup
+        const storageKey = response.userId ? `config_${response.userId}_${key}` : `config_${key}`;
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(response.value));
+        } catch (e) {
+          // Ignore localStorage errors
+        }
+        return response.value;
+      }
+      return defaultValue;
     } catch (error) {
-      console.warn('Failed to get config from API, using localStorage fallback:', error);
-      // Fallback to localStorage
+      console.warn('[PlatformService] Failed to get config from API, using localStorage fallback:', error);
+      // Fallback to localStorage - try user-specific first, then global (with migration)
+      let userId: string | null = null;
+      try {
+        const sessionData = localStorage.getItem('web_secure_globalreach_user_session');
+        if (sessionData) {
+          const parsed = JSON.parse(atob(sessionData));
+          if (parsed && parsed.user && parsed.user.id) {
+            userId = parsed.user.id;
+          }
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+
+      // Try user-specific config first
+      if (userId) {
+        const userKey = `config_${userId}_${key}`;
+        const userVal = localStorage.getItem(userKey);
+        if (userVal !== null) {
+          try {
+            return JSON.parse(userVal);
+          } catch (e) {
+            // If not JSON, treat as string
+            if (userVal === 'true') return true;
+            if (userVal === 'false') return false;
+            return userVal;
+          }
+        }
+        
+        // Migration: Check for global config and migrate to user-specific
+        const globalKey = `config_${key}`;
+        const globalVal = localStorage.getItem(globalKey);
+        if (globalVal !== null) {
+          console.log(`[PlatformService] Migrating global config '${key}' to user-specific for user ${userId}`);
+          try {
+            let migratedValue: any;
+            try {
+              migratedValue = JSON.parse(globalVal);
+            } catch (e) {
+              // If not JSON, treat as string
+              if (globalVal === 'true') migratedValue = true;
+              else if (globalVal === 'false') migratedValue = false;
+              else migratedValue = globalVal;
+            }
+            // Save to user-specific storage
+            localStorage.setItem(userKey, JSON.stringify(migratedValue));
+            return migratedValue;
+          } catch (e) {
+            console.error(`[PlatformService] Failed to migrate config '${key}':`, e);
+          }
+        }
+      }
+
+      // Fallback to global config (for backward compatibility)
       const val = localStorage.getItem(`config_${key}`);
       if (val === null) return defaultValue;
-      if (val === 'true') return true;
-      if (val === 'false') return false;
-      return val;
+      try {
+        return JSON.parse(val);
+      } catch (e) {
+        // If not JSON, treat as string
+        if (val === 'true') return true;
+        if (val === 'false') return false;
+        return val;
+      }
     }
   },
 
@@ -79,11 +147,39 @@ export const PlatformService = {
       // Web: Use API service
       try {
         const { apiService } = await import('./apiService');
-        await apiService.post(`/api/config/${key}`, { value });
+        const response = await apiService.post<{ success: boolean; userId?: string | null }>(`/api/config/${key}`, { value });
+        // Also save to localStorage as backup
+        if (response.success) {
+          const userId = response.userId;
+          const storageKey = userId ? `config_${userId}_${key}` : `config_${key}`;
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(value));
+          } catch (e) {
+            // Ignore localStorage errors
+          }
+        }
       } catch (error) {
-        console.warn('Failed to set config via API, using localStorage fallback:', error);
-        // Fallback to localStorage
-        localStorage.setItem(`config_${key}`, String(value));
+        console.warn('[PlatformService] Failed to set config via API, using localStorage fallback:', error);
+        // Fallback to localStorage - save as user-specific if userId available
+        let userId: string | null = null;
+        try {
+          const sessionData = localStorage.getItem('web_secure_globalreach_user_session');
+          if (sessionData) {
+            const parsed = JSON.parse(atob(sessionData));
+            if (parsed && parsed.user && parsed.user.id) {
+              userId = parsed.user.id;
+            }
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+
+        const storageKey = userId ? `config_${userId}_${key}` : `config_${key}`;
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(value));
+        } catch (e) {
+          console.error('[PlatformService] Failed to save to localStorage:', e);
+        }
       }
     }
   },
