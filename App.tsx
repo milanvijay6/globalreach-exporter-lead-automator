@@ -245,60 +245,8 @@ const App: React.FC = () => {
                     const { PinService } = await import('./services/pinService');
                     await PinService.loadPinVerifications();
                     
-                    // Load platform connections
-                    const savedPlatforms = await loadPlatformConnections();
-                    if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
-
-                    // Load Cloudflare Worker URL from Parse Config (for web)
-                    if (!isDesktop()) {
-                      try {
-                        const workerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
-                        if (workerUrl) {
-                          console.log('[App] Cloudflare Worker URL loaded:', workerUrl);
-                          // Store in local config for OAuth to use
-                          await PlatformService.setAppConfig('cloudflareWorkerUrl', workerUrl);
-                        }
-                      } catch (error) {
-                        console.warn('[App] Failed to load Cloudflare Worker URL:', error);
-                      }
-                    }
-
-                    // Start token refresh service
-                    if (isDesktop()) {
-                      const { TokenRefreshService } = await import('./services/tokenRefreshService');
-                      const tokenRefreshService = TokenRefreshService.getInstance();
-                      tokenRefreshService.start();
-                      console.log('[App] Token refresh service started');
-                    }
-                    
-                    // Load email connection and start ingestion if connected
-                    const { loadEmailConnection } = await import('./services/securityService');
-                    const emailConn = await loadEmailConnection();
-                    if (emailConn) {
-                      // Add email connection to connected platforms if not already there
-                      if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
-                        setConnectedPlatforms([...savedPlatforms, emailConn]);
-                      }
-                      
-                      // Start email ingestion polling
-                      const { EmailIngestionService } = await import('./services/emailIngestionService');
-                      const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
-                      const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
-                      
-                      EmailIngestionService.startPolling({
-                        enabled: true,
-                        autoReply,
-                        draftApprovalRequired: draftApproval,
-                        pollInterval: 5 * 60 * 1000, // 5 minutes
-                      });
-                    }
-
-                    const savedImporters = StorageService.loadImporters();
-                    if (savedImporters && savedImporters.length > 0) {
-                        setImporters(savedImporters);
-                    } else {
-                        setImporters(MOCK_IMPORTERS);
-                    }
+                    // Load all user-specific data
+                    await loadInitialAppData(savedUser);
                 } else {
                     // User exists but setup is not complete - show setup wizard
                     setUser(savedUser);
@@ -313,6 +261,68 @@ const App: React.FC = () => {
     };
     init();
   }, []);
+
+  // Session refresh mechanism - refresh session periodically and on user activity
+  useEffect(() => {
+    if (!user) return;
+
+    // Refresh session every hour
+    const refreshInterval = setInterval(async () => {
+      try {
+        const currentUser = await loadUserSession();
+        if (currentUser && currentUser.id === user.id) {
+          // Session is still valid, refresh it
+          await saveUserSession(currentUser);
+          console.log('[App] Session refreshed');
+        } else if (!currentUser) {
+          // Session expired or invalid, log out
+          console.warn('[App] Session expired, logging out');
+          setUser(null);
+          await clearUserSession();
+        }
+      } catch (error) {
+        console.error('[App] Session refresh failed:', error);
+      }
+    }, 60 * 60 * 1000); // Every hour
+
+    // Refresh session on user activity (mouse move, click, keypress)
+    const activityHandlers = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'] as const;
+    const handleActivity = async () => {
+      try {
+        const currentUser = await loadUserSession();
+        if (currentUser && currentUser.id === user.id) {
+          // Extend session on activity (only if close to expiry)
+          await saveUserSession(currentUser);
+        }
+      } catch (error) {
+        // Silently fail - don't interrupt user activity
+      }
+    };
+
+    // Throttle activity handler to avoid excessive saves
+    let activityTimeout: NodeJS.Timeout | null = null;
+    const throttledActivityHandler = () => {
+      if (activityTimeout) return;
+      activityTimeout = setTimeout(() => {
+        handleActivity();
+        activityTimeout = null;
+      }, 5 * 60 * 1000); // Every 5 minutes max
+    };
+
+    activityHandlers.forEach(event => {
+      window.addEventListener(event, throttledActivityHandler, { passive: true });
+    });
+
+    return () => {
+      clearInterval(refreshInterval);
+      activityHandlers.forEach(event => {
+        window.removeEventListener(event, throttledActivityHandler);
+      });
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+    };
+  }, [user]);
 
   // Check for OAuth callback in URL parameters and open modal
   useEffect(() => {
@@ -444,7 +454,9 @@ const App: React.FC = () => {
               ids: currentIds.substring(0, 100) + '...',
               timestamp: new Date().toISOString()
             });
-            StorageService.saveImporters(importers);
+            if (user?.id) {
+              await StorageService.saveImporters(importers, user.id);
+            }
             lastSavedIdsRef.current = currentIds;
           } else {
             console.log('[App] ⏭️ Importers unchanged, skipping save', {
@@ -1042,19 +1054,9 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
-  const handleLogin = async (loggedInUser: User) => {
-    setUser(loggedInUser);
-    saveUserSession(loggedInUser);
-    logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
-    
-    // Check if setup is complete after login
-    const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
-    
-    if (setupStatus === true) {
-      // Setup is complete - load data and proceed to main app
-      setIsSetupComplete(true);
-      setNeedsSetup(false);
-      
+  // Helper function to load all user-specific data
+  const loadInitialAppData = async (loggedInUser: User) => {
+    try {
       // Load PIN verifications
       const { PinService } = await import('./services/pinService');
       await PinService.loadPinVerifications();
@@ -1093,12 +1095,33 @@ const App: React.FC = () => {
         });
       }
 
-      const savedImporters = StorageService.loadImporters();
+      // Load user-specific importers/leads
+      const savedImporters = await StorageService.loadImporters(loggedInUser.id);
       if (savedImporters && savedImporters.length > 0) {
           setImporters(savedImporters);
       } else {
           setImporters(MOCK_IMPORTERS);
       }
+
+      console.log(`[App] User-specific data loaded for user: ${loggedInUser.id}`);
+    } catch (error) {
+      console.error('[App] Failed to load initial app data:', error);
+    }
+  };
+
+  const handleLogin = async (loggedInUser: User) => {
+    setUser(loggedInUser);
+    await saveUserSession(loggedInUser);
+    logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
+    
+    // Check if setup is complete after login
+    const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
+    
+    if (setupStatus === true) {
+      // Setup is complete - load data and proceed to main app
+      setIsSetupComplete(true);
+      setNeedsSetup(false);
+      await loadInitialAppData(loggedInUser);
     } else {
       // Setup is not complete - show setup wizard
       setIsSetupComplete(false);
@@ -1346,43 +1369,9 @@ const App: React.FC = () => {
             setIsSetupComplete(true);
             setNeedsSetup(false);
             
-            // Load data after setup completion
-            const savedPlatforms = await loadPlatformConnections();
-            if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
-
-            // Start token refresh service
-            if (isDesktop()) {
-              const { TokenRefreshService } = await import('./services/tokenRefreshService');
-              const tokenRefreshService = TokenRefreshService.getInstance();
-              tokenRefreshService.start();
-              console.log('[App] Token refresh service started');
-            }
-            
-            // Load email connection and start ingestion if connected
-            const { loadEmailConnection } = await import('./services/securityService');
-            const emailConn = await loadEmailConnection();
-            if (emailConn) {
-              if (!savedPlatforms.find(p => p.channel === Channel.EMAIL)) {
-                setConnectedPlatforms([...savedPlatforms, emailConn]);
-              }
-              
-              const { EmailIngestionService } = await import('./services/emailIngestionService');
-              const autoReply = await PlatformService.getAppConfig('emailAutoReply', false);
-              const draftApproval = await PlatformService.getAppConfig('emailDraftApproval', true);
-              
-              EmailIngestionService.startPolling({
-                enabled: true,
-                autoReply,
-                draftApprovalRequired: draftApproval,
-                pollInterval: 5 * 60 * 1000,
-              });
-            }
-
-            const savedImporters = StorageService.loadImporters();
-            if (savedImporters && savedImporters.length > 0) {
-                setImporters(savedImporters);
-            } else {
-                setImporters(MOCK_IMPORTERS);
+            // Load all user-specific data after setup completion
+            if (user) {
+              await loadInitialAppData(user);
             }
           }} />
         </div>

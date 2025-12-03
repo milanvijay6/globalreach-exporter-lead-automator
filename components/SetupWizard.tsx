@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle, Key, Link as LinkIcon, Globe, Shield, ChevronRight, Loader2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react';
 import { PlatformService } from '../services/platformService';
 import { PlatformConnection, Channel, PlatformStatus } from '../types';
 import PlatformConnectModal from './PlatformConnectModal';
-import { loadPlatformConnections } from '../services/securityService';
+import { loadPlatformConnections, loadUserSession } from '../services/securityService';
+import { AutoSaveService } from '../services/autoSaveService';
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -31,21 +32,84 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const autoSaveRef = useRef<AutoSaveService | null>(null);
 
-  // Load existing platform connections on mount
+  // Load current user ID
   useEffect(() => {
-    const loadExistingConnections = async () => {
+    const loadUserId = async () => {
+      try {
+        const user = await loadUserSession();
+        setCurrentUserId(user?.id || null);
+      } catch (error) {
+        console.error('[SetupWizard] Failed to load user ID:', error);
+      }
+    };
+    loadUserId();
+  }, []);
+
+  // Load existing platform connections and wizard progress on mount
+  useEffect(() => {
+    const loadExistingData = async () => {
       try {
         const existingConnections = await loadPlatformConnections();
         if (existingConnections.length > 0) {
           setConnections(existingConnections);
         }
+
+        // Load saved wizard progress
+        if (currentUserId) {
+          const draft = AutoSaveService.loadDraft('setup_wizard_progress', currentUserId);
+          if (draft) {
+            setCurrentStep(draft.currentStep || 0);
+            setApiKey(draft.apiKey || '');
+            setWebhookToken(draft.webhookToken || 'globalreach_secret_token');
+            setTunnelUrl(draft.tunnelUrl || '');
+            if (draft.connections) {
+              setConnections(draft.connections);
+            }
+            console.log('[SetupWizard] Wizard progress restored');
+          }
+        }
       } catch (error) {
-        console.error('Failed to load existing connections:', error);
+        console.error('Failed to load existing data:', error);
       }
     };
-    loadExistingConnections();
-  }, []);
+    loadExistingData();
+  }, [currentUserId]);
+
+  // Initialize auto-save
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    autoSaveRef.current = new AutoSaveService(
+      async (data) => {
+        AutoSaveService.saveDraft('setup_wizard_progress', data, currentUserId);
+      },
+      { debounceMs: 30000, saveOnBlur: true, saveOnUnload: true }
+    );
+
+    return () => {
+      if (autoSaveRef.current) {
+        autoSaveRef.current.destroy();
+        autoSaveRef.current = null;
+      }
+    };
+  }, [currentUserId]);
+
+  // Auto-save wizard progress when form data changes
+  useEffect(() => {
+    if (autoSaveRef.current && currentUserId) {
+      const wizardData = {
+        currentStep,
+        apiKey,
+        webhookToken,
+        tunnelUrl,
+        connections,
+      };
+      autoSaveRef.current.triggerSave(wizardData);
+    }
+  }, [currentStep, apiKey, webhookToken, tunnelUrl, connections, currentUserId]);
 
   const validateStep = (): boolean => {
       setError(null);
@@ -94,6 +158,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           
           // Mark complete
           await PlatformService.setAppConfig('setupComplete', true);
+          
+          // Clear wizard draft after successful completion
+          if (currentUserId) {
+            AutoSaveService.clearDraft('setup_wizard_progress', currentUserId);
+          }
           
           setTimeout(() => {
             setIsSaving(false);

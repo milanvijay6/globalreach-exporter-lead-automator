@@ -31,14 +31,15 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const allProducts = await ProductCatalogService.getProducts();
+      const userId = user?.id;
+      const allProducts = await ProductCatalogService.getProducts(userId);
       setProducts(allProducts);
     } catch (error) {
       Logger.error('[ProductsCatalogPanel] Failed to load products:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     loadProducts();
@@ -50,10 +51,11 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
       await loadProducts();
       return;
     }
+    const userId = user?.id;
     const results = await ProductCatalogService.searchProducts(query, {
       category: categoryFilter !== 'all' ? categoryFilter : undefined,
       status: statusFilter !== 'all' ? (statusFilter as 'active' | 'inactive') : undefined,
-    });
+    }, userId);
     setProducts(results);
   };
 
@@ -102,7 +104,8 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
     if (!importFile) return;
     try {
       setImporting(true);
-      const result = await ProductCatalogService.importProductsFromFile(importFile);
+      const userId = user?.id;
+      const result = await ProductCatalogService.importProductsFromFile(importFile, userId);
       setImportResult(result);
       if (result.success) {
         await loadProducts();
@@ -121,7 +124,8 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
 
   const handleExport = async (format: 'json' | 'csv' = 'json') => {
     try {
-      const data = await ProductCatalogService.exportProducts(format);
+      const userId = user?.id;
+      const data = await ProductCatalogService.exportProducts(format, userId);
       const blob = new Blob([data], { type: format === 'json' ? 'application/json' : 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

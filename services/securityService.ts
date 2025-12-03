@@ -64,37 +64,134 @@ const STORAGE_KEY_EMAIL_CONNECTION = 'globalreach_email_connection';
 
 export const saveUserSession = async (user: User) => {
   try {
+    if (!user || !user.id) {
+      console.error("[Session] Cannot save session: Invalid user object");
+      return;
+    }
+
     const sessionData = JSON.stringify({
       user,
       token: `mock-jwt-${Date.now()}`,
-      expiry: Date.now() + (7 * 24 * 60 * 60 * 1000)
+      expiry: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
+      savedAt: Date.now()
     });
     
     // Use Secure Save if available (Electron), else LocalStorage
     await PlatformService.secureSave(STORAGE_KEY_USER, sessionData);
-  } catch (e) {
-    console.error("Failed to save session", e);
+    console.log(`[Session] Session saved for user: ${user.id}`);
+  } catch (e: any) {
+    console.error("[Session] Failed to save session:", e);
+    // Try localStorage fallback if secureSave fails
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const sessionData = JSON.stringify({
+          user,
+          token: `mock-jwt-${Date.now()}`,
+          expiry: Date.now() + (7 * 24 * 60 * 60 * 1000),
+          savedAt: Date.now()
+        });
+        localStorage.setItem(`web_secure_${STORAGE_KEY_USER}`, btoa(sessionData));
+        console.log("[Session] Session saved to localStorage fallback");
+      } catch (fallbackError) {
+        console.error("[Session] Fallback save also failed:", fallbackError);
+      }
+    }
   }
 };
 
 export const loadUserSession = async (): Promise<User | null> => {
   try {
-    const stored = await PlatformService.secureLoad(STORAGE_KEY_USER);
-    if (!stored) return null;
+    let stored: string | null = null;
     
-    const parsed = JSON.parse(stored);
-    if (parsed.expiry < Date.now()) {
+    // Try secure load first
+    try {
+      stored = await PlatformService.secureLoad(STORAGE_KEY_USER);
+    } catch (e) {
+      console.warn("[Session] Secure load failed, trying localStorage fallback:", e);
+    }
+    
+    // Fallback to localStorage if secureLoad fails or returns null
+    if (!stored && typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const fallbackValue = localStorage.getItem(`web_secure_${STORAGE_KEY_USER}`);
+        if (fallbackValue) {
+          stored = atob(fallbackValue);
+          console.log("[Session] Loaded session from localStorage fallback");
+        }
+      } catch (e) {
+        console.warn("[Session] localStorage fallback also failed:", e);
+      }
+    }
+    
+    if (!stored || stored.trim() === '') {
+      console.log("[Session] No stored session found");
       return null;
     }
+    
+    const parsed = JSON.parse(stored);
+    
+    // Validate session structure
+    if (!parsed || !parsed.user || !parsed.expiry) {
+      console.warn("[Session] Invalid session structure, clearing");
+      await clearUserSession();
+      return null;
+    }
+    
+    // Check if session is expired
+    const now = Date.now();
+    if (parsed.expiry < now) {
+      console.log("[Session] Session expired, clearing");
+      await clearUserSession();
+      return null;
+    }
+    
+    // Validate user object
+    if (!parsed.user.id || !parsed.user.email) {
+      console.warn("[Session] Invalid user object in session, clearing");
+      await clearUserSession();
+      return null;
+    }
+    
+    // Refresh session if it's close to expiry (refresh at 80% of expiry time)
+    const timeUntilExpiry = parsed.expiry - now;
+    const sessionDuration = 7 * 24 * 60 * 60 * 1000; // 7 days
+    if (timeUntilExpiry < (sessionDuration * 0.2)) {
+      console.log("[Session] Session close to expiry, refreshing");
+      await saveUserSession(parsed.user);
+    }
+    
+    console.log(`[Session] Session loaded successfully for user: ${parsed.user.id}`);
     return parsed.user;
-  } catch (e) {
+  } catch (e: any) {
+    console.error("[Session] Failed to load session:", e);
+    // Clear corrupted session
+    try {
+      await clearUserSession();
+    } catch (clearError) {
+      console.error("[Session] Failed to clear corrupted session:", clearError);
+    }
     return null;
   }
 };
 
-export const clearUserSession = () => {
-  // Just overwriting with empty string for simplicity across platforms
-  PlatformService.secureSave(STORAGE_KEY_USER, "");
+export const clearUserSession = async () => {
+  try {
+    // Clear from secure storage
+    await PlatformService.secureSave(STORAGE_KEY_USER, "");
+    
+    // Also clear from localStorage fallback
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        localStorage.removeItem(`web_secure_${STORAGE_KEY_USER}`);
+      } catch (e) {
+        console.warn("[Session] Failed to clear localStorage fallback:", e);
+      }
+    }
+    
+    console.log("[Session] Session cleared");
+  } catch (e) {
+    console.error("[Session] Failed to clear session:", e);
+  }
 };
 
 export const savePlatformConnections = (connections: PlatformConnection[]) => {

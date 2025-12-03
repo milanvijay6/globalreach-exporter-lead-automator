@@ -33,6 +33,55 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
   const [newTag, setNewTag] = useState('');
   const [specKey, setSpecKey] = useState('');
   const [specValue, setSpecValue] = useState('');
+  const autoSaveRef = useRef<import('../services/autoSaveService').AutoSaveService | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Load current user ID
+  useEffect(() => {
+    const loadUserId = async () => {
+      try {
+        const { loadUserSession } = await import('../services/securityService');
+        const user = await loadUserSession();
+        setCurrentUserId(user?.id || null);
+      } catch (error) {
+        console.error('[ProductFormModal] Failed to load user ID:', error);
+      }
+    };
+    loadUserId();
+  }, []);
+
+  // Initialize auto-save
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const initAutoSave = async () => {
+      const { AutoSaveService } = await import('../services/autoSaveService');
+      const draftKey = product ? `product_draft_${product.id}` : 'product_draft_new';
+      
+      autoSaveRef.current = new AutoSaveService(
+        async (data) => {
+          AutoSaveService.saveDraft(draftKey, data, currentUserId || undefined);
+        },
+        { debounceMs: 30000, saveOnBlur: true, saveOnUnload: true }
+      );
+
+      // Load draft if exists
+      const draft = AutoSaveService.loadDraft(draftKey, currentUserId || undefined);
+      if (draft && !product) {
+        setFormData(draft);
+        console.log('[ProductFormModal] Draft restored');
+      }
+    };
+
+    initAutoSave();
+
+    return () => {
+      if (autoSaveRef.current) {
+        autoSaveRef.current.destroy();
+        autoSaveRef.current = null;
+      }
+    };
+  }, [isOpen, product, currentUserId]);
 
   useEffect(() => {
     if (product) {
@@ -41,56 +90,97 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
         photos: product.photos || [],
         relatedProducts: product.relatedProducts || [],
       });
+      // Clear draft when editing existing product
+      if (autoSaveRef.current && currentUserId) {
+        const { AutoSaveService } = require('../services/autoSaveService');
+        AutoSaveService.clearDraft(`product_draft_${product.id}`, currentUserId);
+      }
     } else {
-      setFormData({
-        name: '',
-        category: '',
-        shortDescription: '',
-        fullDescription: '',
-        unit: 'piece',
-        referencePrice: undefined,
-        referencePriceCurrency: 'USD',
-        photos: [],
-        tags: [],
-        specifications: {},
-        relatedProducts: [],
-        status: 'active',
-      });
+      // Try to load draft for new product
+      const { AutoSaveService } = require('../services/autoSaveService');
+      const draft = AutoSaveService.loadDraft('product_draft_new', currentUserId || undefined);
+      if (draft) {
+        setFormData(draft);
+        console.log('[ProductFormModal] Draft restored for new product');
+      } else {
+        setFormData({
+          name: '',
+          category: '',
+          shortDescription: '',
+          fullDescription: '',
+          unit: 'piece',
+          referencePrice: undefined,
+          referencePriceCurrency: 'USD',
+          photos: [],
+          tags: [],
+          specifications: {},
+          relatedProducts: [],
+          status: 'active',
+        });
+      }
     }
     setErrors([]);
-  }, [product, isOpen]);
+  }, [product, isOpen, currentUserId]);
 
   const handleInputChange = (field: keyof Product, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      // Trigger auto-save
+      if (autoSaveRef.current) {
+        autoSaveRef.current.triggerSave(updated);
+      }
+      return updated;
+    });
     setErrors([]);
   };
 
   const handleAddTag = () => {
     if (newTag.trim() && !formData.tags?.includes(newTag.trim())) {
-      setFormData(prev => ({
-        ...prev,
-        tags: [...(prev.tags || []), newTag.trim()],
-      }));
+      setFormData(prev => {
+        const updated = {
+          ...prev,
+          tags: [...(prev.tags || []), newTag.trim()],
+        };
+        // Trigger auto-save
+        if (autoSaveRef.current) {
+          autoSaveRef.current.triggerSave(updated);
+        }
+        return updated;
+      });
       setNewTag('');
     }
   };
 
   const handleRemoveTag = (tag: string) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags?.filter(t => t !== tag) || [],
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        tags: prev.tags?.filter(t => t !== tag) || [],
+      };
+      // Trigger auto-save
+      if (autoSaveRef.current) {
+        autoSaveRef.current.triggerSave(updated);
+      }
+      return updated;
+    });
   };
 
   const handleAddSpec = () => {
     if (specKey.trim() && specValue.trim()) {
-      setFormData(prev => ({
-        ...prev,
-        specifications: {
-          ...(prev.specifications || {}),
-          [specKey.trim()]: specValue.trim(),
-        },
-      }));
+      setFormData(prev => {
+        const updated = {
+          ...prev,
+          specifications: {
+            ...(prev.specifications || {}),
+            [specKey.trim()]: specValue.trim(),
+          },
+        };
+        // Trigger auto-save
+        if (autoSaveRef.current) {
+          autoSaveRef.current.triggerSave(updated);
+        }
+        return updated;
+      });
       setSpecKey('');
       setSpecValue('');
     }
@@ -99,7 +189,14 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
   const handleRemoveSpec = (key: string) => {
     const newSpecs = { ...formData.specifications };
     delete newSpecs[key];
-    setFormData(prev => ({ ...prev, specifications: newSpecs }));
+    setFormData(prev => {
+      const updated = { ...prev, specifications: newSpecs };
+      // Trigger auto-save
+      if (autoSaveRef.current) {
+        autoSaveRef.current.triggerSave(updated);
+      }
+      return updated;
+    });
   };
 
   const handleSave = async () => {
@@ -181,12 +278,22 @@ const ProductFormModal: React.FC<ProductFormModalProps> = ({ isOpen, onClose, pr
       if (product) {
         await ProductCatalogService.updateProduct(product.id, productData);
         Logger.info('[ProductFormModal] Product updated successfully');
+        // Clear draft after successful save
+        if (currentUserId) {
+          const { AutoSaveService } = await import('../services/autoSaveService');
+          AutoSaveService.clearDraft(`product_draft_${product.id}`, currentUserId);
+        }
       } else {
-        await ProductCatalogService.addProduct({
+        const newProduct = await ProductCatalogService.addProduct({
           ...productData,
           photos: [], // Photos will be added after product is created
         } as Omit<Product, 'id' | 'createdAt' | 'updatedAt'>);
         Logger.info('[ProductFormModal] Product added successfully');
+        // Clear draft after successful save
+        if (currentUserId) {
+          const { AutoSaveService } = await import('../services/autoSaveService');
+          AutoSaveService.clearDraft('product_draft_new', currentUserId);
+        }
       }
       onSave();
     } catch (error: any) {

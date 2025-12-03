@@ -1,11 +1,51 @@
 import { PlatformService } from './platformService';
 import { Product, ProductPhoto } from '../types';
 import { Logger } from './loggerService';
+import { loadUserSession } from './securityService';
 
 /**
  * Product Catalog Service
  * Handles product CRUD, search, and bulk import/export
+ * All data is stored per user
  */
+
+// Helper to get storage key for user-specific products
+const getStorageKey = (userId: string): string => `products_catalog_${userId}`;
+
+// Helper to get current user ID
+const getCurrentUserId = async (): Promise<string | null> => {
+  try {
+    const user = await loadUserSession();
+    return user?.id || null;
+  } catch (error) {
+    Logger.error('[ProductCatalogService] Failed to get current user:', error);
+    return null;
+  }
+};
+
+// Migrate global products to user-specific storage
+const migrateGlobalProducts = async (userId: string): Promise<void> => {
+  try {
+    // Check if user already has products (migration already done)
+    const userKey = getStorageKey(userId);
+    const userProducts = await PlatformService.getAppConfig(userKey, null);
+    if (userProducts) {
+      return; // Already migrated
+    }
+
+    // Check for global products
+    const globalProducts = await PlatformService.getAppConfig('products_catalog', null);
+    if (globalProducts) {
+      Logger.info(`[ProductCatalogService] Migrating global products to user ${userId}`);
+      // Copy global products to user-specific storage
+      await PlatformService.setAppConfig(userKey, globalProducts);
+      Logger.info('[ProductCatalogService] Migration completed');
+    }
+  } catch (error) {
+    Logger.error('[ProductCatalogService] Migration failed:', error);
+  }
+};
+
 export const ProductCatalogService = {
   /**
    * Migrates old product format to new format
@@ -45,11 +85,22 @@ export const ProductCatalogService = {
   },
 
   /**
-   * Gets all products from storage
+   * Gets all products from storage (user-specific)
    */
-  getProducts: async (): Promise<Product[]> => {
+  getProducts: async (userId?: string): Promise<Product[]> => {
     try {
-      const data = await PlatformService.getAppConfig('products_catalog', null);
+      // Get user ID if not provided
+      const currentUserId = userId || await getCurrentUserId();
+      if (!currentUserId) {
+        Logger.warn('[ProductCatalogService] No user ID available, returning empty products');
+        return [];
+      }
+
+      // Migrate global products if needed
+      await migrateGlobalProducts(currentUserId);
+
+      const storageKey = getStorageKey(currentUserId);
+      const data = await PlatformService.getAppConfig(storageKey, null);
       if (!data) return [];
       const products = typeof data === 'string' ? JSON.parse(data) : data;
       const productArray = Array.isArray(products) ? products : [];
@@ -80,11 +131,11 @@ export const ProductCatalogService = {
   },
 
   /**
-   * Gets a product by ID
+   * Gets a product by ID (user-specific)
    */
-  getProductById: async (id: string): Promise<Product | null> => {
+  getProductById: async (id: string, userId?: string): Promise<Product | null> => {
     try {
-      const products = await ProductCatalogService.getProducts();
+      const products = await ProductCatalogService.getProducts(userId);
       return products.find(p => p.id === id) || null;
     } catch (error) {
       Logger.error('[ProductCatalogService] Failed to get product:', error);
@@ -93,21 +144,28 @@ export const ProductCatalogService = {
   },
 
   /**
-   * Adds a new product
+   * Adds a new product (user-specific)
    */
-  addProduct: async (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Promise<Product> => {
+  addProduct: async (product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>, userId?: string): Promise<Product> => {
     try {
-      const products = await ProductCatalogService.getProducts();
+      const currentUserId = userId || await getCurrentUserId();
+      if (!currentUserId) {
+        throw new Error('User ID is required to add products');
+      }
+
+      const products = await ProductCatalogService.getProducts(currentUserId);
       const now = Date.now();
       const newProduct: Product = {
         ...product,
         id: `product_${now}_${Math.random().toString(36).substr(2, 9)}`,
         createdAt: now,
         updatedAt: now,
+        createdBy: currentUserId,
       };
       products.push(newProduct);
-      await PlatformService.setAppConfig('products_catalog', JSON.stringify(products));
-      Logger.info('[ProductCatalogService] Product added:', newProduct.id);
+      const storageKey = getStorageKey(currentUserId);
+      await PlatformService.setAppConfig(storageKey, JSON.stringify(products));
+      Logger.info(`[ProductCatalogService] Product added for user ${currentUserId}:`, newProduct.id);
       return newProduct;
     } catch (error) {
       Logger.error('[ProductCatalogService] Failed to add product:', error);
@@ -116,11 +174,16 @@ export const ProductCatalogService = {
   },
 
   /**
-   * Updates an existing product
+   * Updates an existing product (user-specific)
    */
-  updateProduct: async (id: string, updates: Partial<Product>): Promise<Product> => {
+  updateProduct: async (id: string, updates: Partial<Product>, userId?: string): Promise<Product> => {
     try {
-      const products = await ProductCatalogService.getProducts();
+      const currentUserId = userId || await getCurrentUserId();
+      if (!currentUserId) {
+        throw new Error('User ID is required to update products');
+      }
+
+      const products = await ProductCatalogService.getProducts(currentUserId);
       const index = products.findIndex(p => p.id === id);
       if (index === -1) {
         throw new Error(`Product with id ${id} not found`);
@@ -130,10 +193,12 @@ export const ProductCatalogService = {
         ...updates,
         id, // Ensure ID doesn't change
         updatedAt: Date.now(),
+        updatedBy: currentUserId,
       };
       products[index] = updated;
-      await PlatformService.setAppConfig('products_catalog', JSON.stringify(products));
-      Logger.info('[ProductCatalogService] Product updated:', id);
+      const storageKey = getStorageKey(currentUserId);
+      await PlatformService.setAppConfig(storageKey, JSON.stringify(products));
+      Logger.info(`[ProductCatalogService] Product updated for user ${currentUserId}:`, id);
       return updated;
     } catch (error) {
       Logger.error('[ProductCatalogService] Failed to update product:', error);
@@ -142,17 +207,23 @@ export const ProductCatalogService = {
   },
 
   /**
-   * Deletes a product
+   * Deletes a product (user-specific)
    */
-  deleteProduct: async (id: string): Promise<void> => {
+  deleteProduct: async (id: string, userId?: string): Promise<void> => {
     try {
-      const products = await ProductCatalogService.getProducts();
+      const currentUserId = userId || await getCurrentUserId();
+      if (!currentUserId) {
+        throw new Error('User ID is required to delete products');
+      }
+
+      const products = await ProductCatalogService.getProducts(currentUserId);
       const filtered = products.filter(p => p.id !== id);
       if (filtered.length === products.length) {
         throw new Error(`Product with id ${id} not found`);
       }
-      await PlatformService.setAppConfig('products_catalog', JSON.stringify(filtered));
-      Logger.info('[ProductCatalogService] Product deleted:', id);
+      const storageKey = getStorageKey(currentUserId);
+      await PlatformService.setAppConfig(storageKey, JSON.stringify(filtered));
+      Logger.info(`[ProductCatalogService] Product deleted for user ${currentUserId}:`, id);
     } catch (error) {
       Logger.error('[ProductCatalogService] Failed to delete product:', error);
       throw error;
@@ -162,9 +233,9 @@ export const ProductCatalogService = {
   /**
    * Searches products by name, category, tags, or description
    */
-  searchProducts: async (query: string, filters?: { category?: string; tags?: string[]; status?: 'active' | 'inactive' }): Promise<Product[]> => {
+  searchProducts: async (query: string, filters?: { category?: string; tags?: string[]; status?: 'active' | 'inactive' }, userId?: string): Promise<Product[]> => {
     try {
-      let products = await ProductCatalogService.getProducts();
+      let products = await ProductCatalogService.getProducts(userId);
       
       // Apply filters
       if (filters?.category) {
@@ -198,9 +269,9 @@ export const ProductCatalogService = {
   /**
    * Gets products by category
    */
-  getProductsByCategory: async (category: string): Promise<Product[]> => {
+  getProductsByCategory: async (category: string, userId?: string): Promise<Product[]> => {
     try {
-      const products = await ProductCatalogService.getProducts();
+      const products = await ProductCatalogService.getProducts(userId);
       return products.filter(p => p.category.toLowerCase() === category.toLowerCase());
     } catch (error) {
       Logger.error('[ProductCatalogService] Failed to get products by category:', error);
@@ -212,8 +283,17 @@ export const ProductCatalogService = {
    * Imports products from file (Excel/CSV)
    * Returns success status, count of imported items, and any errors
    */
-  importProductsFromFile: async (file: File): Promise<{ success: boolean; imported: number; errors: string[] }> => {
+  importProductsFromFile: async (file: File, userId?: string): Promise<{ success: boolean; imported: number; errors: string[] }> => {
     try {
+      const currentUserId = userId || await getCurrentUserId();
+      if (!currentUserId) {
+        return {
+          success: false,
+          imported: 0,
+          errors: ['User ID is required to import products'],
+        };
+      }
+
       const { FileImportService } = await import('./fileImportService');
       const parseResult = await FileImportService.parseProductsFromFile(file);
       
@@ -225,7 +305,7 @@ export const ProductCatalogService = {
         };
       }
 
-      const existingProducts = await ProductCatalogService.getProducts();
+      const existingProducts = await ProductCatalogService.getProducts(currentUserId);
       const existingIds = new Set(existingProducts.map(p => p.id));
       const existingNames = new Set(existingProducts.map(p => p.name.toLowerCase()));
       
@@ -272,8 +352,8 @@ export const ProductCatalogService = {
             });
           }
           
-          const newProduct: Product = {
-            id: `product_${now}_${Math.random().toString(36).substr(2, 9)}`,
+          // Add product using the service method (which handles user-specific storage)
+          const addedProduct = await ProductCatalogService.addProduct({
             name: productData.name,
             category: productData.category || 'Uncategorized',
             shortDescription: productData.shortDescription || '',
@@ -286,12 +366,10 @@ export const ProductCatalogService = {
             specifications: productData.specifications || {},
             relatedProducts: productData.relatedProducts || [],
             status: productData.status === 'inactive' ? 'inactive' : 'active',
-            createdAt: now,
-            updatedAt: now,
-          };
-
-          existingProducts.push(newProduct);
-          existingNames.add(newProduct.name.toLowerCase());
+            createdBy: currentUserId,
+          }, currentUserId);
+          
+          existingNames.add(addedProduct.name.toLowerCase());
           imported++;
         } catch (error: any) {
           errors.push(`Failed to import product "${productData.name}": ${error.message}`);
@@ -299,8 +377,7 @@ export const ProductCatalogService = {
       }
 
       if (imported > 0) {
-        await PlatformService.setAppConfig('products_catalog', JSON.stringify(existingProducts));
-        Logger.info(`[ProductCatalogService] Imported ${imported} products`);
+        Logger.info(`[ProductCatalogService] Imported ${imported} products for user ${currentUserId}`);
       }
 
       return {

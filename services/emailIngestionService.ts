@@ -152,8 +152,13 @@ export const EmailIngestionService = {
         return;
       }
 
+      // Get current user ID for user-specific data
+      const { loadUserSession } = await import('./securityService');
+      const user = await loadUserSession();
+      const userId = user?.id;
+
       // Find matching importer by email
-      const importers = await EmailIngestionService.findImportersByEmail(senderEmail);
+      const importers = await EmailIngestionService.findImportersByEmail(senderEmail, userId);
       
       if (importers.length === 0) {
         Logger.debug('[EmailIngestion] No matching lead found for email', { senderEmail });
@@ -172,11 +177,19 @@ export const EmailIngestionService = {
   /**
    * Finds importers by email address
    */
-  findImportersByEmail: async (email: string): Promise<Importer[]> => {
+  findImportersByEmail: async (email: string, userId?: string): Promise<Importer[]> => {
     try {
+      // Get user ID if not provided
+      let currentUserId = userId;
+      if (!currentUserId) {
+        const { loadUserSession } = await import('./securityService');
+        const user = await loadUserSession();
+        currentUserId = user?.id;
+      }
+
       // Load importers from storage
       const { StorageService } = await import('./storageService');
-      const allImporters = StorageService.loadImporters() || [];
+      const allImporters = await StorageService.loadImporters(currentUserId || undefined) || [];
       
       // Match by email field or contactDetail
       return allImporters.filter(imp => {
@@ -223,9 +236,13 @@ export const EmailIngestionService = {
 
       // Save updated importer
       const { StorageService } = await import('./storageService');
-      const allImporters = StorageService.loadImporters() || [];
+      const { loadUserSession } = await import('./securityService');
+      const user = await loadUserSession();
+      const userId = user?.id;
+      
+      const allImporters = await StorageService.loadImporters(userId || undefined) || [];
       const updatedImporters = allImporters.map(imp => imp.id === updatedImporter.id ? updatedImporter : imp);
-      StorageService.saveImporters(updatedImporters);
+      await StorageService.saveImporters(updatedImporters, userId || undefined);
 
       Logger.info('[EmailIngestion] Processed email from lead', {
         importerId: importer.id,

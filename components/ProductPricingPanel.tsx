@@ -31,9 +31,10 @@ const ProductPricingPanel: React.FC<ProductPricingPanelProps> = ({ user }) => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      const userId = user?.id;
       const [pricesData, productsData] = await Promise.all([
         ProductPricingService.getPrices(),
-        ProductCatalogService.getProducts(),
+        ProductCatalogService.getProducts(userId),
       ]);
       setPrices(pricesData);
       setProducts(productsData);
@@ -42,7 +43,7 @@ const ProductPricingPanel: React.FC<ProductPricingPanelProps> = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     loadData();
