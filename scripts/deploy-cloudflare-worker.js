@@ -148,13 +148,27 @@ async function deployWorker() {
     console.log('[Deploy Worker] Back4App URL:', back4appUrl);
 
     // Get or generate worker name
-    let workerName = await getConfig('cloudflareWorkerName');
+    // Try to get from Config, but if Master Key not available, generate new one
+    let workerName = null;
+    try {
+      workerName = await getConfig('cloudflareWorkerName');
+    } catch (error) {
+      console.warn('[Deploy Worker] Could not load worker name from Config (Master Key may be missing)');
+    }
+    
     if (!workerName) {
       // Generate unique worker name
       const timestamp = Date.now();
       workerName = `shreenathji-oauth-${timestamp}`;
-      await setConfig('cloudflareWorkerName', workerName);
       console.log('[Deploy Worker] Generated new worker name:', workerName);
+      
+      // Try to save, but don't fail if Master Key is missing
+      try {
+        await setConfig('cloudflareWorkerName', workerName);
+      } catch (error) {
+        console.warn('[Deploy Worker] Could not save worker name to Config (Master Key may be missing)');
+        console.warn('[Deploy Worker] Worker will still be deployed, but name won\'t be saved for next deployment');
+      }
     } else {
       console.log('[Deploy Worker] Using existing worker name:', workerName);
     }
@@ -233,9 +247,16 @@ async function deployWorker() {
       const workerUrl = urlMatch[0];
       console.log('[Deploy Worker] Worker deployed successfully:', workerUrl);
       
-      // Store worker URL in Parse Config
-      await setConfig('cloudflareWorkerUrl', workerUrl);
-      console.log('[Deploy Worker] Worker URL stored in Parse Config');
+      // Store worker URL in Parse Config (optional - don't fail if Master Key missing)
+      try {
+        await setConfig('cloudflareWorkerUrl', workerUrl);
+        console.log('[Deploy Worker] Worker URL stored in Parse Config');
+      } catch (error) {
+        console.warn('[Deploy Worker] Could not save worker URL to Config (Master Key may be missing)');
+        console.warn('[Deploy Worker] Worker deployed successfully, but URL not saved to Config');
+        console.warn('[Deploy Worker] Worker URL:', workerUrl);
+        console.warn('[Deploy Worker] Please manually add this URL to Back4App environment variables as CLOUDFLARE_WORKER_URL');
+      }
       
       return workerUrl;
     } else {

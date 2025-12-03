@@ -29,12 +29,10 @@ router.post('/deploy', async (req, res) => {
       });
     }
 
-    // Check if Parse Master Key is available (required for Config operations)
+    // Check if Parse Master Key is available (optional - deployment will still work but won't save to Config)
     if (!process.env.PARSE_MASTER_KEY) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Parse Master Key not configured. Set PARSE_MASTER_KEY environment variable in Back4App. Go to: App Settings → Security & Keys → Master Key' 
-      });
+      console.warn('[Cloudflare Worker API] PARSE_MASTER_KEY not set - deployment will work but worker URL won\'t be saved to Config');
+      console.warn('[Cloudflare Worker API] You can manually add the worker URL to environment variables after deployment');
     }
 
     console.log('[Cloudflare Worker API] Deploying worker...');
