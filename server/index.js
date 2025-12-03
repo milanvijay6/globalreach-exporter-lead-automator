@@ -97,6 +97,15 @@ try {
   cloudflareWorkerRoutes = cloudflareWorkerRoutes || emptyRouter;
 }
 
+// Root endpoint - simple response for quick health checks
+app.get('/', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok',
+    message: 'GlobalReach API Server',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint (for Back4App and load balancers)
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -212,10 +221,19 @@ process.on('unhandledRejection', (reason, promise) => {
 // Start server
 let server;
 try {
-  server = app.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
-    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    logger.info(`Health check available at: http://localhost:${PORT}/health`);
+  // Log startup attempt
+  logger.info(`[Server] Starting server on port ${PORT}...`);
+  logger.info(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  server = app.listen(PORT, '0.0.0.0', () => {
+    logger.info(`[Server] ✓ Server successfully started on port ${PORT}`);
+    logger.info(`[Server] ✓ Health check available at: http://0.0.0.0:${PORT}/health`);
+    logger.info(`[Server] ✓ Root endpoint available at: http://0.0.0.0:${PORT}/`);
+    
+    // Signal that server is ready
+    if (process.send) {
+      process.send('ready');
+    }
     
     // Note: Cloudflare Worker auto-deployment is disabled on startup to prevent deployment failures
     // Use the API endpoint POST /api/cloudflare-worker/deploy to deploy manually
