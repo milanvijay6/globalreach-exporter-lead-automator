@@ -235,7 +235,7 @@ const App: React.FC = () => {
             setIsSetupComplete(setupStatus === true);
 
             // If user session exists, check if setup is complete
-            if (savedUser) {
+                if (savedUser) {
                 if (setupStatus === true) {
                     // User exists and setup is complete - load data and proceed
                     setUser(savedUser);
@@ -344,11 +344,11 @@ const App: React.FC = () => {
         // User is logged in - open settings modal to handle callback
         setShowSettingsModal(true);
         // The SettingsModal and EmailOAuthModal will detect the URL parameters when they open
-      } else {
+                } else {
         // User not logged in yet - store callback info and wait for login
         // The callback will be processed after user logs in
         console.log('[App] OAuth callback received but user not logged in - will process after login');
-      }
+        }
     }
   }, [user]);
 
@@ -1369,11 +1369,11 @@ const App: React.FC = () => {
 
   // 2. Login Screen (Show first if not authenticated)
   if (!user) {
-    return (
-      <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+      return (
+        <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
         <LoginScreen onLogin={handleLogin} />
-      </div>
-    );
+        </div>
+      );
   }
 
   // 3. Setup Wizard (After login, if setup is not complete)

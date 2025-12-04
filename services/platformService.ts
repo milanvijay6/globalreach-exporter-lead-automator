@@ -271,3 +271,115 @@ export const PlatformService = {
     window.location.reload();
   }
 };
+        console.warn('[PlatformService] Failed to set config via API, using localStorage fallback:', error);
+        // Fallback to localStorage - save as user-specific if userId available
+        let userId: string | null = null;
+        try {
+          const sessionData = localStorage.getItem('web_secure_globalreach_user_session');
+          if (sessionData) {
+            const parsed = JSON.parse(atob(sessionData));
+            if (parsed && parsed.user && parsed.user.id) {
+              userId = parsed.user.id;
+            }
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+
+        const storageKey = userId ? `config_${userId}_${key}` : `config_${key}`;
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(value));
+        } catch (e) {
+          console.error('[PlatformService] Failed to save to localStorage:', e);
+        }
+      }
+    }
+  },
+
+  getVersion: async (): Promise<string> => {
+    if (window.electronAPI) {
+      return await window.electronAPI.getAppVersion();
+    }
+    return "1.0.0 (Web)";
+  },
+
+  installUpdate: async () => {
+    if (window.electronAPI) {
+      await window.electronAPI.installUpdate();
+    }
+  },
+
+  /**
+   * Creates an encrypted backup.
+   * Desktop: Dialog Save + AES.
+   * Web: JSON Download.
+   */
+  backupData: async (data: string): Promise<{ success: boolean; path?: string; error?: string }> => {
+    if (window.electronAPI) {
+      return await window.electronAPI.backupData(data);
+    } else {
+      try {
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `GlobalReach_Backup_${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    }
+  },
+
+  /**
+   * Restores data.
+   * Desktop: Dialog Open + AES Decrypt.
+   * Web: File Input Upload + JSON Parse.
+   */
+  restoreData: async (): Promise<{ success: boolean; data?: string; error?: string }> => {
+    if (window.electronAPI) {
+      return await window.electronAPI.restoreData();
+    } else {
+      return new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e: any) => {
+          const file = e.target.files[0];
+          if (!file) {
+            resolve({ success: false, error: "No file selected" });
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            resolve({ success: true, data: evt.target?.result as string });
+          };
+          reader.readAsText(file);
+        };
+        input.click();
+      });
+    }
+  },
+
+  /**
+   * Resets the application configuration, triggering the Setup Wizard on next load.
+   */
+  resetConfiguration: async (): Promise<void> => {
+    if (window.electronAPI) {
+        await window.electronAPI.resetApp();
+    } else {
+        localStorage.removeItem('config_setupComplete');
+        localStorage.removeItem('config_webhookToken');
+        localStorage.removeItem('config_tunnelUrl');
+        localStorage.removeItem('web_secure_user_provided_api_key');
+        localStorage.removeItem('web_secure_globalreach_platforms');
+        localStorage.removeItem('web_secure_globalreach_user_session');
+    }
+    // Reload to trigger the wizard
+    window.location.reload();
+  }
+};

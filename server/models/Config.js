@@ -14,6 +14,24 @@ if (process.env.PARSE_MASTER_KEY && !Parse.masterKey) {
   Parse.masterKey = process.env.PARSE_MASTER_KEY;
 }
 
+// Helper function to ensure Parse is initialized before using it
+function ensureParseInitialized() {
+  if (!Parse.applicationId && process.env.PARSE_APPLICATION_ID) {
+    Parse.initialize(
+      process.env.PARSE_APPLICATION_ID,
+      process.env.PARSE_JAVASCRIPT_KEY || ''
+    );
+    Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
+    if (process.env.PARSE_MASTER_KEY) {
+      Parse.masterKey = process.env.PARSE_MASTER_KEY;
+    }
+  }
+  
+  if (!Parse.applicationId) {
+    throw new Error('Parse is not initialized. Please ensure PARSE_APPLICATION_ID is set.');
+  }
+}
+
 const Config = Parse.Object.extend('Config', {
   // Parse automatically handles objectId, createdAt, updatedAt
 }, {
@@ -26,6 +44,7 @@ const Config = Parse.Object.extend('Config', {
    * @param {boolean} useMasterKey - Whether to use master key (default: false, uses user context)
    */
   async get(key, defaultValue = null, userId = null, useMasterKey = false) {
+    ensureParseInitialized();
     // Try user-specific config first if userId is provided
     if (userId) {
       const userKey = `config_${userId}_${key}`;
@@ -63,6 +82,7 @@ const Config = Parse.Object.extend('Config', {
    * @param {boolean} useMasterKey - Whether to use master key (default: false)
    */
   async set(key, value, userId = null, useMasterKey = false) {
+    ensureParseInitialized();
     // Use user-specific key if userId is provided
     const configKey = userId ? `config_${userId}_${key}` : key;
     
@@ -88,6 +108,7 @@ const Config = Parse.Object.extend('Config', {
    * @param {boolean} useMasterKey - Whether to use master key
    */
   async getAll(userId = null, useMasterKey = false) {
+    ensureParseInitialized();
     const query = new Parse.Query(Config);
     
     if (userId) {
@@ -122,9 +143,3 @@ const Config = Parse.Object.extend('Config', {
 });
 
 module.exports = Config;
-
-
-
-
-
-

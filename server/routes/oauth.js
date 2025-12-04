@@ -125,7 +125,7 @@ router.get('/callback', async (req, res) => {
     } catch (redirectError) {
       console.error('[OAuth] Redirect failed:', redirectError);
       // Fallback: send HTML with JavaScript redirect
-      res.send(`
+    res.send(`
         <html>
           <body>
             <h2>Redirecting...</h2>

@@ -27,7 +27,13 @@ const logger = winston.createLogger({
 // Initialize Parse with error handling
 try {
   require('./config/parse');
+  // Verify Parse is initialized
+  if (!Parse.applicationId) {
+    throw new Error('Parse initialization failed: applicationId is not set');
+  }
   logger.info('[Server] Parse initialized successfully');
+  logger.info(`[Server] Parse Application ID: ${Parse.applicationId}`);
+  logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
 } catch (error) {
   logger.error('[Server] Failed to initialize Parse:', error);
   // Continue anyway - some features may not work, but server should still start
@@ -193,7 +199,7 @@ app.get('*', (req, res, next) => {
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);
   if (!res.headersSent) {
-    res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  res.status(500).json({ success: false, error: err.message || 'Internal server error' });
   }
 });
 

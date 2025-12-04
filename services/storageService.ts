@@ -108,11 +108,11 @@ export const StorageService = {
       } else {
         // Fallback to global storage if no user ID
         const encrypted = localStorage.getItem(GLOBAL_STORAGE_KEY);
-        if (!encrypted) return null;
-        
-        try {
-          const json = decrypt(encrypted);
-          return JSON.parse(json);
+    if (!encrypted) return null;
+    
+    try {
+      const json = decrypt(encrypted);
+      return JSON.parse(json);
         } catch (e) {
           console.error("Failed to load importers", e);
           return null;
