@@ -69,7 +69,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </div>
 
             <Section id="getting-started" title="Getting Started" icon={Shield}>
-                <p><strong>1. Configuration:</strong> Ensure you have completed the Setup Wizard. You need a valid Gemini API key for AI features to work.</p>
+                <p><strong>1. Configuration:</strong> Configure your API keys in Settings. You need a valid Gemini API key for AI features to work.</p>
                 <p><strong>2. Connecting Accounts:</strong> Go to Settings &gt; Integrations to link your WhatsApp or WeChat accounts. Use the QR code scanner on your mobile device.</p>
                 <p><strong>3. Importing Leads:</strong> Use the Bulk Import tool (Upload Icon) to paste CSV data. Ensure your format matches: <code>Name, Company, Country, Contact...</code></p>
             </Section>

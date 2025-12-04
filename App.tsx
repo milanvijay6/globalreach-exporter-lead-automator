@@ -13,7 +13,6 @@ import OwnerAdminPanel from './components/OwnerAdminPanel';
 import { PinService } from './services/pinService';
 import { OwnerAuthService } from './services/ownerAuthService';
 import Navigation from './components/Navigation';
-import SetupWizard from './components/SetupWizard';
 import HelpModal from './components/HelpModal';
 import CampaignManager from './components/CampaignManager';
 import CalendarView from './components/CalendarView';
@@ -214,8 +213,6 @@ const App: React.FC = () => {
   
   // isSetupComplete is null initially to represent "loading" state
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
-  // Track if setup is needed after login
-  const [needsSetup, setNeedsSetup] = useState<boolean>(false);
 
   // Campaigns & Calendar
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -228,16 +225,10 @@ const App: React.FC = () => {
         try {
             // Check for existing user session first
             const savedUser = await loadUserSession();
-            
-            // Check setup status (will be user-specific if user is logged in)
-            const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
-            console.log(`[App] Loaded Setup Status for user ${savedUser?.id || 'none'}:`, setupStatus);
-            setIsSetupComplete(setupStatus === true);
 
-            // If user session exists, check if setup is complete
+            // If user session exists, load data and proceed
                 if (savedUser) {
-                if (setupStatus === true) {
-                    // User exists and setup is complete - load data and proceed
+                    // User exists - load data and proceed
                     setUser(savedUser);
                     logSecurityEvent('SESSION_RESTORE', savedUser.id, 'Restored from secure storage');
                     
@@ -247,16 +238,15 @@ const App: React.FC = () => {
                     
                     // Load all user-specific data
                     await loadInitialAppData(savedUser);
+                    setIsSetupComplete(true);
                 } else {
-                    // User exists but setup is not complete - show setup wizard
-                    setUser(savedUser);
-                    setNeedsSetup(true);
+                    // No user session - setup is complete (no wizard needed)
+                    setIsSetupComplete(true);
                 }
-            }
             // If no user session, LoginScreen will be shown (handled in render logic)
         } catch (e) {
             console.error("Initialization failed", e);
-            setIsSetupComplete(false);
+            setIsSetupComplete(true); // Allow app to proceed even on error
         }
     };
     init();
@@ -1129,20 +1119,9 @@ const App: React.FC = () => {
     }
     logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
     
-    // Check if setup is complete after login (will be user-specific)
-    const setupStatus = await PlatformService.getAppConfig('setupComplete', false);
-    console.log(`[App] Setup status for user ${loggedInUser.id} after login:`, setupStatus);
-    
-    if (setupStatus === true) {
-      // Setup is complete - load data and proceed to main app
-      setIsSetupComplete(true);
-      setNeedsSetup(false);
-      await loadInitialAppData(loggedInUser);
-    } else {
-      // Setup is not complete - show setup wizard
-      setIsSetupComplete(false);
-      setNeedsSetup(true);
-    }
+    // Load data and proceed to main app
+    setIsSetupComplete(true);
+    await loadInitialAppData(loggedInUser);
   };
 
   const handleLogout = () => {
@@ -1376,25 +1355,7 @@ const App: React.FC = () => {
       );
   }
 
-  // 3. Setup Wizard (After login, if setup is not complete)
-  if (user && needsSetup) {
-      return (
-        <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-          <SetupWizard onComplete={async () => {
-            // SetupWizard already sets setupComplete to true, just update state
-            setIsSetupComplete(true);
-            setNeedsSetup(false);
-            
-            // Load all user-specific data after setup completion
-            if (user) {
-              await loadInitialAppData(user);
-            }
-          }} />
-        </div>
-      );
-  }
-
-  // 4. PIN Lock Screen
+  // 3. PIN Lock Screen
   if (user && isLocked) {
     return (
       <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>

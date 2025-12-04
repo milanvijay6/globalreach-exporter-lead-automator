@@ -453,7 +453,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleFactoryReset = async () => {
-      if (window.confirm("Are you sure? This will clear your API keys and connection settings. You will need to run the Setup Wizard again.")) {
+      if (window.confirm("Are you sure? This will clear your API keys and connection settings.")) {
           await PlatformService.resetConfiguration();
       }
   };
@@ -1481,7 +1481,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <AlertCircle className="w-4 h-4" /> Danger Zone
                     </h3>
                     <p className="text-xs text-red-700 mb-4">
-                        Resetting configuration will wipe your API keys and connection settings. You will need to run the Setup Wizard again.
+                        Resetting configuration will wipe your API keys and connection settings.
                     </p>
                     <button 
                         onClick={handleFactoryReset}
