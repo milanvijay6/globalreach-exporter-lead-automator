@@ -11,19 +11,64 @@ router.get('/test', (req, res) => {
 // It redirects back to the frontend with the OAuth code
 router.get('/callback', async (req, res) => {
   try {
+    // Enhanced logging to debug missing code issue
+    const queryKeys = Object.keys(req.query);
+    const rawUrl = req.originalUrl || req.url;
+    const fullUrl = `${req.protocol}://${req.get('host')}${rawUrl}`;
+    
     console.log('[OAuth] Callback route hit:', {
       method: req.method,
       path: req.path,
-      fullUrl: req.originalUrl,
-      query: Object.keys(req.query),
+      fullUrl: rawUrl,
+      queryKeys: queryKeys,
+      queryValues: queryKeys.reduce((acc, key) => {
+        acc[key] = req.query[key] ? (typeof req.query[key] === 'string' ? req.query[key].substring(0, 50) : 'present') : 'missing';
+        return acc;
+      }, {}),
       hasCode: !!req.query.code,
       hasState: !!req.query.state,
       hasError: !!req.query.error,
       host: req.get('host'),
-      protocol: req.protocol
+      protocol: req.protocol,
+      headers: {
+        'user-agent': req.get('user-agent')?.substring(0, 100),
+        'referer': req.get('referer')?.substring(0, 100),
+        'x-forwarded-proto': req.get('x-forwarded-proto'),
+        'x-forwarded-host': req.get('x-forwarded-host')
+      }
     });
 
-    const { code, state, error } = req.query;
+    // Try to get code from query, but also check URL directly in case of parsing issues
+    let code = req.query.code;
+    let state = req.query.state;
+    let error = req.query.error;
+    
+    // If code is missing from query, try to extract from URL directly
+    if (!code && rawUrl) {
+      const codeMatch = rawUrl.match(/[?&]code=([^&]+)/);
+      if (codeMatch) {
+        code = decodeURIComponent(codeMatch[1]);
+        console.log('[OAuth] Extracted code from URL directly');
+      }
+    }
+    
+    // If state is missing from query, try to extract from URL directly
+    if (!state && rawUrl) {
+      const stateMatch = rawUrl.match(/[?&]state=([^&]+)/);
+      if (stateMatch) {
+        state = decodeURIComponent(stateMatch[1]);
+        console.log('[OAuth] Extracted state from URL directly');
+      }
+    }
+    
+    // If error is missing from query, try to extract from URL directly
+    if (!error && rawUrl) {
+      const errorMatch = rawUrl.match(/[?&]error=([^&]+)/);
+      if (errorMatch) {
+        error = decodeURIComponent(errorMatch[1]);
+        console.log('[OAuth] Extracted error from URL directly');
+      }
+    }
     
     if (error) {
       console.error('[OAuth] OAuth error received:', error);
@@ -42,8 +87,12 @@ router.get('/callback', async (req, res) => {
     if (!code) {
       console.warn('[OAuth] Missing authorization code in callback', {
         query: req.query,
-        fullUrl: req.originalUrl,
-        hasQuery: Object.keys(req.query).length > 0
+        queryKeys: Object.keys(req.query),
+        fullUrl: rawUrl,
+        hasQuery: Object.keys(req.query).length > 0,
+        urlHasCode: rawUrl.includes('code='),
+        urlHasState: rawUrl.includes('state='),
+        urlHasError: rawUrl.includes('error=')
       });
       
       // Check if this is a direct visit (no query params) vs an actual OAuth callback
@@ -83,6 +132,17 @@ router.get('/callback', async (req, res) => {
       }
       
       // OAuth callback without code - actual error
+      // Log detailed information for debugging
+      console.error('[OAuth] OAuth callback received without authorization code', {
+        hasQueryParams: Object.keys(req.query).length > 0,
+        queryParams: req.query,
+        rawUrl: rawUrl,
+        urlContainsCode: rawUrl.includes('code='),
+        urlContainsError: rawUrl.includes('error='),
+        referer: req.get('referer'),
+        userAgent: req.get('user-agent')?.substring(0, 100)
+      });
+      
       return res.send(`
         <html>
           <head>
@@ -90,6 +150,7 @@ router.get('/callback', async (req, res) => {
             <style>
               body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; }
               .error { background: #ffebee; border-left: 4px solid #f44336; padding: 15px; margin: 20px 0; }
+              .debug { background: #f5f5f5; padding: 10px; margin: 10px 0; font-size: 12px; font-family: monospace; }
             </style>
           </head>
           <body>
@@ -98,14 +159,26 @@ router.get('/callback', async (req, res) => {
               <p><strong>Missing authorization code.</strong></p>
               <p>The OAuth callback did not include the required authorization code. This can happen if:</p>
               <ul>
-                <li>The OAuth flow was cancelled</li>
+                <li>The OAuth flow was cancelled or denied</li>
                 <li>There was an error during authentication</li>
                 <li>The redirect URI doesn't match exactly in Google Cloud Console</li>
+                <li>The authorization code expired (codes expire quickly)</li>
               </ul>
             </div>
-            <p>Please try connecting again from the application.</p>
+            <div class="debug">
+              <strong>Debug Info:</strong><br>
+              URL: ${rawUrl.substring(0, 200)}<br>
+              Has Query Params: ${Object.keys(req.query).length > 0 ? 'Yes' : 'No'}<br>
+              Query Keys: ${Object.keys(req.query).join(', ') || 'None'}
+            </div>
+            <p><strong>Next Steps:</strong></p>
+            <ol>
+              <li>Verify the redirect URI in Google Cloud Console matches exactly: <code>${fullUrl.split('?')[0]}</code></li>
+              <li>Try connecting again from the application</li>
+              <li>Make sure you complete the OAuth flow in one session (don't close the browser window)</li>
+            </ol>
             <p><small>You can close this window.</small></p>
-            <script>setTimeout(() => window.close(), 5000);</script>
+            <script>setTimeout(() => window.close(), 10000);</script>
           </body>
         </html>
       `);
