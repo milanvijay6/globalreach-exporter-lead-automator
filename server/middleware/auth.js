@@ -1,7 +1,8 @@
 const Parse = require('parse/node');
 
-// Ensure Parse is initialized
-if (!Parse.applicationId && process.env.PARSE_APPLICATION_ID) {
+// Ensure Parse is initialized (check for valid non-empty applicationId)
+const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
+if (!hasValidAppId && process.env.PARSE_APPLICATION_ID && process.env.PARSE_APPLICATION_ID.trim() !== '') {
   Parse.initialize(
     process.env.PARSE_APPLICATION_ID,
     process.env.PARSE_JAVASCRIPT_KEY || ''
@@ -13,6 +14,15 @@ if (!Parse.applicationId && process.env.PARSE_APPLICATION_ID) {
 }
 
 const authenticateUser = async (req, res, next) => {
+  // Check if Parse is initialized
+  const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
+  if (!hasValidAppId) {
+    // If Parse is not initialized, allow requests through without authentication
+    req.user = null;
+    req.userId = null;
+    return next();
+  }
+
   // Extract session token from various sources
   let sessionToken = req.get('X-Parse-Session-Token') || 
                      req.query.sessionToken || 

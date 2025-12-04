@@ -27,13 +27,15 @@ const logger = winston.createLogger({
 // Initialize Parse with error handling
 try {
   require('./config/parse');
-  // Verify Parse is initialized
-  if (!Parse.applicationId) {
-    throw new Error('Parse initialization failed: applicationId is not set');
+  // Verify Parse is initialized (check for valid non-empty applicationId)
+  if (Parse.applicationId && Parse.applicationId.trim() !== '') {
+    logger.info('[Server] Parse initialized successfully');
+    logger.info(`[Server] Parse Application ID: ${Parse.applicationId}`);
+    logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
+  } else {
+    logger.warn('[Server] Parse not initialized - PARSE_APPLICATION_ID not set or empty');
+    logger.warn('[Server] Parse-dependent features (Config API, etc.) will return default values');
   }
-  logger.info('[Server] Parse initialized successfully');
-  logger.info(`[Server] Parse Application ID: ${Parse.applicationId}`);
-  logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
 } catch (error) {
   logger.error('[Server] Failed to initialize Parse:', error);
   // Continue anyway - some features may not work, but server should still start
