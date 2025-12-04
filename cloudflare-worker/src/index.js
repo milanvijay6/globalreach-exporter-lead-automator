@@ -13,7 +13,8 @@ export default {
     const path = url.pathname;
 
     // ONLY handle OAuth callbacks - reject everything else
-    const oauthCallbackPattern = /^\/auth\/(outlook|whatsapp|wechat)\/callback$/;
+    // Support: outlook, gmail, whatsapp, wechat
+    const oauthCallbackPattern = /^\/auth\/(outlook|gmail|whatsapp|wechat)\/callback$/;
     if (!oauthCallbackPattern.test(path)) {
       return new Response('Not Found', { 
         status: 404,
@@ -21,8 +22,8 @@ export default {
       });
     }
 
-    // Extract service name from path (outlook, whatsapp, or wechat)
-    const serviceMatch = path.match(/^\/auth\/(outlook|whatsapp|wechat)\/callback$/);
+    // Extract service name from path (outlook, gmail, whatsapp, or wechat)
+    const serviceMatch = path.match(/^\/auth\/(outlook|gmail|whatsapp|wechat)\/callback$/);
     if (!serviceMatch) {
       return new Response('Invalid OAuth callback path', { 
         status: 400,
