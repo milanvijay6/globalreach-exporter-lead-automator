@@ -498,4 +498,3 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
 };
 
 export default EmailOAuthModal;
-
