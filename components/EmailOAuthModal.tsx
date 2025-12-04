@@ -294,6 +294,18 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
           `3. Server is running on port ${serverPort}`;
       }
       
+      // Add specific help for redirect_uri_mismatch error
+      if (errorMsg.includes('redirect_uri_mismatch') || errorMsg.includes('redirect URI')) {
+        errorMsg = `Redirect URI Mismatch Error\n\n` +
+          `The redirect URI being used is:\n${config.redirectUri}\n\n` +
+          `This URI must be added to your ${providerName} ${actualProvider === 'gmail' ? 'Cloud Console' : 'Portal'}:\n` +
+          `1. Go to ${actualProvider === 'gmail' ? 'Google Cloud Console → APIs & Services → Credentials → Your OAuth 2.0 Client ID' : 'Azure Portal → App registrations → Your app → Authentication'}\n` +
+          `2. Add this redirect URI: ${config.redirectUri}\n` +
+          `3. Save and wait 1-2 minutes\n` +
+          `4. Try connecting again\n\n` +
+          `See GOOGLE_CLOUD_CONSOLE_REDIRECT_URI_SETUP.md for detailed instructions.`;
+      }
+      
       // If error contains newlines (from our improved error messages), format it nicely
       if (errorMsg.includes('\n')) {
         errorMsg = errorMsg.split('\n').map((line: string, idx: number) => {

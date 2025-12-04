@@ -40,14 +40,72 @@ router.get('/callback', async (req, res) => {
     }
 
     if (!code) {
-      console.warn('[OAuth] Missing authorization code in callback');
+      console.warn('[OAuth] Missing authorization code in callback', {
+        query: req.query,
+        fullUrl: req.originalUrl,
+        hasQuery: Object.keys(req.query).length > 0
+      });
+      
+      // Check if this is a direct visit (no query params) vs an actual OAuth callback
+      const hasQueryParams = Object.keys(req.query).length > 0;
+      
+      if (!hasQueryParams) {
+        // Direct visit - provide helpful message
+        return res.send(`
+          <html>
+            <head>
+              <title>OAuth Callback Endpoint</title>
+              <style>
+                body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; }
+                .info { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; }
+                .warning { background: #fff3e0; border-left: 4px solid #ff9800; padding: 15px; margin: 20px 0; }
+              </style>
+            </head>
+            <body>
+              <h2>OAuth Callback Endpoint</h2>
+              <div class="info">
+                <p><strong>This is the OAuth callback endpoint.</strong></p>
+                <p>This URL should only be accessed by Google/Microsoft OAuth services during the authentication flow.</p>
+              </div>
+              <div class="warning">
+                <p><strong>If you're trying to connect your email:</strong></p>
+                <ol>
+                  <li>Go back to the application</li>
+                  <li>Click "Connect" for Email/Gmail</li>
+                  <li>Complete the OAuth flow in the browser window that opens</li>
+                  <li>You'll be automatically redirected back here with the authorization code</li>
+                </ol>
+              </div>
+              <p><small>If you're seeing this page after completing OAuth, there may be an issue with the OAuth flow. Check the browser console and server logs for errors.</small></p>
+            </body>
+          </html>
+        `);
+      }
+      
+      // OAuth callback without code - actual error
       return res.send(`
         <html>
+          <head>
+            <title>Authentication Error</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; }
+              .error { background: #ffebee; border-left: 4px solid #f44336; padding: 15px; margin: 20px 0; }
+            </style>
+          </head>
           <body>
             <h2>Authentication Error</h2>
-            <p>Missing authorization code. Please try connecting again.</p>
-            <p>You can close this window and try again.</p>
-            <script>setTimeout(() => window.close(), 3000);</script>
+            <div class="error">
+              <p><strong>Missing authorization code.</strong></p>
+              <p>The OAuth callback did not include the required authorization code. This can happen if:</p>
+              <ul>
+                <li>The OAuth flow was cancelled</li>
+                <li>There was an error during authentication</li>
+                <li>The redirect URI doesn't match exactly in Google Cloud Console</li>
+              </ul>
+            </div>
+            <p>Please try connecting again from the application.</p>
+            <p><small>You can close this window.</small></p>
+            <script>setTimeout(() => window.close(), 5000);</script>
           </body>
         </html>
       `);
