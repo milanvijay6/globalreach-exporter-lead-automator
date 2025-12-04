@@ -195,6 +195,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 setOutlookClientSecret(savedClientSecret);
                 setOutlookTenantId(savedTenantId || 'common');
               }
+              // Load Gmail credentials from individual config keys as fallback
+              const savedGmailClientId = await PlatformService.getAppConfig('gmailClientId', '');
+              const savedGmailClientSecret = await PlatformService.getAppConfig('gmailClientSecret', '');
+              if (savedGmailClientId && !gmailClientId) {
+                setGmailClientId(savedGmailClientId);
+                setGmailClientSecret(savedGmailClientSecret);
+              }
               // Load Cloudflare Worker URL (try API first for web, then local config)
               try {
                 const { apiService } = await import('../services/apiService');
@@ -1017,6 +1024,53 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             </p>
                                                     </div>
                                                     <div className="border-t border-slate-200 pt-3 mt-3">
+                            <h5 className="text-xs font-bold text-slate-700 mb-2">Gmail OAuth Configuration</h5>
+                            <p className="text-[10px] text-slate-500 mb-3">
+                              Configure your Gmail OAuth credentials to connect your Gmail account.
+                            </p>
+                            <div className="bg-green-50 border border-green-200 rounded p-2 mb-3">
+                              <p className="text-[10px] text-green-800 font-semibold mb-1">ℹ️ Google Cloud Console Setup:</p>
+                              <p className="text-[10px] text-green-700">
+                                In Google Cloud Console → APIs & Services → Credentials, make sure your redirect URI 
+                                (<code className="bg-green-100 px-1 rounded">http://localhost:4000/api/oauth/callback</code> or your Cloudflare URL) 
+                                is added to your OAuth 2.0 Client ID.
+                              </p>
+                            </div>
+                            <div className="space-y-2 text-xs">
+                              <div>
+                                <label className="text-slate-600 block mb-1">Gmail Client ID</label>
+                                <input
+                                  type="text"
+                                  value={gmailClientId}
+                                  onChange={(e) => setGmailClientId(e.target.value)}
+                                  placeholder="Enter Gmail Client ID (e.g., xxx.apps.googleusercontent.com)"
+                                  className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-slate-600 block mb-1">Gmail Client Secret <span className="text-red-500">*</span></label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type={showGmailSecret ? "text" : "password"}
+                                    value={gmailClientSecret}
+                                    onChange={(e) => setGmailClientSecret(e.target.value)}
+                                    placeholder="Enter Gmail Client Secret"
+                                    className="flex-1 px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                  <button
+                                    onClick={() => setShowGmailSecret(!showGmailSecret)}
+                                    className="px-3 py-2 border border-slate-300 rounded hover:bg-slate-50"
+                                  >
+                                    {showGmailSecret ? 'Hide' : 'Show'}
+                                  </button>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-1">
+                                  Get your Client ID and Secret from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID.
+                                </p>
+                              </div>
+                            </div>
+                                                    </div>
+                                                    <div className="border-t border-slate-200 pt-3 mt-3">
                             <h5 className="text-xs font-bold text-slate-700 mb-2">Cloudflare Worker OAuth Proxy</h5>
                             <p className="text-[10px] text-slate-500 mb-3">
                               Automatically deploy a permanent Cloudflare Worker URL for OAuth callbacks. This solves the Back4App URL expiration issue.
@@ -1123,6 +1177,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 await PlatformService.setAppConfig('outlookClientId', outlookClientId);
                                 await PlatformService.setAppConfig('outlookClientSecret', outlookClientSecret);
                                 await PlatformService.setAppConfig('outlookTenantId', outlookTenantId || 'common');
+                                await PlatformService.setAppConfig('gmailClientId', gmailClientId);
+                                await PlatformService.setAppConfig('gmailClientSecret', gmailClientSecret);
                                 await PlatformService.setAppConfig('cloudflareWorkerUrl', cloudflareWorkerUrl || '');
                                 setOauthSaveStatus('success');
                                 setOauthSaveMessage('OAuth configuration saved successfully');

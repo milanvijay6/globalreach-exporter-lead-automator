@@ -13,14 +13,16 @@ interface EmailOAuthModalProps {
 }
 
 const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onConnected }) => {
-  const [step, setStep] = useState<'init' | 'authenticating' | 'success' | 'error'>('init');
+  const [step, setStep] = useState<'provider-select' | 'init' | 'authenticating' | 'success' | 'error'>('provider-select');
+  const [provider, setProvider] = useState<'outlook' | 'gmail' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
   const [isProcessingCallback, setIsProcessingCallback] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
-      setStep('init');
+      setStep('provider-select');
+      setProvider(null);
       setErrorMessage('');
       setUserEmail('');
       setIsProcessingCallback(false);
@@ -72,16 +74,42 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       return;
     }
 
+    // Determine provider from callback or state
+    let actualProvider: 'outlook' | 'gmail' = provider || 'outlook';
+    if (callbackState) {
+      try {
+        const stateData = JSON.parse(callbackState);
+        if (stateData.provider === 'gmail' || stateData.provider === 'outlook') {
+          actualProvider = stateData.provider;
+        }
+      } catch (e) {
+        // If state parsing fails, use provider from callback or default
+        if (provider === 'gmail' || provider === 'outlook') {
+          actualProvider = provider;
+        }
+      }
+    }
+
     // State is optional - if missing, create a default one
-    const actualState = callbackState || JSON.stringify({ provider: 'outlook', timestamp: Date.now() });
+    const actualState = callbackState || JSON.stringify({ provider: actualProvider, timestamp: Date.now() });
 
     try {
       setStep('authenticating');
       
-      // Get OAuth configuration
-      const clientId = await PlatformService.getAppConfig('outlookClientId', '');
-      const clientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
-      const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
+      // Get OAuth configuration based on provider
+      let clientId: string;
+      let clientSecret: string;
+      let tenantId: string | undefined;
+      
+      if (actualProvider === 'gmail') {
+        clientId = await PlatformService.getAppConfig('gmailClientId', '');
+        clientSecret = await PlatformService.getAppConfig('gmailClientSecret', '');
+      } else {
+        clientId = await PlatformService.getAppConfig('outlookClientId', '');
+        clientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
+        tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
+      }
+      
       const serverPort = await PlatformService.getAppConfig('serverPort', 4000);
 
       // Determine redirect URI priority:
@@ -93,10 +121,14 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       const cloudflareUrl = await PlatformService.getAppConfig('cloudflareUrl', '');
       let redirectUri: string;
       
+      // Determine redirect URI based on provider
       if (cloudflareWorkerUrl) {
         // Use Cloudflare Worker URL - permanent solution for Back4App
-        // Worker handles /auth/outlook/callback and forwards to Back4App
-        redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+        if (actualProvider === 'gmail') {
+          redirectUri = `${cloudflareWorkerUrl}/auth/gmail/callback`;
+        } else {
+          redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+        }
       } else if (cloudflareUrl) {
         redirectUri = `${cloudflareUrl}/api/oauth/callback`;
       } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
@@ -108,6 +140,7 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       }
       
       Logger.info('[EmailOAuthModal] OAuth configuration', {
+        provider: actualProvider,
         clientId: clientId ? `${clientId.substring(0, 8)}...` : 'missing',
         hasClientSecret: !!clientSecret,
         redirectUri,
@@ -123,63 +156,110 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
 
       // Exchange code for tokens
       Logger.info('[EmailOAuthModal] Starting code exchange', {
+        provider: actualProvider,
         hasCode: !!code,
         hasState: !!callbackState,
         redirectUri: config.redirectUri,
         tenantId: config.tenantId
       });
       
-      const tokens = await OAuthService.handleOAuthCallback('outlook', code, callbackState, config);
+      const tokens = await OAuthService.handleOAuthCallback(actualProvider, code, callbackState, config);
       
       Logger.info('[EmailOAuthModal] Code exchange successful', {
+        provider: actualProvider,
         hasAccessToken: !!tokens.accessToken,
         hasRefreshToken: !!tokens.refreshToken
       });
 
       // Get user profile to get email address
-      const { OutlookEmailService } = await import('../services/outlookEmailService');
-      const tempCredentials: OutlookEmailCredentials = {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiryDate: tokens.expiryDate,
-        userEmail: '', // Will be set after getting profile
-        tenantId: config.tenantId,
-      };
+      let profileEmail: string;
+      let profileName: string | undefined;
 
-      const profile = await OutlookEmailService.getUserProfile(tempCredentials);
-      if (!profile.success || !profile.email) {
-        throw new Error('Failed to get user email address');
+      if (actualProvider === 'gmail') {
+        // Get Gmail user profile using Google OAuth2 API
+        const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${tokens.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || `HTTP ${response.status}: Failed to get user profile`);
+        }
+
+        const userInfo = await response.json();
+        
+        if (!userInfo.email) {
+          throw new Error('Failed to get user email address from Google');
+        }
+        
+        profileEmail = userInfo.email;
+        profileName = userInfo.name;
+      } else {
+        // Get Outlook user profile
+        const { OutlookEmailService } = await import('../services/outlookEmailService');
+        const tempCredentials: OutlookEmailCredentials = {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiryDate: tokens.expiryDate,
+          userEmail: '', // Will be set after getting profile
+          tenantId: config.tenantId || 'common',
+        };
+
+        const profile = await OutlookEmailService.getUserProfile(tempCredentials);
+        if (!profile.success || !profile.email) {
+          throw new Error('Failed to get user email address');
+        }
+        
+        profileEmail = profile.email;
+        profileName = profile.name;
       }
 
-      const emailCredentials: OutlookEmailCredentials = {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiryDate: tokens.expiryDate,
-        userEmail: profile.email,
-        tenantId: config.tenantId,
-      };
+      // Create email credentials based on provider
+      let emailCredentials: any;
+      if (actualProvider === 'gmail') {
+        emailCredentials = {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiryDate: tokens.expiryDate,
+          userEmail: profileEmail,
+          provider: 'gmail',
+        };
+      } else {
+        emailCredentials = {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiryDate: tokens.expiryDate,
+          userEmail: profileEmail,
+          tenantId: config.tenantId || 'common',
+        };
+      }
 
       // Create and save email connection
       const connection: PlatformConnection = {
         channel: Channel.EMAIL,
         status: PlatformStatus.CONNECTED,
-        accountName: profile.email,
+        accountName: profileEmail,
         connectedAt: Date.now(),
-        provider: 'outlook',
+        provider: actualProvider,
         emailCredentials: emailCredentials,
         healthStatus: 'healthy',
         lastTested: Date.now(),
       };
       
       await saveEmailConnection(connection);
-      setUserEmail(profile.email);
+      setUserEmail(profileEmail);
       setStep('success');
 
       // Notify parent
       onConnected(connection);
 
-      Logger.info('[EmailOAuthModal] Outlook connection saved successfully', {
-        email: profile.email,
+      Logger.info(`[EmailOAuthModal] ${actualProvider === 'gmail' ? 'Gmail' : 'Outlook'} connection saved successfully`, {
+        email: profileEmail,
+        provider: actualProvider,
         hasAccessToken: !!emailCredentials.accessToken,
         hasRefreshToken: !!emailCredentials.refreshToken
       });
@@ -205,11 +285,12 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       let errorMsg = error.message || 'Failed to complete OAuth flow';
       
       // Add debugging info if error is vague
-      if (!errorMsg.includes('Azure') && !errorMsg.includes('Invalid') && !errorMsg.includes('Failed')) {
+      const providerName = actualProvider === 'gmail' ? 'Google' : 'Azure';
+      if (!errorMsg.includes(providerName) && !errorMsg.includes('Invalid') && !errorMsg.includes('Failed')) {
         errorMsg = `OAuth connection failed: ${errorMsg}\n\n` +
           `Please check:\n` +
-          `1. Client ID and Client Secret are correct in Settings\n` +
-          `2. Redirect URI in Azure matches: ${config.redirectUri}\n` +
+          `1. ${actualProvider === 'gmail' ? 'Gmail' : 'Outlook'} Client ID and Client Secret are correct in Settings\n` +
+          `2. Redirect URI in ${providerName} ${actualProvider === 'gmail' ? 'Cloud Console' : 'Portal'} matches: ${config.redirectUri}\n` +
           `3. Server is running on port ${serverPort}`;
       }
       
@@ -324,20 +405,44 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
     }
   }, [isOpen, handleOAuthCallback]);
 
+  const handleProviderSelect = (selectedProvider: 'outlook' | 'gmail') => {
+    setProvider(selectedProvider);
+    setStep('init');
+  };
+
   const handleConnect = async () => {
+    if (!provider) {
+      setStep('provider-select');
+      return;
+    }
+
     try {
       setStep('authenticating');
       setErrorMessage('');
 
-      // Get OAuth configuration from settings
-      const clientId = await PlatformService.getAppConfig('outlookClientId', '');
-      const clientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
-      const tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
-      const serverPort = await PlatformService.getAppConfig('serverPort', 4000);
-
-      if (!clientId || !clientSecret) {
-        throw new Error('Outlook OAuth credentials not configured. Please configure Client ID and Client Secret in Settings → Integrations → Email & OAuth.');
+      // Get OAuth configuration from settings based on provider
+      let clientId: string;
+      let clientSecret: string;
+      let tenantId: string | undefined;
+      
+      if (provider === 'gmail') {
+        clientId = await PlatformService.getAppConfig('gmailClientId', '');
+        clientSecret = await PlatformService.getAppConfig('gmailClientSecret', '');
+        
+        if (!clientId || !clientSecret) {
+          throw new Error('Gmail OAuth credentials not configured. Please configure Client ID and Client Secret in Settings → Integrations → OAuth Configuration.');
+        }
+      } else {
+        clientId = await PlatformService.getAppConfig('outlookClientId', '');
+        clientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
+        tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
+        
+        if (!clientId || !clientSecret) {
+          throw new Error('Outlook OAuth credentials not configured. Please configure Client ID and Client Secret in Settings → Integrations → OAuth Configuration.');
+        }
       }
+
+      const serverPort = await PlatformService.getAppConfig('serverPort', 4000);
 
       // Determine redirect URI priority:
       // 1. Cloudflare Worker URL (if configured) - Permanent, never expires
@@ -350,8 +455,11 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       
       if (cloudflareWorkerUrl) {
         // Use Cloudflare Worker URL - permanent solution for Back4App
-        // Worker handles /auth/outlook/callback and forwards to Back4App
-        redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+        if (provider === 'gmail') {
+          redirectUri = `${cloudflareWorkerUrl}/auth/gmail/callback`;
+        } else {
+          redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+        }
       } else if (cloudflareUrl) {
         redirectUri = `${cloudflareUrl}/api/oauth/callback`;
       } else if (typeof window !== 'undefined' && window.location.origin && !isDesktop()) {
@@ -370,13 +478,24 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       };
 
       // Validate config
-      const validation = OAuthService.validateOAuthConfig(config, 'outlook');
+      const validation = OAuthService.validateOAuthConfig(config, provider);
       if (!validation.valid) {
         throw new Error(validation.error || 'Invalid OAuth configuration');
       }
 
-      // Initiate OAuth flow
-      const { authUrl, state } = await OAuthService.initiateOutlookOAuth(config);
+      // Initiate OAuth flow based on provider
+      let authUrl: string;
+      let state: string;
+      
+      if (provider === 'gmail') {
+        const result = await OAuthService.initiateGmailOAuth(config);
+        authUrl = result.authUrl;
+        state = result.state;
+      } else {
+        const result = await OAuthService.initiateOutlookOAuth(config);
+        authUrl = result.authUrl;
+        state = result.state;
+      }
 
       // Open OAuth URL in external browser
       if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
@@ -401,10 +520,10 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         {/* Header */}
-        <div className="bg-[#0078d4] p-6 flex justify-between items-center text-white">
+        <div className={`p-6 flex justify-between items-center text-white ${provider === 'gmail' ? 'bg-[#ea4335]' : 'bg-[#0078d4]'}`}>
           <h2 className="text-lg font-bold flex items-center gap-2">
             <Mail className="w-5 h-5" />
-            Connect Outlook Account
+            {provider === 'gmail' ? 'Connect Gmail Account' : provider === 'outlook' ? 'Connect Outlook Account' : 'Connect Email Account'}
           </h2>
           <button
             onClick={onClose}
@@ -416,16 +535,55 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
 
         {/* Body */}
         <div className="p-8">
-          {step === 'init' && (
+          {step === 'provider-select' && (
+            <div className="space-y-4">
+              <p className="text-slate-600 text-sm text-center">
+                Choose your email provider to connect your account
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => handleProviderSelect('outlook')}
+                  className="p-6 border-2 border-slate-200 rounded-lg hover:border-[#0078d4] hover:bg-blue-50 transition-all flex flex-col items-center gap-3"
+                >
+                  <div className="w-12 h-12 bg-[#0078d4] rounded-full flex items-center justify-center">
+                    <Mail className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-semibold text-slate-800">Outlook</p>
+                    <p className="text-xs text-slate-500 mt-1">Microsoft 365</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleProviderSelect('gmail')}
+                  className="p-6 border-2 border-slate-200 rounded-lg hover:border-[#ea4335] hover:bg-red-50 transition-all flex flex-col items-center gap-3"
+                >
+                  <div className="w-12 h-12 bg-[#ea4335] rounded-full flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-semibold text-slate-800">Gmail</p>
+                    <p className="text-xs text-slate-500 mt-1">Google</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'init' && provider && (
             <div className="space-y-4">
               <p className="text-slate-600 text-sm">
-                Connect your Outlook account to send and receive emails through the app.
+                Connect your {provider === 'gmail' ? 'Gmail' : 'Outlook'} account to send and receive emails through the app.
               </p>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
+              <div className={`border rounded-lg p-4 ${provider === 'gmail' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+                <p className={`text-sm font-semibold mb-2 ${provider === 'gmail' ? 'text-red-800' : 'text-blue-800'}`}>
                   <strong>What you'll authorize:</strong>
                 </p>
-                <ul className="text-xs text-blue-700 mt-2 space-y-1 list-disc list-inside">
+                <ul className={`text-xs mt-2 space-y-1 list-disc list-inside ${provider === 'gmail' ? 'text-red-700' : 'text-blue-700'}`}>
                   <li>Send emails on your behalf</li>
                   <li>Read incoming emails</li>
                   <li>Reply to customer emails</li>
@@ -434,19 +592,23 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
               </div>
               <button
                 onClick={handleConnect}
-                className="w-full px-4 py-2 bg-[#0078d4] text-white font-medium rounded-lg hover:bg-[#0064b8] transition-colors flex items-center justify-center gap-2"
+                className={`w-full px-4 py-2 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                  provider === 'gmail' 
+                    ? 'bg-[#ea4335] hover:bg-[#d33b2c]' 
+                    : 'bg-[#0078d4] hover:bg-[#0064b8]'
+                }`}
               >
                 <Mail className="w-4 h-4" />
-                Connect Outlook
+                Connect {provider === 'gmail' ? 'Gmail' : 'Outlook'}
               </button>
             </div>
           )}
 
           {step === 'authenticating' && (
             <div className="space-y-4 text-center">
-              <Loader2 className="w-12 h-12 mx-auto animate-spin text-[#0078d4]" />
+              <Loader2 className={`w-12 h-12 mx-auto animate-spin ${provider === 'gmail' ? 'text-[#ea4335]' : 'text-[#0078d4]'}`} />
               <p className="text-slate-600">
-                Opening Microsoft login page...
+                Opening {provider === 'gmail' ? 'Google' : 'Microsoft'} login page...
               </p>
               <p className="text-xs text-slate-500">
                 Please complete the login in the browser window that opened.
