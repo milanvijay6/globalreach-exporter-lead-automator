@@ -484,25 +484,75 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
       }
 
       // Initiate OAuth flow based on provider
-      let authUrl: string;
-      let state: string;
-      
-      if (provider === 'gmail') {
-        const result = await OAuthService.initiateGmailOAuth(config);
-        authUrl = result.authUrl;
-        state = result.state;
+      // Use IPC for Electron (required for Gmail), direct service for web
+      if (isDesktop() && (window as any).electronAPI?.initiateOAuth) {
+        // Use IPC to initiate OAuth in main process (required for Gmail in Electron)
+        const result = await (window as any).electronAPI.initiateOAuth(provider, config, userEmail || undefined);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to initiate OAuth flow');
+        }
+        // OAuth URL is opened by main process, state is returned
+        // The callback will be handled by the IPC listener
       } else {
-        const result = await OAuthService.initiateOutlookOAuth(config);
-        authUrl = result.authUrl;
-        state = result.state;
-      }
+        // Web environment or fallback - build OAuth URL manually (no googleapis needed)
+        let authUrl: string;
+        let state: string;
+        
+        if (provider === 'gmail') {
+          // Build Gmail OAuth URL manually (no googleapis needed)
+          // Generate random nonce using Web Crypto API
+          const array = new Uint8Array(32);
+          if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+            window.crypto.getRandomValues(array);
+          } else {
+            // Fallback for environments without crypto
+            for (let i = 0; i < array.length; i++) {
+              array[i] = Math.floor(Math.random() * 256);
+            }
+          }
+          const nonce = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+          
+          const stateObj = {
+            provider: 'gmail',
+            nonce,
+            timestamp: Date.now(),
+            email: userEmail || undefined
+          };
+          const stateJson = JSON.stringify(stateObj);
+          // Use base64url encoding
+          state = btoa(stateJson).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+          
+          const scopes = [
+            'https://www.googleapis.com/auth/gmail.modify',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+          ].join(' ');
+          
+          const params = new URLSearchParams({
+            client_id: config.clientId,
+            redirect_uri: config.redirectUri,
+            response_type: 'code',
+            scope: scopes,
+            access_type: 'offline',
+            prompt: 'consent',
+            state,
+          });
+          
+          authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        } else {
+          // Outlook OAuth - can use service directly
+          const result = await OAuthService.initiateOutlookOAuth(config);
+          authUrl = result.authUrl;
+          state = result.state;
+        }
 
-      // Open OAuth URL in external browser
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
-        await (window as any).electronAPI.openExternal(authUrl);
-      } else {
-        // Fallback: open in current window
-        window.open(authUrl, '_blank');
+        // Open OAuth URL
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
+          await (window as any).electronAPI.openExternal(authUrl);
+        } else {
+          // Fallback: open in current window
+          window.open(authUrl, '_blank');
+        }
       }
 
       // OAuth callback will be handled by the IPC listener set up in useEffect

@@ -1832,8 +1832,34 @@ ipcMain.handle('oauth-initiate', async (event, { provider, config, email }) => {
     const crypto = require('crypto');
     
     if (provider === 'gmail') {
-      // Gmail OAuth should be handled via renderer process OAuth service
-      throw new Error('Gmail OAuth initiation should use renderer process OAuth service');
+      // Generate state for Gmail
+      const nonce = crypto.randomBytes(32).toString('hex');
+      const stateObj = {
+        provider: 'gmail',
+        nonce,
+        timestamp: Date.now(),
+        email
+      };
+      state = Buffer.from(JSON.stringify(stateObj)).toString('base64url');
+      
+      // Build Gmail OAuth URL
+      const scopes = [
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+      ].join(' ');
+      
+      const params = new URLSearchParams({
+        client_id: config.clientId,
+        redirect_uri: config.redirectUri,
+        response_type: 'code',
+        scope: scopes,
+        access_type: 'offline',
+        prompt: 'consent',
+        state,
+      });
+      
+      authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
     } else if (provider === 'outlook') {
       // Generate state for Outlook
       const nonce = crypto.randomBytes(32).toString('hex');
