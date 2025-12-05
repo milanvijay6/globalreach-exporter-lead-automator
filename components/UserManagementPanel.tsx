@@ -34,7 +34,8 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const allUsers = await UserService.getAllUsers();
+      // Pass current user ID to filter owner users for non-owners
+      const allUsers = await UserService.getAllUsers(user.id);
       setUsers(allUsers);
     } catch (error) {
       Logger.error('[UserManagementPanel] Failed to load users:', error);
@@ -74,6 +75,12 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   };
 
   const handleSuspend = async (targetUser: User) => {
+    // Defense in depth: Check if target user is owner and current user is not owner
+    if (targetUser.role === UserRole.OWNER && user.role !== UserRole.OWNER) {
+      alert('You do not have permission to modify owner users');
+      return;
+    }
+    
     if (!confirm(`Suspend user ${targetUser.name}?`)) return;
 
     try {
@@ -85,6 +92,12 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   };
 
   const handleActivate = async (targetUser: User) => {
+    // Defense in depth: Check if target user is owner and current user is not owner
+    if (targetUser.role === UserRole.OWNER && user.role !== UserRole.OWNER) {
+      alert('You do not have permission to modify owner users');
+      return;
+    }
+    
     try {
       await UserManagementService.updateUserStatus(targetUser.id, 'active', user.id);
       await loadUsers();
@@ -94,6 +107,12 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   };
 
   const handleResetPassword = async (targetUser: User) => {
+    // Defense in depth: Check if target user is owner and current user is not owner
+    if (targetUser.role === UserRole.OWNER && user.role !== UserRole.OWNER) {
+      alert('You do not have permission to modify owner users');
+      return;
+    }
+    
     setShowPasswordModal(targetUser);
     setPasswordInput('');
   };
@@ -113,6 +132,12 @@ const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ user }) => {
   };
 
   const handleResetPin = async (targetUser: User) => {
+    // Defense in depth: Check if target user is owner and current user is not owner
+    if (targetUser.role === UserRole.OWNER && user.role !== UserRole.OWNER) {
+      alert('You do not have permission to modify owner users');
+      return;
+    }
+    
     setShowPinModal(targetUser);
     setPinPasswordInput('');
   };

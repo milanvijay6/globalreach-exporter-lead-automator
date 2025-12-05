@@ -29,9 +29,9 @@ try {
   require('./config/parse');
   // Verify Parse is initialized (check for valid non-empty applicationId)
   if (Parse.applicationId && Parse.applicationId.trim() !== '') {
-    logger.info('[Server] Parse initialized successfully');
-    logger.info(`[Server] Parse Application ID: ${Parse.applicationId}`);
-    logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
+  logger.info('[Server] Parse initialized successfully');
+  logger.info(`[Server] Parse Application ID: ${Parse.applicationId}`);
+  logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
   } else {
     logger.warn('[Server] Parse not initialized - PARSE_APPLICATION_ID not set or empty');
     logger.warn('[Server] Parse-dependent features (Config API, etc.) will return default values');

@@ -34,8 +34,8 @@ export const UserManagementService = {
         throw new Error('Insufficient permissions to create users');
       }
 
-      // Check if user already exists
-      const existingUsers = await UserService.getAllUsers();
+      // Check if user already exists (include owners for duplicate check)
+      const existingUsers = await UserService.getAllUsers(creatorId, true);
       const existing = existingUsers.find(u => u.email.toLowerCase() === userData.email.toLowerCase());
       if (existing) {
         throw new Error('User with this email already exists');
@@ -93,6 +93,12 @@ export const UserManagementService = {
         throw new Error('Insufficient permissions');
       }
 
+      // Check if target user is owner - non-owners cannot modify owners
+      const targetUser = await UserService.getUser(userId);
+      if (targetUser && targetUser.role === 'Owner' && updater.role !== 'Owner') {
+        throw new Error('Cannot modify owner users');
+      }
+
       await UserService.updateUser(userId, { status });
 
       await logAdminAction(updater, 'user_status_update', 'user', {
@@ -126,6 +132,12 @@ export const UserManagementService = {
         throw new Error('Insufficient permissions to reset password');
       }
 
+      // Check if target user is owner - non-owners cannot modify owners
+      const targetUser = await UserService.getUser(userId);
+      if (targetUser && targetUser.role === 'Owner' && resetter.role !== 'Owner') {
+        throw new Error('Cannot modify owner users');
+      }
+
       const passwordHash = await AuthService.hashPassword(newPassword);
       await UserService.updateUser(userId, { passwordHash });
 
@@ -149,6 +161,16 @@ export const UserManagementService = {
     resetterPassword: string
   ): Promise<void> => {
     try {
+      // Check if target user is owner - non-owners cannot modify owners
+      // This is a defense in depth check (PinService also checks)
+      const resetter = await UserService.getUser(resetterId);
+      if (resetter) {
+        const targetUser = await UserService.getUser(userId);
+        if (targetUser && targetUser.role === 'Owner' && resetter.role !== 'Owner') {
+          throw new Error('Cannot modify owner users');
+        }
+      }
+      
       await PinService.resetPin(userId, resetterId, resetterPassword);
       Logger.info(`[UserManagementService] PIN reset for user: ${userId}`);
     } catch (error: any) {

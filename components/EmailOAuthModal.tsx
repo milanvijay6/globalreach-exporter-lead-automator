@@ -127,7 +127,7 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         if (actualProvider === 'gmail') {
           redirectUri = `${cloudflareWorkerUrl}/auth/gmail/callback`;
         } else {
-          redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+        redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
         }
       } else if (cloudflareUrl) {
         redirectUri = `${cloudflareUrl}/api/oauth/callback`;
@@ -200,20 +200,20 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         profileName = userInfo.name;
       } else {
         // Get Outlook user profile
-        const { OutlookEmailService } = await import('../services/outlookEmailService');
-        const tempCredentials: OutlookEmailCredentials = {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiryDate: tokens.expiryDate,
-          userEmail: '', // Will be set after getting profile
+      const { OutlookEmailService } = await import('../services/outlookEmailService');
+      const tempCredentials: OutlookEmailCredentials = {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiryDate: tokens.expiryDate,
+        userEmail: '', // Will be set after getting profile
           tenantId: config.tenantId || 'common',
-        };
+      };
 
-        const profile = await OutlookEmailService.getUserProfile(tempCredentials);
-        if (!profile.success || !profile.email) {
-          throw new Error('Failed to get user email address');
-        }
-        
+      const profile = await OutlookEmailService.getUserProfile(tempCredentials);
+      if (!profile.success || !profile.email) {
+        throw new Error('Failed to get user email address');
+      }
+
         profileEmail = profile.email;
         profileName = profile.name;
       }
@@ -230,12 +230,12 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         };
       } else {
         emailCredentials = {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiryDate: tokens.expiryDate,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiryDate: tokens.expiryDate,
           userEmail: profileEmail,
           tenantId: config.tenantId || 'common',
-        };
+      };
       }
 
       // Create and save email connection
@@ -448,8 +448,8 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         clientId = await PlatformService.getAppConfig('outlookClientId', '');
         clientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
         tenantId = await PlatformService.getAppConfig('outlookTenantId', 'common');
-        
-        if (!clientId || !clientSecret) {
+
+      if (!clientId || !clientSecret) {
           throw new Error('Outlook OAuth credentials not configured. Please configure Client ID and Client Secret in Settings → Integrations → OAuth Configuration.');
         }
       }
@@ -470,7 +470,7 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         if (provider === 'gmail') {
           redirectUri = `${cloudflareWorkerUrl}/auth/gmail/callback`;
         } else {
-          redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
+        redirectUri = `${cloudflareWorkerUrl}/auth/outlook/callback`;
         }
       } else if (cloudflareUrl) {
         redirectUri = `${cloudflareUrl}/api/oauth/callback`;
@@ -559,11 +559,11 @@ const EmailOAuthModal: React.FC<EmailOAuthModalProps> = ({ isOpen, onClose, onCo
         }
 
         // Open OAuth URL
-        if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
-          await (window as any).electronAPI.openExternal(authUrl);
-        } else {
-          // Fallback: open in current window
-          window.open(authUrl, '_blank');
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
+        await (window as any).electronAPI.openExternal(authUrl);
+      } else {
+        // Fallback: open in current window
+        window.open(authUrl, '_blank');
         }
       }
 

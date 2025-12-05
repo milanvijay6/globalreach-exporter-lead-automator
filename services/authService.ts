@@ -303,7 +303,8 @@ export const AuthService = {
    */
   getOrCreateOwnerUser: async (): Promise<User> => {
     try {
-      const users = await UserService.getAllUsers();
+      // Use includeOwners=true to access owner users for owner-specific operations
+      const users = await UserService.getAllUsers(undefined, true);
       let owner = users.find(u => u.email.toLowerCase() === 'milanvijay24@gmail.com' || u.role === 'Owner');
 
       if (!owner) {

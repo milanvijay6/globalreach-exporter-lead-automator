@@ -1,4 +1,4 @@
-import { User } from '../types';
+import { User, UserRole } from '../types';
 import { loadUserSession, saveUserSession } from './securityService';
 import { PlatformService } from './platformService';
 import { Logger } from './loggerService';
@@ -11,12 +11,21 @@ const STORAGE_KEY_USERS = 'globalreach_users';
  */
 
 /**
+ * Helper function to check if current user can access owner users
+ */
+const canAccessOwnerUser = (currentUser: User | null): boolean => {
+  return currentUser?.role === UserRole.OWNER;
+};
+
+/**
  * Gets a user by ID
  */
 export const getUser = async (userId: string): Promise<User | null> => {
   try {
-    // First check if it's the current session user
+    // Load current user session to check permissions
     const currentUser = await loadUserSession();
+    
+    // First check if it's the current session user - always allow users to see themselves
     if (currentUser && currentUser.id === userId) {
       return currentUser;
     }
@@ -26,7 +35,15 @@ export const getUser = async (userId: string): Promise<User | null> => {
     if (!stored) return null;
     
     const users: User[] = JSON.parse(stored);
-    return users.find(u => u.id === userId) || null;
+    const targetUser = users.find(u => u.id === userId) || null;
+    
+    // If target user is owner and current user is not owner, return null
+    if (targetUser && targetUser.role === UserRole.OWNER && !canAccessOwnerUser(currentUser)) {
+      Logger.warn(`[UserService] Non-owner user attempted to access owner user: ${userId}`);
+      return null;
+    }
+    
+    return targetUser;
   } catch (error) {
     Logger.error('[UserService] Failed to get user:', error);
     return null;
@@ -38,21 +55,38 @@ export const getUser = async (userId: string): Promise<User | null> => {
  */
 export const updateUser = async (userId: string, updates: Partial<User>): Promise<User | null> => {
   try {
-    const user = await getUser(userId);
-    if (!user) {
+    // Load current user session to check permissions
+    const currentUser = await loadUserSession();
+    
+    // Load target user directly from storage (bypass getUser to check role)
+    const stored = await PlatformService.secureLoad(STORAGE_KEY_USERS);
+    if (!stored) {
       throw new Error(`User ${userId} not found`);
     }
     
+    const users: User[] = JSON.parse(stored);
+    const targetUser = users.find(u => u.id === userId);
+    
+    if (!targetUser) {
+      throw new Error(`User ${userId} not found`);
+    }
+    
+    // Check if user is trying to update themselves - always allow
+    const isUpdatingSelf = currentUser && currentUser.id === userId;
+    
+    // If target user is owner and current user is not owner (and not updating self), block update
+    if (targetUser.role === UserRole.OWNER && !isUpdatingSelf && !canAccessOwnerUser(currentUser)) {
+      Logger.warn(`[UserService] Non-owner user attempted to update owner user: ${userId}`);
+      throw new Error('Cannot modify owner users');
+    }
+    
     const updatedUser: User = {
-      ...user,
+      ...targetUser,
       ...updates,
-      id: user.id, // Preserve ID
+      id: targetUser.id, // Preserve ID
     };
     
     // Update in users storage
-    const stored = await PlatformService.secureLoad(STORAGE_KEY_USERS);
-    let users: User[] = stored ? JSON.parse(stored) : [];
-    
     const userIndex = users.findIndex(u => u.id === userId);
     if (userIndex !== -1) {
       users[userIndex] = updatedUser;
@@ -63,8 +97,7 @@ export const updateUser = async (userId: string, updates: Partial<User>): Promis
     await PlatformService.secureSave(STORAGE_KEY_USERS, JSON.stringify(users));
     
     // If this is the current session user, update session
-    const currentUser = await loadUserSession();
-    if (currentUser && currentUser.id === userId) {
+    if (isUpdatingSelf) {
       await saveUserSession(updatedUser);
     }
     
@@ -79,13 +112,40 @@ export const updateUser = async (userId: string, updates: Partial<User>): Promis
 
 /**
  * Gets all users (admin only)
+ * Filters out owner users if current user is not owner
+ * @param currentUserId - Optional user ID to check permissions. If not provided, loads from session.
+ * @param includeOwners - If true, always include owner users (for internal use only)
  */
-export const getAllUsers = async (): Promise<User[]> => {
+export const getAllUsers = async (currentUserId?: string, includeOwners: boolean = false): Promise<User[]> => {
   try {
     const stored = await PlatformService.secureLoad(STORAGE_KEY_USERS);
     if (!stored) return [];
     
-    return JSON.parse(stored) as User[];
+    const allUsers = JSON.parse(stored) as User[];
+    
+    // If includeOwners is true (internal use), return all users without filtering
+    if (includeOwners) {
+      return allUsers;
+    }
+    
+    // If currentUserId provided, check if current user is owner
+    if (currentUserId) {
+      const currentUser = allUsers.find(u => u.id === currentUserId);
+      // If current user is owner, return all users; otherwise filter out owners
+      if (currentUser && currentUser.role === UserRole.OWNER) {
+        return allUsers;
+      } else {
+        return allUsers.filter(u => u.role !== UserRole.OWNER);
+      }
+    }
+    
+    // If no currentUserId provided, load from session
+    const currentUser = await loadUserSession();
+    if (canAccessOwnerUser(currentUser)) {
+      return allUsers;
+    } else {
+      return allUsers.filter(u => u.role !== UserRole.OWNER);
+    }
   } catch (error) {
     Logger.error('[UserService] Failed to get all users:', error);
     return [];

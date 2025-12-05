@@ -34,7 +34,8 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
       setLoading(true);
       const [pending, users] = await Promise.all([
         SignupService.getPendingUsers(),
-        UserService.getAllUsers(),
+        // OwnerAdminPanel is owner-only, so pass user.id to ensure all users including owners are shown
+        UserService.getAllUsers(user.id),
       ]);
       setPendingUsers(pending);
       setAllUsers(users);

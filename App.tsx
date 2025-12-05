@@ -24,9 +24,10 @@ import ProductsCatalogPanel from './components/ProductsCatalogPanel';
 import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
 import { canExportData, canSendMessages } from './services/permissionService';
 import { generateIntroMessage, generateAgentReply, analyzeLeadQuality, simulateImporterResponse, generateSalesForecast } from './services/geminiService';
-import { simulateNetworkValidation, getOptimalChannel } from './services/validationService';
+import { simulateNetworkValidation, getOptimalChannel, validateContactFormat } from './services/validationService';
 import { logSecurityEvent, loadUserSession, saveUserSession, clearUserSession, loadPlatformConnections, savePlatformConnections, refreshPlatformTokens } from './services/securityService';
 import { MessagingService } from './services/messagingService';
+import { loadPanelSizes, savePanelSizes, DEFAULT_PANEL_SIZES } from './services/userPreferencesService';
 import { StorageService } from './services/storageService';
 import { CampaignService } from './services/campaignService';
 import { CalendarService } from './services/calendarService';
@@ -218,6 +219,12 @@ const App: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
+  // Resizable Panel State
+  const [importerListWidth, setImporterListWidth] = useState<number>(DEFAULT_PANEL_SIZES.importerListWidth);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartXRef = useRef<number>(0);
+  const resizeStartWidthRef = useRef<number>(0);
+
   // --- Effects ---
 
   useEffect(() => {
@@ -225,7 +232,7 @@ const App: React.FC = () => {
         try {
             // Check for existing user session first
             const savedUser = await loadUserSession();
-
+            
             // If user session exists, load data and proceed
                 if (savedUser) {
                     // User exists - load data and proceed
@@ -238,11 +245,16 @@ const App: React.FC = () => {
                     
                     // Load all user-specific data
                     await loadInitialAppData(savedUser);
+                    
+                    // Load panel size preferences
+                    const panelSizes = await loadPanelSizes(savedUser.id);
+                    setImporterListWidth(panelSizes.importerListWidth);
+                    
                     setIsSetupComplete(true);
                 } else {
                     // No user session - setup is complete (no wizard needed)
                     setIsSetupComplete(true);
-                }
+            }
             // If no user session, LoginScreen will be shown (handled in render logic)
         } catch (e) {
             console.error("Initialization failed", e);
@@ -1063,6 +1075,11 @@ const App: React.FC = () => {
       const { PinService } = await import('./services/pinService');
       await PinService.loadPinVerifications();
       
+      // Check and delete invalid leads after loading data
+      setTimeout(() => {
+        checkAndDeleteInvalidLeads(loggedInUser);
+      }, 500);
+      
       // Load platform connections
       const savedPlatforms = await loadPlatformConnections();
       if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
@@ -1120,8 +1137,8 @@ const App: React.FC = () => {
     logSecurityEvent('LOGIN_SUCCESS', loggedInUser.id, `Role: ${loggedInUser.role}`);
     
     // Load data and proceed to main app
-    setIsSetupComplete(true);
-    await loadInitialAppData(loggedInUser);
+      setIsSetupComplete(true);
+      await loadInitialAppData(loggedInUser);
   };
 
   const handleLogout = () => {
@@ -1280,6 +1297,31 @@ const App: React.FC = () => {
     if (importer) await sendMessage(importer, text, channel);
   };
 
+  // Check and delete invalid leads (wrong phone/email)
+  const checkAndDeleteInvalidLeads = useCallback((currentUser?: User | null) => {
+    setImportersRaw(prev => {
+      const validLeads: Importer[] = [];
+      const deletedCount = { count: 0 };
+      
+      prev.forEach(importer => {
+        const validation = validateContactFormat(importer.contactDetail);
+        if (validation.isValid) {
+          validLeads.push(importer);
+        } else {
+          deletedCount.count++;
+          const userId = currentUser?.id || user?.id || 'system';
+          logSecurityEvent('LEAD_DELETED', userId, `Deleted invalid lead: ${importer.name} (${importer.contactDetail}) - ${validation.errors?.join(', ') || 'Invalid format'}`);
+        }
+      });
+      
+      if (deletedCount.count > 0) {
+        console.log(`[App] Auto-deleted ${deletedCount.count} invalid lead(s)`);
+      }
+      
+      return validLeads;
+    });
+  }, [user]);
+
   // Simple import handler - atomic state update, no complexity
   const handleImportComplete = useCallback((newItems: Importer[]) => {
     // Simple, direct state update - no guards, no queues, no complexity
@@ -1288,7 +1330,51 @@ const App: React.FC = () => {
       const filtered = newItems.filter(item => !existingIds.has(item.id));
       return [...prev, ...filtered];
     });
-  }, []);
+    
+    // After import, check and delete invalid leads
+    setTimeout(() => {
+      checkAndDeleteInvalidLeads(user);
+    }, 100);
+  }, [checkAndDeleteInvalidLeads, user]);
+
+  // Resize handlers
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    resizeStartXRef.current = e.clientX;
+    resizeStartWidthRef.current = importerListWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - resizeStartXRef.current;
+      const newWidth = Math.max(200, Math.min(600, resizeStartWidthRef.current + deltaX));
+      setImporterListWidth(newWidth);
+    };
+
+    const handleMouseUp = async () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      
+      // Save preferences
+      if (user) {
+        await savePanelSizes({ importerListWidth }, user.id);
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, user, importerListWidth]);
 
   const renderMainView = () => {
       if (activeView === 'campaigns') return <ErrorBoundary><CampaignManager campaigns={campaigns} onChange={setCampaigns} importers={importers} /></ErrorBoundary>;
@@ -1297,13 +1383,30 @@ const App: React.FC = () => {
       
       // Dashboard (Default)
       return (
-        <div className="flex-1 flex overflow-hidden p-0 md:p-6 gap-6 bg-slate-100 relative" style={{ width: '100%', maxWidth: '100%', height: '100%', minHeight: '100%', flex: '1 1 auto' }}>
-            {/* Importer List Panel - Slide Logic */}
-            <div className={`w-full md:w-1/3 flex flex-col min-w-[280px] max-w-full md:max-w-[450px] shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-10 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && selectedId ? '-translate-x-full' : 'translate-x-0'}`} style={{ flexShrink: 0 }}>
+        <div className="flex-1 flex overflow-hidden p-0 md:p-6 gap-0 bg-slate-100 relative" style={{ width: '100%', maxWidth: '100%', height: '100%', minHeight: '100%', flex: '1 1 auto' }}>
+            {/* Importer List Panel - Resizable */}
+            <div 
+              className={`w-full flex flex-col shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-10 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && selectedId ? '-translate-x-full' : 'translate-x-0'} ${isResizing ? '' : 'transition-all'}`}
+              style={{ 
+                flexShrink: 0,
+                width: isMobile ? '100%' : `${importerListWidth}px`,
+                minWidth: isMobile ? '280px' : '200px',
+                maxWidth: isMobile ? '100%' : '600px'
+              }}
+            >
                 <ImporterList importers={importers} selectedId={selectedId} onSelect={setSelectedId} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} language={language} />
             </div>
             
-            {/* Chat Interface Panel - Slide Logic */}
+            {/* Resize Handle - Only visible on desktop */}
+            {!isMobile && (
+              <div
+                onMouseDown={handleResizeStart}
+                className="w-1 bg-slate-300 hover:bg-indigo-500 cursor-col-resize transition-colors z-30 relative"
+                style={{ flexShrink: 0 }}
+              />
+            )}
+            
+            {/* Chat Interface Panel */}
             <div className={`flex-1 flex flex-col w-full shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-20 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && !selectedId ? 'translate-x-full' : 'translate-x-0'}`} style={{ minWidth: 0, flex: '1 1 auto' }}>
                 {importers.find(i => i.id === selectedId) ? 
                   <ChatInterface 

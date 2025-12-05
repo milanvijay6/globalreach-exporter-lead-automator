@@ -31,9 +31,9 @@ export const SignupService = {
         return { success: false, error: 'Invalid email format' };
       }
 
-      // Check if user already exists
+      // Check if user already exists (include owners for duplicate check)
       const { UserService } = await import('./userService');
-      const existingUsers = await UserService.getAllUsers();
+      const existingUsers = await UserService.getAllUsers(undefined, true);
       const existingUser = existingUsers.find(u => u.email.toLowerCase() === data.email.toLowerCase());
       
       if (existingUser) {

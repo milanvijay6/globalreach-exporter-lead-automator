@@ -176,8 +176,16 @@ const LeadImportWizard: React.FC<LeadImportWizardProps> = ({ isOpen, onClose, on
       return;
     }
 
-    // Call onComplete with the preview data
-    onComplete(previewData);
+    // Filter out invalid leads before importing (auto-exclude)
+    const validLeads = previewData.filter(item => item.validation.isValid);
+    const invalidLeads = previewData.filter(item => !item.validation.isValid);
+    
+    if (invalidLeads.length > 0) {
+      console.log(`[LeadImportWizard] Excluding ${invalidLeads.length} invalid lead(s) from import`);
+    }
+
+    // Call onComplete with only valid leads
+    onComplete(validLeads);
     
     // Reset and close
     setStep('input');
@@ -416,8 +424,23 @@ const LeadImportWizard: React.FC<LeadImportWizardProps> = ({ isOpen, onClose, on
                             </div>
                           )}
                         </td>
-                        <td className="p-2 sm:p-3 font-medium text-slate-800 truncate max-w-[150px] sm:max-w-none">{item.companyName}</td>
-                        <td className="p-2 sm:p-3 text-slate-600 truncate max-w-[120px] sm:max-w-none">{item.contactDetail}</td>
+                        <td className="p-2 sm:p-3">
+                          <div className="font-medium text-slate-800 truncate max-w-[150px] sm:max-w-none">{item.companyName}</div>
+                          {!item.validation.isValid && item.validation.errors && item.validation.errors.length > 0 && (
+                            <div className="mt-1 text-xs text-red-600 max-w-[200px]">
+                              <div className="font-semibold">Error:</div>
+                              <div className="text-red-700">{item.validation.errors[0]}</div>
+                              {item.validation.errors.length > 1 && (
+                                <div className="mt-0.5 text-red-600 italic">+{item.validation.errors.length - 1} more issue{item.validation.errors.length > 2 ? 's' : ''}</div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2 sm:p-3">
+                          <div className={`truncate max-w-[120px] sm:max-w-none ${!item.validation.isValid ? 'text-red-700 font-mono text-xs font-semibold' : 'text-slate-600'}`}>
+                            {item.contactDetail}
+                          </div>
+                        </td>
                         <td className="p-2 sm:p-3 text-slate-600 truncate max-w-[150px] sm:max-w-[200px]">{item.productsImported}</td>
                       </tr>
                     ))}
@@ -468,7 +491,7 @@ const LeadImportWizard: React.FC<LeadImportWizardProps> = ({ isOpen, onClose, on
                 onClick={handleImport}
                 className="w-full sm:w-auto px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors shadow-lg shadow-green-600/20"
               >
-                Import {previewData.length} Leads
+                Import {validCount} Valid Lead{validCount !== 1 ? 's' : ''}
               </button>
             </>
           )}

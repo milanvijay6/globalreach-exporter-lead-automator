@@ -125,6 +125,12 @@ export const PinService = {
         throw new Error('Insufficient permissions to reset PIN');
       }
 
+      // Check if target user is owner - non-owners cannot modify owners
+      const targetUser = await UserService.getUser(userId);
+      if (targetUser && targetUser.role === 'Owner' && resetter.role !== 'Owner') {
+        throw new Error('Cannot modify owner users');
+      }
+
       // Clear PIN
       await UserService.updateUser(userId, {
         pinHash: undefined,
