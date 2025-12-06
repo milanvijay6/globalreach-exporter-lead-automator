@@ -38,9 +38,19 @@ if (parseAppId) {
   Parse.serverURL = parseServerURL;
   if (parseMasterKey) {
     Parse.masterKey = parseMasterKey;
+    // Also set it in Parse.CoreManager for compatibility
+    if (Parse.CoreManager && Parse.CoreManager.set) {
+      Parse.CoreManager.set('MASTER_KEY', parseMasterKey);
+    }
     console.log('[Deploy Worker] Parse initialized with master key');
   } else {
     console.warn('[Deploy Worker] Parse initialized without master key - Config operations will fail');
+  }
+} else if (parseMasterKey) {
+  // Even if app ID is missing, set master key for later initialization
+  Parse.masterKey = parseMasterKey;
+  if (Parse.CoreManager && Parse.CoreManager.set) {
+    Parse.CoreManager.set('MASTER_KEY', parseMasterKey);
   }
 }
 
@@ -58,15 +68,27 @@ try {
 
 async function getConfig(key, defaultValue = null) {
   try {
-    // Check if master key is available
-    if (!Parse.masterKey) {
+    // Check if master key is available (check both Parse.masterKey and environment variable)
+    const masterKey = Parse.masterKey || process.env.PARSE_MASTER_KEY;
+    if (!masterKey) {
       console.warn(`[Deploy Worker] Cannot get config ${key}: Master key not set`);
+      console.warn(`[Deploy Worker] Parse.masterKey: ${Parse.masterKey ? 'set' : 'not set'}`);
+      console.warn(`[Deploy Worker] PARSE_MASTER_KEY env: ${process.env.PARSE_MASTER_KEY ? 'set' : 'not set'}`);
       return defaultValue;
+    }
+
+    // Ensure Parse is initialized with master key if it wasn't before
+    if (!Parse.masterKey && process.env.PARSE_MASTER_KEY) {
+      Parse.masterKey = process.env.PARSE_MASTER_KEY;
+      if (Parse.CoreManager && Parse.CoreManager.set) {
+        Parse.CoreManager.set('MASTER_KEY', process.env.PARSE_MASTER_KEY);
+      }
     }
 
     // If Config has a get method (from server/models/Config.js), use it
     if (typeof Config.get === 'function') {
-      return await Config.get(key, defaultValue);
+      // Pass useMasterKey: true as 4th parameter (userId is 3rd, pass null)
+      return await Config.get(key, defaultValue, null, true);
     }
     // Otherwise, use Parse directly
     const query = new Parse.Query(Config);
@@ -84,16 +106,28 @@ async function getConfig(key, defaultValue = null) {
 
 async function setConfig(key, value) {
   try {
-    // Check if master key is available
-    if (!Parse.masterKey) {
+    // Check if master key is available (check both Parse.masterKey and environment variable)
+    const masterKey = Parse.masterKey || process.env.PARSE_MASTER_KEY;
+    if (!masterKey) {
       const error = new Error('Cannot use the Master Key, it has not been provided. Please set PARSE_MASTER_KEY environment variable.');
       console.error(`[Deploy Worker] Failed to set config ${key}:`, error.message);
+      console.error(`[Deploy Worker] Parse.masterKey: ${Parse.masterKey ? 'set' : 'not set'}`);
+      console.error(`[Deploy Worker] PARSE_MASTER_KEY env: ${process.env.PARSE_MASTER_KEY ? 'set' : 'not set'}`);
       throw error;
+    }
+
+    // Ensure Parse is initialized with master key if it wasn't before
+    if (!Parse.masterKey && process.env.PARSE_MASTER_KEY) {
+      Parse.masterKey = process.env.PARSE_MASTER_KEY;
+      if (Parse.CoreManager && Parse.CoreManager.set) {
+        Parse.CoreManager.set('MASTER_KEY', process.env.PARSE_MASTER_KEY);
+      }
     }
 
     // If Config has a set method (from server/models/Config.js), use it
     if (typeof Config.set === 'function') {
-      return await Config.set(key, value);
+      // Pass useMasterKey: true as 4th parameter (userId is 3rd, pass null)
+      return await Config.set(key, value, null, true);
     }
     // Otherwise, use Parse directly
     const query = new Parse.Query(Config);

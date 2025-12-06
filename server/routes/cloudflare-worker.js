@@ -7,7 +7,8 @@ const { getBack4AppUrl } = require('../../scripts/get-back4app-url');
 // Get current Cloudflare Worker URL
 router.get('/url', async (req, res) => {
   try {
-    const workerUrl = await Config.get('cloudflareWorkerUrl', null);
+    // Use master key to access Config (4th parameter: useMasterKey = true)
+    const workerUrl = await Config.get('cloudflareWorkerUrl', null, null, true);
     res.json({ 
       success: true, 
       url: workerUrl,
@@ -79,8 +80,8 @@ router.post('/reset', async (req, res) => {
     const timestamp = Date.now();
     const newWorkerName = `shreenathji-oauth-${timestamp}`;
     
-    // Store new worker name
-    await Config.set('cloudflareWorkerName', newWorkerName);
+    // Store new worker name (use master key - 4th parameter: useMasterKey = true)
+    await Config.set('cloudflareWorkerName', newWorkerName, null, true);
     
     // Deploy new worker
     const workerUrl = await deployWorker();
