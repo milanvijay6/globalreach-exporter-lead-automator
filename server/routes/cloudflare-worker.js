@@ -62,6 +62,7 @@ router.post('/deploy', async (req, res) => {
 });
 
 // Reset/Generate new Cloudflare Worker URL
+// Note: This will create a new worker with a timestamp, but the default deployment uses a permanent name
 router.post('/reset', async (req, res) => {
   try {
     // Check if Cloudflare credentials are available
@@ -72,9 +73,9 @@ router.post('/reset', async (req, res) => {
       });
     }
 
-    console.log('[Cloudflare Worker API] Resetting worker...');
+    console.log('[Cloudflare Worker API] Resetting worker (creating new worker with timestamp)...');
     
-    // Generate new worker name
+    // Generate new worker name with timestamp (for reset only)
     const timestamp = Date.now();
     const newWorkerName = `shreenathji-oauth-${timestamp}`;
     
@@ -88,7 +89,7 @@ router.post('/reset', async (req, res) => {
       res.json({ 
         success: true, 
         url: workerUrl,
-        message: 'New worker URL generated successfully'
+        message: 'New worker URL generated successfully. Note: Regular deployments use a permanent worker name for stable URLs.'
       });
     } else {
       res.status(500).json({ 

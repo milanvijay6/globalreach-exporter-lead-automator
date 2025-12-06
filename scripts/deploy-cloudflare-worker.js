@@ -147,30 +147,33 @@ async function deployWorker() {
     const back4appUrl = getBack4AppUrl();
     console.log('[Deploy Worker] Back4App URL:', back4appUrl);
 
-    // Get or generate worker name
-    // Try to get from Config, but if Master Key not available, generate new one
+    // Get or use permanent worker name
+    // Use a fixed default name for permanent URL, or get from Config if set
+    const DEFAULT_WORKER_NAME = 'shreenathji-oauth-proxy'; // Permanent name for stable URL
     let workerName = null;
+    
     try {
       workerName = await getConfig('cloudflareWorkerName');
+      if (workerName) {
+        console.log('[Deploy Worker] Using saved worker name from Config:', workerName);
+      }
     } catch (error) {
       console.warn('[Deploy Worker] Could not load worker name from Config (Master Key may be missing)');
     }
     
+    // Use default permanent name if not in config
     if (!workerName) {
-      // Generate unique worker name
-      const timestamp = Date.now();
-      workerName = `shreenathji-oauth-${timestamp}`;
-      console.log('[Deploy Worker] Generated new worker name:', workerName);
+      workerName = DEFAULT_WORKER_NAME;
+      console.log('[Deploy Worker] Using default permanent worker name:', workerName);
       
-      // Try to save, but don't fail if Master Key is missing
+      // Try to save default name to config for future reference
       try {
         await setConfig('cloudflareWorkerName', workerName);
+        console.log('[Deploy Worker] Saved default worker name to Config');
       } catch (error) {
         console.warn('[Deploy Worker] Could not save worker name to Config (Master Key may be missing)');
-        console.warn('[Deploy Worker] Worker will still be deployed, but name won\'t be saved for next deployment');
+        console.warn('[Deploy Worker] Worker will use default permanent name:', workerName);
       }
-    } else {
-      console.log('[Deploy Worker] Using existing worker name:', workerName);
     }
 
     // Update wrangler.toml with Back4App URL

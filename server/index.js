@@ -80,7 +80,7 @@ app.use((req, res, next) => {
 });
 
 // Import routes with error handling
-let webhookRoutes, productRoutes, integrationRoutes, leadRoutes, oauthRoutes, configRoutes, cloudflareWorkerRoutes;
+let webhookRoutes, productRoutes, integrationRoutes, leadRoutes, oauthRoutes, configRoutes, cloudflareWorkerRoutes, cloudflarePagesRoutes;
 
 try {
   webhookRoutes = require('./routes/webhooks');
@@ -90,6 +90,7 @@ try {
   oauthRoutes = require('./routes/oauth');
   configRoutes = require('./routes/config');
   cloudflareWorkerRoutes = require('./routes/cloudflare-worker');
+  cloudflarePagesRoutes = require('./routes/cloudflare-pages');
   logger.info('[Server] All routes loaded successfully');
 } catch (error) {
   logger.error('[Server] Failed to load routes:', error);
@@ -103,6 +104,7 @@ try {
   oauthRoutes = oauthRoutes || emptyRouter;
   configRoutes = configRoutes || emptyRouter;
   cloudflareWorkerRoutes = cloudflareWorkerRoutes || emptyRouter;
+  cloudflarePagesRoutes = cloudflarePagesRoutes || emptyRouter;
 }
 
 // Health check endpoint (for Back4App and load balancers)
@@ -122,6 +124,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/cloudflare-worker', cloudflareWorkerRoutes);
+app.use('/api/cloudflare-pages', cloudflarePagesRoutes);
 
 // Serve static files from build directory
 const buildPath = path.resolve(__dirname, '..', 'build');

@@ -1,0 +1,9 @@
+name = "shreenathji-app"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+[env.production]
+# Back4App URL - set via environment variable in Cloudflare Pages dashboard
+# BACK4APP_URL = "https://your-app.b4a.run"
+
+

@@ -8,7 +8,7 @@ export interface UserPreferences {
   panelSizes: PanelSizes;
 }
 
-const DEFAULT_PANEL_SIZES: PanelSizes = {
+export const DEFAULT_PANEL_SIZES: PanelSizes = {
   importerListWidth: 384, // Default width in pixels (matches md:w-96 = 384px)
 };
 

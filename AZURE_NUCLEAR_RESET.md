@@ -204,3 +204,4 @@ If you see the redirect URI in BOTH sections, Azure will still treat it as SPA!
 
 
 
+

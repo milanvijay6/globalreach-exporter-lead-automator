@@ -26,6 +26,12 @@ export const isDesktop = (): boolean => {
   return !!window.electronAPI;
 };
 
+export const isCloudflarePages = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return window.location.hostname.includes('pages.dev') || 
+         window.location.hostname.includes('cloudflarepages.com');
+};
+
 export const PlatformService = {
   /**
    * Securely saves a value. 

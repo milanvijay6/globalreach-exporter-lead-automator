@@ -8,6 +8,7 @@
     "dev": "vite",
     "build:react": "set NODE_OPTIONS=--max-old-space-size=4096 && vite build",
     "build:web": "set NODE_OPTIONS=--max-old-space-size=4096 && cross-env BUILD_OUT_DIR=build vite build",
+    "build:pages": "set NODE_OPTIONS=--max-old-space-size=4096 && cross-env BUILD_OUT_DIR=cloudflare-pages/dist vite build && xcopy /E /I /Y cloudflare-pages\\_redirects cloudflare-pages\\dist\\_redirects && xcopy /E /I /Y cloudflare-pages\\functions cloudflare-pages\\dist\\functions",
     "preview": "vite preview",
     "build": "electron-builder",
     "build:installer": "node scripts/build-installer.js",
@@ -15,6 +16,7 @@
     "version:minor": "npm version minor && git push && git push --tags",
     "version:major": "npm version major && git push && git push --tags",
     "deploy": "npm run build:react && git add . && git commit -m 'chore: build update' && git push",
+    "deploy:pages": "npm run build:pages && wrangler pages deploy cloudflare-pages/dist --project-name=shreenathji-app",
     "migrate:parse": "node scripts/migrate-to-parse.js"
   },
   "dependencies": {

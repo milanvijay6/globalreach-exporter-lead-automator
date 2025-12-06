@@ -126,7 +126,13 @@ export const PinService = {
       }
 
       // Check if target user is owner - non-owners cannot modify owners
-      const targetUser = await UserService.getUser(userId);
+      // Load target user directly from storage to check role (bypass getUser which filters for non-owners)
+      const stored = await PlatformService.secureLoad('globalreach_users');
+      let targetUser = null;
+      if (stored) {
+        const users = JSON.parse(stored);
+        targetUser = users.find((u: any) => u.id === userId);
+      }
       if (targetUser && targetUser.role === 'Owner' && resetter.role !== 'Owner') {
         throw new Error('Cannot modify owner users');
       }
@@ -138,9 +144,9 @@ export const PinService = {
 
       // Clear verification
       pinVerifications.delete(userId);
-      const stored = await PlatformService.secureLoad(STORAGE_KEY_PIN_VERIFICATIONS);
-      if (stored) {
-        const verifications: Record<string, PinVerification> = JSON.parse(stored);
+      const storedVerifications = await PlatformService.secureLoad(STORAGE_KEY_PIN_VERIFICATIONS);
+      if (storedVerifications) {
+        const verifications: Record<string, PinVerification> = JSON.parse(storedVerifications);
         delete verifications[userId];
         await PlatformService.secureSave(STORAGE_KEY_PIN_VERIFICATIONS, JSON.stringify(verifications));
       }

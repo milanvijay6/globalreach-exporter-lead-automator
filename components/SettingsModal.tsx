@@ -93,6 +93,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [gmailClientId, setGmailClientId] = useState<string>('');
   const [gmailClientSecret, setGmailClientSecret] = useState<string>('');
   const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState<string>('');
+  const [cloudflarePagesUrl, setCloudflarePagesUrl] = useState<string>('');
   const [showOutlookSecret, setShowOutlookSecret] = useState<boolean>(false);
   const [showGmailSecret, setShowGmailSecret] = useState<boolean>(false);
   const [oauthSaveStatus, setOauthSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -222,6 +223,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 const savedWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
                 if (savedWorkerUrl) {
                   setCloudflareWorkerUrl(savedWorkerUrl);
+                }
+              }
+              
+              // Load Cloudflare Pages URL
+              try {
+                const { apiService } = await import('../services/apiService');
+                const pagesResponse = await apiService.get<{ success: boolean; url?: string }>('/api/cloudflare-pages/url');
+                if (pagesResponse.success && pagesResponse.url) {
+                  setCloudflarePagesUrl(pagesResponse.url);
+                  await PlatformService.setAppConfig('cloudflarePagesUrl', pagesResponse.url);
+                } else {
+                  const savedPagesUrl = await PlatformService.getAppConfig('cloudflarePagesUrl', '');
+                  if (savedPagesUrl) {
+                    setCloudflarePagesUrl(savedPagesUrl);
+                  } else if (typeof window !== 'undefined' && (window.location.hostname.includes('pages.dev') || window.location.hostname.includes('cloudflarepages.com'))) {
+                    // If already on Cloudflare Pages, use current URL
+                    setCloudflarePagesUrl(window.location.origin);
+                  }
+                }
+              } catch (error) {
+                const savedPagesUrl = await PlatformService.getAppConfig('cloudflarePagesUrl', '');
+                if (savedPagesUrl) {
+                  setCloudflarePagesUrl(savedPagesUrl);
+                } else if (typeof window !== 'undefined' && (window.location.hostname.includes('pages.dev') || window.location.hostname.includes('cloudflarepages.com'))) {
+                  setCloudflarePagesUrl(window.location.origin);
                 }
               }
             } catch (e) {
@@ -1180,6 +1206,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 await PlatformService.setAppConfig('gmailClientId', gmailClientId);
                                 await PlatformService.setAppConfig('gmailClientSecret', gmailClientSecret);
                                 await PlatformService.setAppConfig('cloudflareWorkerUrl', cloudflareWorkerUrl || '');
+                                await PlatformService.setAppConfig('cloudflarePagesUrl', cloudflarePagesUrl || '');
                                 setOauthSaveStatus('success');
                                 setOauthSaveMessage('OAuth configuration saved successfully');
                                 setTimeout(() => {

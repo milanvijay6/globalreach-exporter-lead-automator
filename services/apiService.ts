@@ -2,7 +2,14 @@
  * API Service for making REST API calls to the backend server
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+// Detect if running on Cloudflare Pages
+const isCloudflarePages = typeof window !== 'undefined' && 
+  (window.location.hostname.includes('pages.dev') || 
+   window.location.hostname.includes('cloudflarepages.com'));
+
+// Use relative URLs for Cloudflare Pages (middleware will proxy to Back4App)
+// Otherwise use explicit API URL or empty string for relative URLs
+const API_BASE_URL = process.env.REACT_APP_API_URL || (isCloudflarePages ? '' : '');
 
 class ApiService {
   private async request<T>(
