@@ -13,7 +13,7 @@ import ApiKeyUsageDashboard from './ApiKeyUsageDashboard';
 import MfaSetupModal from './MfaSetupModal';
 import AdminActionLog from './AdminActionLog';
 import AdminMonitoringDashboard from './AdminMonitoringDashboard';
-import { hasAdminAccess, canViewAuditLogs } from '../services/permissionService';
+import { hasAdminAccess, canViewAuditLogs, isOwner } from '../services/permissionService';
 import ResourceSettings from './ResourceSettings';
 import SystemStatus from './SystemStatus';
 import CompanyDetailsPanel from './CompanyDetailsPanel';
@@ -26,6 +26,7 @@ import WhatsAppWebBanRiskDashboard from './WhatsAppWebBanRiskDashboard';
 import EmailOAuthModal from './EmailOAuthModal';
 import IntegrationCard from './IntegrationCard';
 import { IntegrationAnalyticsService } from '../services/integrationAnalyticsService';
+import OwnerBackendSettings from './OwnerBackendSettings';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -62,7 +63,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localTemplates, setLocalTemplates] = useState<AppTemplates>(templates);
   const [localNotifications, setLocalNotifications] = useState<NotificationConfig>(notificationConfig);
-  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users' | 'owner-backend'>('general');
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   
@@ -86,19 +87,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationInsight | null>(null);
 
-  // OAuth Configuration State
-  const [outlookClientId, setOutlookClientId] = useState<string>('');
-  const [outlookClientSecret, setOutlookClientSecret] = useState<string>('');
-  const [outlookTenantId, setOutlookTenantId] = useState<string>('common');
-  const [gmailClientId, setGmailClientId] = useState<string>('');
-  const [gmailClientSecret, setGmailClientSecret] = useState<string>('');
-  const [cloudflareWorkerUrl, setCloudflareWorkerUrl] = useState<string>('');
-  const [cloudflarePagesUrl, setCloudflarePagesUrl] = useState<string>('');
-  const [showOutlookSecret, setShowOutlookSecret] = useState<boolean>(false);
-  const [showGmailSecret, setShowGmailSecret] = useState<boolean>(false);
-  const [oauthSaveStatus, setOauthSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
-  const [oauthSaveMessage, setOauthSaveMessage] = useState<string>('');
-  
   // WhatsApp Web state
   const [whatsappMethod, setWhatsappMethod] = useState<'cloud_api' | 'web'>('cloud_api');
   const [showWhatsAppWebQR, setShowWhatsAppWebQR] = useState(false);
@@ -171,88 +159,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             
             const path = await Logger.getLogFilePath();
             setLogPath(path || 'Unavailable (Web Mode)');
-
-            // Load OAuth configuration
-            try {
-              const oauthConfigStr = await (window as any).electronAPI?.getConfig('oauthConfig');
-              if (oauthConfigStr) {
-                const oauthConfig = JSON.parse(oauthConfigStr);
-                if (oauthConfig.outlook) {
-                  setOutlookClientId(oauthConfig.outlook.clientId || '');
-                  setOutlookClientSecret(oauthConfig.outlook.clientSecret || '');
-                  setOutlookTenantId(oauthConfig.outlook.tenantId || 'common');
-                }
-                if (oauthConfig.gmail) {
-                  setGmailClientId(oauthConfig.gmail.clientId || '');
-                  setGmailClientSecret(oauthConfig.gmail.clientSecret || '');
-                }
-              }
-              // Also try loading from individual config keys
-              const savedClientId = await PlatformService.getAppConfig('outlookClientId', '');
-              const savedClientSecret = await PlatformService.getAppConfig('outlookClientSecret', '');
-              const savedTenantId = await PlatformService.getAppConfig('outlookTenantId', '');
-              if (savedClientId && !outlookClientId) {
-                setOutlookClientId(savedClientId);
-                setOutlookClientSecret(savedClientSecret);
-                setOutlookTenantId(savedTenantId || 'common');
-              }
-              // Load Gmail credentials from individual config keys as fallback
-              const savedGmailClientId = await PlatformService.getAppConfig('gmailClientId', '');
-              const savedGmailClientSecret = await PlatformService.getAppConfig('gmailClientSecret', '');
-              if (savedGmailClientId && !gmailClientId) {
-                setGmailClientId(savedGmailClientId);
-                setGmailClientSecret(savedGmailClientSecret);
-              }
-              // Load Cloudflare Worker URL (try API first for web, then local config)
-              try {
-                const { apiService } = await import('../services/apiService');
-                const workerResponse = await apiService.get<{ success: boolean; url?: string }>('/api/cloudflare-worker/url');
-                if (workerResponse.success && workerResponse.url) {
-                  setCloudflareWorkerUrl(workerResponse.url);
-                  // Also save to local config for offline access
-                  await PlatformService.setAppConfig('cloudflareWorkerUrl', workerResponse.url);
-                } else {
-                  // Fallback to local config
-                  const savedWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
-                  if (savedWorkerUrl) {
-                    setCloudflareWorkerUrl(savedWorkerUrl);
-                  }
-                }
-              } catch (error) {
-                // Fallback to local config if API fails
-                const savedWorkerUrl = await PlatformService.getAppConfig('cloudflareWorkerUrl', '');
-                if (savedWorkerUrl) {
-                  setCloudflareWorkerUrl(savedWorkerUrl);
-                }
-              }
-              
-              // Load Cloudflare Pages URL
-              try {
-                const { apiService } = await import('../services/apiService');
-                const pagesResponse = await apiService.get<{ success: boolean; url?: string }>('/api/cloudflare-pages/url');
-                if (pagesResponse.success && pagesResponse.url) {
-                  setCloudflarePagesUrl(pagesResponse.url);
-                  await PlatformService.setAppConfig('cloudflarePagesUrl', pagesResponse.url);
-                } else {
-                  const savedPagesUrl = await PlatformService.getAppConfig('cloudflarePagesUrl', '');
-                  if (savedPagesUrl) {
-                    setCloudflarePagesUrl(savedPagesUrl);
-                  } else if (typeof window !== 'undefined' && (window.location.hostname.includes('pages.dev') || window.location.hostname.includes('cloudflarepages.com'))) {
-                    // If already on Cloudflare Pages, use current URL
-                    setCloudflarePagesUrl(window.location.origin);
-                  }
-                }
-              } catch (error) {
-                const savedPagesUrl = await PlatformService.getAppConfig('cloudflarePagesUrl', '');
-                if (savedPagesUrl) {
-                  setCloudflarePagesUrl(savedPagesUrl);
-                } else if (typeof window !== 'undefined' && (window.location.hostname.includes('pages.dev') || window.location.hostname.includes('cloudflarepages.com'))) {
-                  setCloudflarePagesUrl(window.location.origin);
-                }
-              }
-            } catch (e) {
-              console.error('Failed to load OAuth config:', e);
-            }
         };
 
         // Load email connection
@@ -651,7 +557,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex border-b border-slate-200 px-4 sm:px-6 gap-4 sm:gap-6 overflow-x-auto scrollbar-hide shrink-0 flex-shrink-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => {
+            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : []), ...(user && isOwner(user) ? ['owner-backend'] : [])].map(tab => {
                 // Skip products tab if user doesn't have access (but allow viewing for all)
                 // Products tab is visible to all, but editing requires permissions
                 const tabIcons: Record<string, any> = {
@@ -670,7 +576,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                         {Icon && <Icon className="w-4 h-4" />}
-                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab}
+                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab === 'owner-backend' ? 'Owner Backend Settings' : tab}
                 </button>
                 );
             })}
@@ -977,263 +883,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     </div>
                                     </div>
                 
-                {/* OAuth Configuration Section - Collapsible */}
-                <div className="border-2 border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                  <details className="group">
-                    <summary className="cursor-pointer flex items-center justify-between p-4 text-sm font-semibold text-slate-700 hover:text-slate-900 bg-white border-b border-slate-200">
-                      <span className="flex items-center gap-2">
-                        <Lock className="w-4 h-4" />
-                        OAuth Configuration (Advanced)
-                      </span>
-                      <span className="text-xs text-slate-500 group-open:hidden">Click to configure</span>
-                      <span className="text-xs text-slate-500 hidden group-open:inline">Click to hide</span>
-                    </summary>
-                    <div className="p-4 space-y-3">
+                {/* Informational Note for Non-Owners */}
+                {user && !isOwner(user) && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                       <div>
-                        <h5 className="text-xs font-bold text-slate-700 mb-2">Outlook OAuth Configuration</h5>
-                        <p className="text-[10px] text-slate-500 mb-3">
-                          Configure your Outlook OAuth credentials to connect your email account.
+                        <h4 className="text-sm font-semibold text-blue-800 mb-1">Backend Configuration</h4>
+                        <p className="text-xs text-blue-700">
+                          Backend configuration and OAuth credentials are managed by the owner. Contact the owner if you need to configure backend settings.
                         </p>
-                        <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-3">
-                          <p className="text-[10px] text-blue-800 font-semibold mb-1">⚠️ Important Azure Configuration:</p>
-                          <p className="text-[10px] text-blue-700">
-                            In Azure Portal → Authentication → Platform configurations, make sure your redirect URI 
-                            (<code className="bg-blue-100 px-1 rounded">http://localhost:4000/api/oauth/callback</code>) 
-                            is configured as <strong>"Web"</strong> platform type, NOT "Single-page application".
-                                                    </p>
-                        </div>
-                        <div className="space-y-2 text-xs">
-                          <div>
-                            <label className="text-slate-600 block mb-1">Client ID</label>
-                                                        <input
-                                                            type="text"
-                              value={outlookClientId}
-                              onChange={(e) => setOutlookClientId(e.target.value)}
-                              placeholder="Enter Outlook Client ID"
-                              className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-slate-600 block mb-1">Client Secret <span className="text-red-500">*</span></label>
-                            <div className="flex gap-2">
-                              <input
-                                type={showOutlookSecret ? "text" : "password"}
-                                value={outlookClientSecret}
-                                onChange={(e) => setOutlookClientSecret(e.target.value)}
-                                placeholder="Enter Secret VALUE (not Secret ID)"
-                                className="flex-1 px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
-                                                        />
-                                                        <button
-                                onClick={() => setShowOutlookSecret(!showOutlookSecret)}
-                                className="px-3 py-2 border border-slate-300 rounded hover:bg-slate-50"
-                                                        >
-                                {showOutlookSecret ? 'Hide' : 'Show'}
-                                                        </button>
-                                                    </div>
-                            <p className="text-[10px] text-slate-500 mt-1">
-                              ⚠️ Important: Enter the Secret <strong>VALUE</strong> (long string), not the Secret ID (GUID).
-                              <br />
-                              In Azure Portal: Certificates & secrets → Copy the <strong>Value</strong> column (not the Secret ID).
-                                                            </p>
-                                                        </div>
-                                                    <div>
-                            <label className="text-slate-600 block mb-1">Tenant ID (optional)</label>
-                                                        <input
-                                                            type="text"
-                              value={outlookTenantId}
-                              onChange={(e) => setOutlookTenantId(e.target.value)}
-                              placeholder="common, organizations, or your tenant GUID"
-                              className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
-                                                        />
-                            <p className="text-[10px] text-slate-500 mt-1">
-                              Use "common" for personal accounts, "organizations" for work accounts, or your tenant GUID
-                            </p>
-                                                    </div>
-                                                    <div className="border-t border-slate-200 pt-3 mt-3">
-                            <h5 className="text-xs font-bold text-slate-700 mb-2">Gmail OAuth Configuration</h5>
-                            <p className="text-[10px] text-slate-500 mb-3">
-                              Configure your Gmail OAuth credentials to connect your Gmail account.
-                            </p>
-                            <div className="bg-green-50 border border-green-200 rounded p-2 mb-3">
-                              <p className="text-[10px] text-green-800 font-semibold mb-1">ℹ️ Google Cloud Console Setup:</p>
-                              <p className="text-[10px] text-green-700">
-                                In Google Cloud Console → APIs & Services → Credentials, make sure your redirect URI 
-                                (<code className="bg-green-100 px-1 rounded">http://localhost:4000/api/oauth/callback</code> or your Cloudflare URL) 
-                                is added to your OAuth 2.0 Client ID.
-                              </p>
-                            </div>
-                            <div className="space-y-2 text-xs">
-                              <div>
-                                <label className="text-slate-600 block mb-1">Gmail Client ID</label>
-                                <input
-                                  type="text"
-                                  value={gmailClientId}
-                                  onChange={(e) => setGmailClientId(e.target.value)}
-                                  placeholder="Enter Gmail Client ID (e.g., xxx.apps.googleusercontent.com)"
-                                  className="w-full px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-slate-600 block mb-1">Gmail Client Secret <span className="text-red-500">*</span></label>
-                                <div className="flex gap-2">
-                                  <input
-                                    type={showGmailSecret ? "text" : "password"}
-                                    value={gmailClientSecret}
-                                    onChange={(e) => setGmailClientSecret(e.target.value)}
-                                    placeholder="Enter Gmail Client Secret"
-                                    className="flex-1 px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500"
-                                  />
-                                  <button
-                                    onClick={() => setShowGmailSecret(!showGmailSecret)}
-                                    className="px-3 py-2 border border-slate-300 rounded hover:bg-slate-50"
-                                  >
-                                    {showGmailSecret ? 'Hide' : 'Show'}
-                                  </button>
-                                </div>
-                                <p className="text-[10px] text-slate-500 mt-1">
-                                  Get your Client ID and Secret from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID.
-                                </p>
-                              </div>
-                            </div>
-                                                    </div>
-                                                    <div className="border-t border-slate-200 pt-3 mt-3">
-                            <h5 className="text-xs font-bold text-slate-700 mb-2">Cloudflare Worker OAuth Proxy</h5>
-                            <p className="text-[10px] text-slate-500 mb-3">
-                              Automatically deploy a permanent Cloudflare Worker URL for OAuth callbacks. This solves the Back4App URL expiration issue.
-                            </p>
-                            <div className="space-y-2">
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={cloudflareWorkerUrl}
-                                  onChange={(e) => setCloudflareWorkerUrl(e.target.value)}
-                                  placeholder="https://your-worker.workers.dev"
-                                  className="flex-1 px-3 py-2 border border-slate-300 rounded bg-white focus:ring-2 focus:ring-indigo-500 text-xs"
-                                />
-                                <button
-                                  onClick={async () => {
-                                    setOauthSaveStatus('saving');
-                                    setOauthSaveMessage('Deploying Cloudflare Worker...');
-                                    try {
-                                      const { apiService } = await import('../services/apiService');
-                                      const response = await apiService.post<{ success: boolean; url?: string; error?: string }>('/api/cloudflare-worker/deploy', {});
-                                      if (response.success && response.url) {
-                                        setCloudflareWorkerUrl(response.url);
-                                        await PlatformService.setAppConfig('cloudflareWorkerUrl', response.url);
-                                        setOauthSaveStatus('success');
-                                        setOauthSaveMessage('Worker deployed successfully!');
-                                      } else {
-                                        setOauthSaveStatus('error');
-                                        setOauthSaveMessage(response.error || 'Failed to deploy worker');
-                                      }
-                                    } catch (error: any) {
-                                      setOauthSaveStatus('error');
-                                      setOauthSaveMessage(error.message || 'Failed to deploy worker');
-                                    }
-                                    setTimeout(() => {
-                                      setOauthSaveStatus('idle');
-                                      setOauthSaveMessage('');
-                                    }, 5000);
-                                  }}
-                                  className="px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700 transition-colors whitespace-nowrap"
-                                  title="Deploy or update Cloudflare Worker"
-                                >
-                                  Deploy
-                                </button>
-                                {cloudflareWorkerUrl && (
-                                  <button
-                                    onClick={async () => {
-                                      setOauthSaveStatus('saving');
-                                      setOauthSaveMessage('Resetting Cloudflare Worker...');
-                                      try {
-                                        const { apiService } = await import('../services/apiService');
-                                        const response = await apiService.post<{ success: boolean; url?: string; error?: string }>('/api/cloudflare-worker/reset', {});
-                                        if (response.success && response.url) {
-                                          setCloudflareWorkerUrl(response.url);
-                                          await PlatformService.setAppConfig('cloudflareWorkerUrl', response.url);
-                                          setOauthSaveStatus('success');
-                                          setOauthSaveMessage('New worker URL generated!');
-                                        } else {
-                                          setOauthSaveStatus('error');
-                                          setOauthSaveMessage(response.error || 'Failed to reset worker');
-                                        }
-                                      } catch (error: any) {
-                                        setOauthSaveStatus('error');
-                                        setOauthSaveMessage(error.message || 'Failed to reset worker');
-                                      }
-                                      setTimeout(() => {
-                                        setOauthSaveStatus('idle');
-                                        setOauthSaveMessage('');
-                                      }, 5000);
-                                    }}
-                                    className="px-3 py-2 bg-orange-600 text-white text-xs font-semibold rounded hover:bg-orange-700 transition-colors whitespace-nowrap"
-                                    title="Generate new worker URL"
-                                  >
-                                    Reset
-                                  </button>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-500">
-                                {cloudflareWorkerUrl ? (
-                                  <>✅ Worker URL configured. Add this to Azure: <code className="bg-slate-100 px-1 rounded">{cloudflareWorkerUrl}/auth/outlook/callback</code></>
-                                ) : (
-                                  <>Click "Deploy" to automatically create a permanent OAuth callback URL</>
-                                )}
-                              </p>
-                            </div>
-                                                    </div>
-                                                    <button
-                                                        onClick={async () => {
-                              setOauthSaveStatus('saving');
-                              try {
-                                const config = {
-                                  outlook: {
-                                    clientId: outlookClientId,
-                                    clientSecret: outlookClientSecret,
-                                    tenantId: outlookTenantId || 'common',
-                                  },
-                                  gmail: {
-                                    clientId: gmailClientId,
-                                    clientSecret: gmailClientSecret,
-                                  },
-                                };
-                                if ((window as any).electronAPI?.setConfig) {
-                                  await (window as any).electronAPI.setConfig('oauthConfig', JSON.stringify(config));
-                                                            }
-                                await PlatformService.setAppConfig('outlookClientId', outlookClientId);
-                                await PlatformService.setAppConfig('outlookClientSecret', outlookClientSecret);
-                                await PlatformService.setAppConfig('outlookTenantId', outlookTenantId || 'common');
-                                await PlatformService.setAppConfig('gmailClientId', gmailClientId);
-                                await PlatformService.setAppConfig('gmailClientSecret', gmailClientSecret);
-                                await PlatformService.setAppConfig('cloudflareWorkerUrl', cloudflareWorkerUrl || '');
-                                await PlatformService.setAppConfig('cloudflarePagesUrl', cloudflarePagesUrl || '');
-                                setOauthSaveStatus('success');
-                                setOauthSaveMessage('OAuth configuration saved successfully');
-                                setTimeout(() => {
-                                  setOauthSaveStatus('idle');
-                                  setOauthSaveMessage('');
-                                }, 3000);
-                                                            } catch (error: any) {
-                                setOauthSaveStatus('error');
-                                setOauthSaveMessage(error.message || 'Failed to save OAuth configuration');
-                                                            }
-                                                        }}
-                            className="w-full px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors"
-                                                    >
-                            Save OAuth Configuration
-                                                    </button>
-                          {oauthSaveStatus !== 'idle' && (
-                            <p className={`text-xs ${
-                              oauthSaveStatus === 'success' ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {oauthSaveMessage}
-                            </p>
-                          )}
-                                            </div>
-                                        </div>
-                                </div>
-                  </details>
-                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Legacy sections removed - now using unified cards above */}
             </div>
@@ -1321,6 +984,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                      </div>
                  </div>
              </div>
+          )}
+
+          {/* OWNER BACKEND SETTINGS */}
+          {activeTab === 'owner-backend' && user && isOwner(user) && (
+            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
+              <OwnerBackendSettings />
+            </div>
           )}
 
           {/* RESOURCES */}
