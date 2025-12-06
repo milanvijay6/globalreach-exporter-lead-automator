@@ -1530,22 +1530,28 @@ const App: React.FC = () => {
   // 2. Login Screen (Show first if not authenticated)
   if (!user) {
       return (
-        <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-        <LoginScreen onLogin={handleLogin} />
-        </div>
+        <>
+          <LoadingBar />
+          <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+            <LoginScreen onLogin={handleLogin} />
+          </div>
+        </>
       );
   }
 
   // 3. PIN Lock Screen
   if (user && isLocked) {
     return (
-      <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-        <PinLockScreen
-          isLocked={isLocked}
-          onUnlock={() => setIsLocked(false)}
-          inactivityTimeout={LOCK_TIMEOUT_MS}
-        />
-      </div>
+      <>
+        <LoadingBar />
+        <div className="h-screen w-screen" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+          <PinLockScreen
+            isLocked={isLocked}
+            onUnlock={() => setIsLocked(false)}
+            inactivityTimeout={LOCK_TIMEOUT_MS}
+          />
+        </div>
+      </>
     );
   }
 
@@ -1553,26 +1559,28 @@ const App: React.FC = () => {
   if (user && showOwnerAdmin) {
     if (OwnerAuthService.isOwner(user)) {
       return (
-        <div className="h-screen w-screen bg-slate-50 overflow-y-auto" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-          <div className="max-w-7xl mx-auto p-6">
-            <button
-              onClick={() => setShowOwnerAdmin(false)}
-              className="mb-4 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
-            >
-              ← Back to App
-            </button>
-            <Suspense fallback={<ComponentLoader />}>
-              <OwnerAdminPanel
-                user={user}
-                onSourceCodeAccess={() => setShowSourceCodeViewer(true)}
+        <>
+          <LoadingBar />
+          <div className="h-screen w-screen bg-slate-50 overflow-y-auto" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+            <div className="max-w-7xl mx-auto p-6">
+              <button
+                onClick={() => setShowOwnerAdmin(false)}
+                className="mb-4 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                ← Back to App
+              </button>
+              <Suspense fallback={<ComponentLoader />}>
+                <OwnerAdminPanel
+                  user={user}
+                  onSourceCodeAccess={() => setShowSourceCodeViewer(true)}
+                />
+              </Suspense>
+              <SourceCodeViewer
+                isOpen={showSourceCodeViewer}
+                onClose={() => setShowSourceCodeViewer(false)}
               />
-            </Suspense>
-            <SourceCodeViewer
-              isOpen={showSourceCodeViewer}
-              onClose={() => setShowSourceCodeViewer(false)}
-            />
+            </div>
           </div>
-        </div>
         </>
       );
     }
