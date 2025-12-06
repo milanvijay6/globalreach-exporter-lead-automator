@@ -13,6 +13,7 @@ import Navigation from './components/Navigation';
 import HelpModal from './components/HelpModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import SourceCodeViewer from './components/SourceCodeViewer';
+import LoadingBar from './components/LoadingBar';
 
 // Lazy load heavy components for code splitting
 const SettingsModal = lazy(() => import('./components/SettingsModal'));
@@ -42,6 +43,7 @@ import { CampaignService } from './services/campaignService';
 import { CalendarService } from './services/calendarService';
 import { t } from './services/i18n';
 import { isDesktop, PlatformService } from './services/platformService';
+import { LoadingService } from './services/loadingService';
 
 // Mock Data
 const MOCK_IMPORTERS: Importer[] = [
@@ -238,7 +240,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
+        const initTaskId = 'app_init';
         try {
+            LoadingService.start(initTaskId, 'Initializing application...');
+            
             // Check for existing user session first
             const savedUser = await loadUserSession();
             
@@ -248,25 +253,35 @@ const App: React.FC = () => {
                     setUser(savedUser);
                     logSecurityEvent('SESSION_RESTORE', savedUser.id, 'Restored from secure storage');
                     
+                    LoadingService.updateProgress(initTaskId, 30);
+                    
                     // Load PIN verifications
                     const { PinService } = await import('./services/pinService');
                     await PinService.loadPinVerifications();
                     
+                    LoadingService.updateProgress(initTaskId, 50);
+                    
                     // Load all user-specific data
                     await loadInitialAppData(savedUser);
+                    
+                    LoadingService.updateProgress(initTaskId, 80);
                     
                     // Load panel size preferences
                     const panelSizes = await loadPanelSizes(savedUser.id);
                     setImporterListWidth(panelSizes.importerListWidth);
                     
+                    LoadingService.updateProgress(initTaskId, 100);
+                    LoadingService.complete(initTaskId);
                     setIsSetupComplete(true);
                 } else {
                     // No user session - setup is complete (no wizard needed)
+                    LoadingService.complete(initTaskId);
                     setIsSetupComplete(true);
             }
             // If no user session, LoginScreen will be shown (handled in render logic)
         } catch (e) {
             console.error("Initialization failed", e);
+            LoadingService.stop(initTaskId);
             setIsSetupComplete(true); // Allow app to proceed even on error
         }
     };
@@ -1079,10 +1094,15 @@ const App: React.FC = () => {
 
   // Helper function to load all user-specific data
   const loadInitialAppData = async (loggedInUser: User) => {
+    const loadTaskId = 'load_app_data';
     try {
+      LoadingService.start(loadTaskId, 'Loading user data...');
+      
       // Load PIN verifications
       const { PinService } = await import('./services/pinService');
       await PinService.loadPinVerifications();
+      
+      LoadingService.updateProgress(loadTaskId, 20);
       
       // Check and delete invalid leads after loading data
       setTimeout(() => {
@@ -1092,6 +1112,8 @@ const App: React.FC = () => {
       // Load platform connections
       const savedPlatforms = await loadPlatformConnections();
       if (savedPlatforms.length > 0) setConnectedPlatforms(savedPlatforms);
+      
+      LoadingService.updateProgress(loadTaskId, 40);
 
       // Start token refresh service
       if (isDesktop()) {
@@ -1123,6 +1145,8 @@ const App: React.FC = () => {
         });
       }
 
+      LoadingService.updateProgress(loadTaskId, 70);
+
       // Load user-specific importers/leads
       const savedImporters = await StorageService.loadImporters(loggedInUser.id);
       if (savedImporters && savedImporters.length > 0) {
@@ -1131,8 +1155,11 @@ const App: React.FC = () => {
           setImporters(MOCK_IMPORTERS);
       }
 
+      LoadingService.updateProgress(loadTaskId, 100);
+      LoadingService.complete(loadTaskId);
       console.log(`[App] User-specific data loaded for user: ${loggedInUser.id}`);
     } catch (error) {
+      LoadingService.stop(loadTaskId);
       console.error('[App] Failed to load initial app data:', error);
     }
   };
@@ -1332,12 +1359,31 @@ const App: React.FC = () => {
   }, [user]);
 
   // Simple import handler - atomic state update, no complexity
-  const handleImportComplete = useCallback((newItems: Importer[]) => {
+  const handleImportComplete = useCallback(async (newItems: Importer[]) => {
+    const importTaskId = 'import_leads';
+    LoadingService.start(importTaskId, `Importing ${newItems.length} leads...`);
+    
     // Simple, direct state update - no guards, no queues, no complexity
     setImportersRaw(prev => {
       const existingIds = new Set(prev.map(i => i.id));
       const filtered = newItems.filter(item => !existingIds.has(item.id));
       return [...prev, ...filtered];
+    });
+    
+    LoadingService.updateProgress(importTaskId, 50);
+    
+    // Get updated state and save to storage
+    setImportersRaw(prev => {
+      // Save asynchronously after state update completes
+      setTimeout(async () => {
+        try {
+          await StorageService.saveImporters(prev, user?.id);
+          LoadingService.complete(importTaskId);
+        } catch (error) {
+          LoadingService.stop(importTaskId);
+        }
+      }, 0);
+      return prev; // No state change, just trigger save
     });
     
     // After import, check and delete invalid leads
@@ -1469,12 +1515,15 @@ const App: React.FC = () => {
   // 1. Loading State (Checking Config)
   if (isSetupComplete === null) {
       return (
-          <div className="h-screen w-screen flex items-center justify-center bg-slate-100" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
-              <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-                  <p className="text-slate-500 font-medium">Initializing GlobalReach...</p>
-              </div>
-          </div>
+          <>
+            <LoadingBar />
+            <div className="h-screen w-screen flex items-center justify-center bg-slate-100" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}>
+                <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+                    <p className="text-slate-500 font-medium">Initializing GlobalReach...</p>
+                </div>
+            </div>
+          </>
       );
   }
 
@@ -1524,13 +1573,16 @@ const App: React.FC = () => {
             />
           </div>
         </div>
+        </>
       );
     }
   }
 
   // 5. Main Application
   return (
-    <div className="flex h-screen w-screen bg-slate-100 text-slate-900 relative overflow-hidden" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0, width: '100vw', height: '100vh', minWidth: '100vw', minHeight: '100vh', maxWidth: '100vw', maxHeight: '100vh', overflow: 'hidden' }}>
+    <>
+      <LoadingBar />
+      <div className="flex h-screen w-screen bg-slate-100 text-slate-900 relative overflow-hidden" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0, width: '100vw', height: '100vh', minWidth: '100vw', minHeight: '100vh', maxWidth: '100vw', maxHeight: '100vh', overflow: 'hidden' }}>
           <ErrorBoundary>
             <LeadImportWizard 
               isOpen={showImportModal} 
@@ -1635,6 +1687,7 @@ const App: React.FC = () => {
 
       </div>
     </div>
+    </>
   );
 };
 

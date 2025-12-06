@@ -2,6 +2,7 @@
 import { Importer } from '../types';
 import { loadUserSession } from './securityService';
 import { IndexedDBService } from './indexedDBService';
+import { LoadingService } from './loadingService';
 
 // Helper to get storage key for user-specific importers
 const getStorageKey = (userId: string): string => `globalreach_data_encrypted_${userId}`;
@@ -109,7 +110,10 @@ const migrateToIndexedDB = async (userId: string): Promise<void> => {
 
 export const StorageService = {
   saveImporters: async (importers: Importer[], userId?: string) => {
+    const saveTaskId = 'save_importers';
     try {
+      LoadingService.start(saveTaskId, `Saving ${importers.length} records...`);
+      
       const currentUserId = userId || await getCurrentUserId();
       if (!currentUserId) {
         console.warn('[StorageService] No user ID available, saving to global storage');
@@ -118,11 +122,16 @@ export const StorageService = {
         const encrypted = encrypt(json);
         localStorage.setItem(GLOBAL_STORAGE_KEY, encrypted);
         console.log(`[StorageService] Saved ${importers.length} records to global storage.`);
+        LoadingService.complete(saveTaskId);
         return;
       }
 
+      LoadingService.updateProgress(saveTaskId, 20);
+
       // Ensure migration is done
       await migrateToIndexedDB(currentUserId);
+
+      LoadingService.updateProgress(saveTaskId, 40);
 
       try {
         // Try IndexedDB first
@@ -133,6 +142,8 @@ export const StorageService = {
         }));
         await IndexedDBService.put('importers', importersWithUserId);
         console.log(`[StorageService] Saved ${importers.length} records to IndexedDB for user ${currentUserId}.`);
+        LoadingService.updateProgress(saveTaskId, 100);
+        LoadingService.complete(saveTaskId);
       } catch (indexedDBError) {
         // Fallback to localStorage
         console.warn('[StorageService] IndexedDB save failed, falling back to localStorage:', indexedDBError);
@@ -141,19 +152,28 @@ export const StorageService = {
         const encrypted = encrypt(json);
         localStorage.setItem(storageKey, encrypted);
         console.log(`[StorageService] Saved ${importers.length} records to localStorage for user ${currentUserId}.`);
+        LoadingService.complete(saveTaskId);
       }
     } catch (e) {
+      LoadingService.stop(saveTaskId);
       console.error("Failed to save importers", e);
     }
   },
 
   loadImporters: async (userId?: string): Promise<Importer[] | null> => {
+    const loadTaskId = 'load_importers';
     try {
+      LoadingService.start(loadTaskId, 'Loading data...');
+      
       const currentUserId = userId || await getCurrentUserId();
       
       if (currentUserId) {
+        LoadingService.updateProgress(loadTaskId, 30);
+        
         // Ensure migration is done
         await migrateToIndexedDB(currentUserId);
+        
+        LoadingService.updateProgress(loadTaskId, 50);
 
         try {
           // Try IndexedDB first
@@ -163,23 +183,33 @@ export const StorageService = {
             // Remove userId from importer objects before returning
             const cleaned = importers.map(({ userId, ...imp }) => imp);
             console.log(`[StorageService] Loaded ${cleaned.length} records from IndexedDB for user ${currentUserId}.`);
+            LoadingService.updateProgress(loadTaskId, 100);
+            LoadingService.complete(loadTaskId);
             return cleaned;
           }
         } catch (indexedDBError) {
           console.warn('[StorageService] IndexedDB load failed, falling back to localStorage:', indexedDBError);
         }
 
+        LoadingService.updateProgress(loadTaskId, 70);
+
         // Fallback to localStorage
         const storageKey = getStorageKey(currentUserId);
         const encrypted = localStorage.getItem(storageKey);
-        if (!encrypted) return null;
+        if (!encrypted) {
+          LoadingService.complete(loadTaskId);
+          return null;
+        }
         
         try {
           const json = decrypt(encrypted);
           const importers = JSON.parse(json);
           console.log(`[StorageService] Loaded ${importers.length} records from localStorage for user ${currentUserId}.`);
+          LoadingService.updateProgress(loadTaskId, 100);
+          LoadingService.complete(loadTaskId);
           return importers;
         } catch (e) {
+          LoadingService.stop(loadTaskId);
           console.error("Failed to load importers from localStorage", e);
           return null;
         }

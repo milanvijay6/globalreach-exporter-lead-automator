@@ -3,6 +3,8 @@
  * Batches multiple API calls, deduplicates requests, and manages connection pooling
  */
 
+import { LoadingService } from './loadingService';
+
 interface PendingRequest {
   url: string;
   method: string;
@@ -53,7 +55,11 @@ async function processQueue() {
  * Execute a single request with retry logic
  */
 async function executeRequest(request: PendingRequest, retryCount = 0): Promise<void> {
+  const taskId = `api_${request.method}_${Date.now()}`;
+  
   try {
+    LoadingService.start(taskId, `${request.method} ${new URL(request.url).pathname}`);
+    
     const response = await fetch(request.url, request.options);
 
     if (!response.ok) {
@@ -71,8 +77,10 @@ async function executeRequest(request: PendingRequest, retryCount = 0): Promise<
     }
 
     const data = await response.json();
+    LoadingService.complete(taskId);
     request.resolve(data);
   } catch (error) {
+    LoadingService.stop(taskId);
     // Retry on network errors
     if (retryCount < RETRY_DELAYS.length && (
       error instanceof TypeError || // Network error

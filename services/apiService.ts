@@ -5,6 +5,7 @@
 
 import { getCachedResponse, cacheResponse, invalidateCache, cachedFetch } from './apiCacheService';
 import { batchedFetch, immediateFetch } from './apiBatchService';
+import { LoadingService } from './loadingService';
 
 // Detect if running on Cloudflare Pages
 const isCloudflarePages = typeof window !== 'undefined' && 
@@ -53,6 +54,7 @@ class ApiService {
     const url = `${API_BASE_URL}${endpoint}`;
     const method = options.method || 'GET';
     const isGet = method === 'GET';
+    const taskId = `api_${method}_${endpoint}_${Date.now()}`;
 
     // Check cache for GET requests
     if (isGet && useCache) {
@@ -61,6 +63,9 @@ class ApiService {
         return cached;
       }
     }
+
+    // Start loading tracking
+    LoadingService.start(taskId, `${method} ${endpoint}`);
 
     // Prepare request options
     const requestOptions: RequestInit = {
@@ -76,6 +81,8 @@ class ApiService {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
     requestOptions.signal = controller.signal;
 
+    const startTime = Date.now();
+
     try {
       // Use batched fetch for non-critical requests, immediate for critical
       const response = useBatch && isGet
@@ -89,9 +96,15 @@ class ApiService {
         await cacheResponse(url, method, response);
       }
 
+      // Complete loading
+      LoadingService.complete(taskId);
+
       return response;
     } catch (error: any) {
       clearTimeout(timeoutId);
+
+      // Stop loading on error
+      LoadingService.stop(taskId);
 
       // Don't cache errors
       if (error.name === 'AbortError') {
