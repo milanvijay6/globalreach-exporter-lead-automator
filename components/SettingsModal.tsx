@@ -26,7 +26,6 @@ import WhatsAppWebBanRiskDashboard from './WhatsAppWebBanRiskDashboard';
 import EmailOAuthModal from './EmailOAuthModal';
 import IntegrationCard from './IntegrationCard';
 import { IntegrationAnalyticsService } from '../services/integrationAnalyticsService';
-import OwnerBackendSettings from './OwnerBackendSettings';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -63,7 +62,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localTemplates, setLocalTemplates] = useState<AppTemplates>(templates);
   const [localNotifications, setLocalNotifications] = useState<NotificationConfig>(notificationConfig);
-  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users' | 'owner-admin'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users'>('general');
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   
@@ -557,7 +556,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex border-b border-slate-200 px-4 sm:px-6 gap-4 sm:gap-6 overflow-x-auto scrollbar-hide shrink-0 flex-shrink-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : []), ...(user && isOwner(user) ? ['owner-admin'] : [])].map(tab => {
+            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => {
                 // Skip products tab if user doesn't have access (but allow viewing for all)
                 // Products tab is visible to all, but editing requires permissions
                 const tabIcons: Record<string, any> = {
@@ -576,7 +575,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                         {Icon && <Icon className="w-4 h-4" />}
-                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab === 'owner-admin' ? 'Owner Admin' : tab}
+                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab}
                 </button>
                 );
             })}
@@ -984,13 +983,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                      </div>
                  </div>
              </div>
-          )}
-
-          {/* OWNER ADMIN */}
-          {activeTab === 'owner-admin' && user && isOwner(user) && (
-            <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
-              <OwnerBackendSettings />
-            </div>
           )}
 
           {/* RESOURCES */}

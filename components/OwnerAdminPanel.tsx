@@ -5,7 +5,8 @@ import { UserService } from '../services/userService';
 import { AuthService } from '../services/authService';
 import { OwnerAuthService } from '../services/ownerAuthService';
 import { Logger } from '../services/loggerService';
-import { CheckCircle, XCircle, Users, Shield, Code, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, XCircle, Users, Shield, Code, RefreshCw, Eye, EyeOff, Server } from 'lucide-react';
+import OwnerBackendSettings from './OwnerBackendSettings';
 
 interface OwnerAdminPanelProps {
   user: User;
@@ -16,7 +17,7 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'pending' | 'users' | 'source'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'users' | 'source' | 'backend'>('pending');
   
   // Approval state
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -160,6 +161,16 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
           >
             <Code className="w-4 h-4 inline mr-1" /> Source Code Access
           </button>
+          <button
+            onClick={() => setActiveTab('backend')}
+            className={`px-4 py-2 border-b-2 font-medium text-sm ${
+              activeTab === 'backend'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Server className="w-4 h-4 inline mr-1" /> Backend Settings
+          </button>
         </nav>
       </div>
 
@@ -290,6 +301,13 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Backend Settings Tab */}
+      {activeTab === 'backend' && (
+        <div>
+          <OwnerBackendSettings />
         </div>
       )}
 

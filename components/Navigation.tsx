@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
-import { Zap, LayoutDashboard, Upload, Settings, LogOut, Menu, X, HelpCircle, Calendar, Megaphone, BarChart3, Shield, Package } from 'lucide-react';
+import { Zap, LayoutDashboard, Upload, Settings, LogOut, Menu, X, HelpCircle, Calendar, Megaphone, BarChart3, Shield, Package, Server } from 'lucide-react';
 import { User, UserRole, Language } from '../types';
 import { canEditSettings } from '../types';
 import { t } from '../services/i18n';
-import { hasAdminAccess } from '../services/permissionService';
+import { hasAdminAccess, isOwner } from '../services/permissionService';
 
 interface NavigationProps {
   user: User;
@@ -105,12 +105,12 @@ const Navigation: React.FC<NavigationProps> = ({
           </button>
         )}
 
-        {(user.role === 'Owner' || user.email?.toLowerCase() === 'milanvijay24@gmail.com') && setShowOwnerAdmin && (
+        {isOwner(user) && setShowOwnerAdmin && (
           <button 
             onClick={() => { setShowOwnerAdmin(true); setIsMobileMenuOpen(false); }} 
             title="Owner Admin"
             className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
-            <Shield className="w-6 h-6" />
+            <Server className="w-6 h-6" />
           </button>
         )}
       </div>
