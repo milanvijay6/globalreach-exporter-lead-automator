@@ -1,21 +1,16 @@
 const Parse = require('parse/node');
 
-// Ensure Parse is initialized with master key if available
-// This is important when Config is used in scripts (like deploy-cloudflare-worker.js)
-// Check if Parse has a valid application ID (not empty string)
-const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
-
-if (process.env.PARSE_APPLICATION_ID && !hasValidAppId) {
-  Parse.initialize(
-    process.env.PARSE_APPLICATION_ID,
-    process.env.PARSE_JAVASCRIPT_KEY || ''
-  );
-  Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
+// Import Parse config to ensure initialization
+// This ensures Parse is initialized before Config operations
+let parseConfig;
+try {
+  parseConfig = require('../config/parse');
+} catch (error) {
+  console.error('[Config] Failed to load Parse config:', error);
 }
 
-if (process.env.PARSE_MASTER_KEY && !Parse.masterKey) {
-  Parse.masterKey = process.env.PARSE_MASTER_KEY;
-}
+// Track if we've logged the initialization warning to reduce log noise
+let hasLoggedInitWarning = false;
 
 // Helper function to check if Parse is initialized
 function isParseInitialized() {
@@ -25,22 +20,41 @@ function isParseInitialized() {
 
 // Helper function to ensure Parse is initialized before using it
 function ensureParseInitialized() {
-  if (!isParseInitialized() && process.env.PARSE_APPLICATION_ID) {
-    Parse.initialize(
-      process.env.PARSE_APPLICATION_ID,
-      process.env.PARSE_JAVASCRIPT_KEY || ''
-    );
-    Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
-    if (process.env.PARSE_MASTER_KEY) {
-      Parse.masterKey = process.env.PARSE_MASTER_KEY;
+  // If already initialized, return true
+  if (isParseInitialized()) {
+    return true;
+  }
+
+  // Try to initialize if we have the required environment variable
+  if (process.env.PARSE_APPLICATION_ID && process.env.PARSE_APPLICATION_ID.trim() !== '') {
+    try {
+      Parse.initialize(
+        process.env.PARSE_APPLICATION_ID,
+        process.env.PARSE_JAVASCRIPT_KEY || ''
+      );
+      Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
+      if (process.env.PARSE_MASTER_KEY) {
+        Parse.masterKey = process.env.PARSE_MASTER_KEY;
+      }
+      
+      // Verify initialization succeeded
+      if (isParseInitialized()) {
+        return true;
+      }
+    } catch (error) {
+      // Initialization failed, will return false below
+      console.error('[Config] Failed to initialize Parse:', error.message);
     }
   }
   
-  // Return false instead of throwing - let callers handle gracefully
-  if (!isParseInitialized()) {
-    return false;
+  // Log warning only once to reduce log noise
+  if (!hasLoggedInitWarning) {
+    console.warn('[Config] ⚠️  Parse not initialized. Config operations will return default values.');
+    console.warn('[Config] Set PARSE_APPLICATION_ID in Back4App environment variables to enable Config API.');
+    hasLoggedInitWarning = true;
   }
-  return true;
+  
+  return false;
 }
 
 const Config = Parse.Object.extend('Config', {
@@ -55,9 +69,9 @@ const Config = Parse.Object.extend('Config', {
    * @param {boolean} useMasterKey - Whether to use master key (default: false, uses user context)
    */
   async get(key, defaultValue = null, userId = null, useMasterKey = false) {
-    // If Parse is not initialized, return default value
+    // If Parse is not initialized, return default value silently
+    // (Warning is logged once by ensureParseInitialized to reduce log noise)
     if (!ensureParseInitialized()) {
-      console.warn(`[Config] Parse not initialized, returning default value for key: ${key}`);
       return defaultValue;
     }
     
@@ -103,9 +117,9 @@ const Config = Parse.Object.extend('Config', {
    * @param {boolean} useMasterKey - Whether to use master key (default: false)
    */
   async set(key, value, userId = null, useMasterKey = false) {
-    // If Parse is not initialized, return false
+    // If Parse is not initialized, return false silently
+    // (Warning is logged once by ensureParseInitialized to reduce log noise)
     if (!ensureParseInitialized()) {
-      console.warn(`[Config] Parse not initialized, cannot set config for key: ${key}`);
       return false;
     }
     
@@ -139,9 +153,9 @@ const Config = Parse.Object.extend('Config', {
    * @param {boolean} useMasterKey - Whether to use master key
    */
   async getAll(userId = null, useMasterKey = false) {
-    // If Parse is not initialized, return empty object
+    // If Parse is not initialized, return empty object silently
+    // (Warning is logged once by ensureParseInitialized to reduce log noise)
     if (!ensureParseInitialized()) {
-      console.warn(`[Config] Parse not initialized, returning empty config for userId: ${userId || 'global'}`);
       return {};
     }
     
