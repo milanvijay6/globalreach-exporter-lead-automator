@@ -555,30 +555,43 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="flex border-b border-slate-200 px-4 sm:px-6 gap-4 sm:gap-6 overflow-x-auto scrollbar-hide shrink-0 flex-shrink-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => {
-                // Skip products tab if user doesn't have access (but allow viewing for all)
-                // Products tab is visible to all, but editing requires permissions
-                const tabIcons: Record<string, any> = {
-                    'company': Building2,
-                    'products': Package,
-                    'pricing': DollarSign,
-                    'users': Users,
-                    'network': Network,
-                };
-                const Icon = tabIcons[tab];
-                return (
-                <button 
-                    key={tab}
-                    onClick={() => setActiveTab(tab as any)} 
-                        className={`py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap capitalize flex items-center gap-2
-                        ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                >
-                        {Icon && <Icon className="w-4 h-4" />}
-                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab}
-                </button>
-                );
-            })}
+        <div className="border-b border-slate-200 shrink-0 flex-shrink-0 bg-white">
+          <div 
+            className="overflow-x-auto scrollbar-hide" 
+            style={{ 
+              WebkitOverflowScrolling: 'touch', 
+              scrollbarWidth: 'none', 
+              msOverflowStyle: 'none',
+              maxWidth: '100%'
+            }}
+          >
+            <div className="flex px-2 sm:px-4 gap-2 sm:gap-3 min-w-max">
+              {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : [])].map(tab => {
+                  // Skip products tab if user doesn't have access (but allow viewing for all)
+                  // Products tab is visible to all, but editing requires permissions
+                  const tabIcons: Record<string, any> = {
+                      'company': Building2,
+                      'products': Package,
+                      'pricing': DollarSign,
+                      'users': Users,
+                      'network': Network,
+                  };
+                  const Icon = tabIcons[tab];
+                  const tabLabel = tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab;
+                  return (
+                  <button 
+                      key={tab}
+                      onClick={() => setActiveTab(tab as any)} 
+                          className={`py-2.5 sm:py-3 px-2 sm:px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap capitalize flex items-center gap-1.5 sm:gap-2 flex-shrink-0
+                          ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                  >
+                          {Icon && <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />}
+                      <span>{tabLabel}</span>
+                  </button>
+                  );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Content Area - Scrollable, Full Height */}
