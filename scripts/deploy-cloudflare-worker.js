@@ -226,6 +226,11 @@ async function deployWorker() {
       
       // Update account ID if provided
       if (accountId) {
+        // Remove ALL existing account_id entries (commented or uncommented) to avoid duplicates
+        // This handles cases where account_id might appear multiple times
+        wranglerContent = wranglerContent.replace(/^(\s*)#?\s*account_id\s*=\s*["'][^"']*["']\s*$/gm, '');
+        
+        // Now add account_id in the correct location (only once)
         if (wranglerContent.includes('[env.production]')) {
           // Add account_id to existing env section
           wranglerContent = wranglerContent.replace(
@@ -233,10 +238,10 @@ async function deployWorker() {
             `[env.production]\naccount_id = "${accountId}"`
           );
         } else {
-          // Add account_id at top level
+          // Add account_id at top level after compatibility_date
           wranglerContent = wranglerContent.replace(
-            /compatibility_date = ".*"/,
-            `compatibility_date = "2024-01-01"\naccount_id = "${accountId}"`
+            /(compatibility_date = ".*")/,
+            `$1\naccount_id = "${accountId}"`
           );
         }
       }
