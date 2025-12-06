@@ -5,8 +5,9 @@ import { UserService } from '../services/userService';
 import { AuthService } from '../services/authService';
 import { OwnerAuthService } from '../services/ownerAuthService';
 import { Logger } from '../services/loggerService';
-import { CheckCircle, XCircle, Users, Shield, Code, RefreshCw, Eye, EyeOff, Server } from 'lucide-react';
+import { CheckCircle, XCircle, Users, Shield, Code, RefreshCw, Eye, EyeOff, Server, Activity } from 'lucide-react';
 import OwnerBackendSettings from './OwnerBackendSettings';
+import PerformanceDashboard from './PerformanceDashboard';
 
 interface OwnerAdminPanelProps {
   user: User;
@@ -17,7 +18,7 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'pending' | 'users' | 'source' | 'backend'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'users' | 'source' | 'backend' | 'performance'>('pending');
   
   // Approval state
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -171,6 +172,16 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
           >
             <Server className="w-4 h-4 inline mr-1" /> Backend Settings
           </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            className={`px-4 py-2 border-b-2 font-medium text-sm ${
+              activeTab === 'performance'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Activity className="w-4 h-4 inline mr-1" /> Performance
+          </button>
         </nav>
       </div>
 
@@ -308,6 +319,13 @@ const OwnerAdminPanel: React.FC<OwnerAdminPanelProps> = ({ user, onSourceCodeAcc
       {activeTab === 'backend' && (
         <div>
           <OwnerBackendSettings />
+        </div>
+      )}
+
+      {/* Performance Monitoring Tab */}
+      {activeTab === 'performance' && (
+        <div>
+          <PerformanceDashboard />
         </div>
       )}
 
