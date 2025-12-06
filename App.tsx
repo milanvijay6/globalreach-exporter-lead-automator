@@ -1,25 +1,34 @@
 
-import React, { useState, useEffect, useRef, useCallback, startTransition } from 'react';
+import React, { useState, useEffect, useRef, useCallback, startTransition, Suspense, lazy } from 'react';
 import { Download, Upload, Play, Zap, LayoutDashboard, Lock, Loader2 } from 'lucide-react';
 import ImporterList from './components/ImporterList';
 import ChatInterface from './components/ChatInterface';
 import LeadImportWizard from './components/LeadImportWizard';
-import SettingsModal from './components/SettingsModal';
 import ReportConfigModal from './components/ReportConfigModal';
-import AnalyticsDashboard from './components/AnalyticsDashboard';
 import LoginScreen from './components/LoginScreen';
 import PinLockScreen from './components/PinLockScreen';
-import OwnerAdminPanel from './components/OwnerAdminPanel';
 import { PinService } from './services/pinService';
 import { OwnerAuthService } from './services/ownerAuthService';
 import Navigation from './components/Navigation';
 import HelpModal from './components/HelpModal';
-import CampaignManager from './components/CampaignManager';
-import CalendarView from './components/CalendarView';
-import AdminMonitoringDashboard from './components/AdminMonitoringDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import SourceCodeViewer from './components/SourceCodeViewer';
-import ProductsCatalogPanel from './components/ProductsCatalogPanel';
+
+// Lazy load heavy components for code splitting
+const SettingsModal = lazy(() => import('./components/SettingsModal'));
+const AnalyticsDashboard = lazy(() => import('./components/AnalyticsDashboard'));
+const OwnerAdminPanel = lazy(() => import('./components/OwnerAdminPanel'));
+const CampaignManager = lazy(() => import('./components/CampaignManager'));
+const CalendarView = lazy(() => import('./components/CalendarView'));
+const AdminMonitoringDashboard = lazy(() => import('./components/AdminMonitoringDashboard'));
+const ProductsCatalogPanel = lazy(() => import('./components/ProductsCatalogPanel'));
+
+// Loading fallback component
+const ComponentLoader: React.FC = () => (
+  <div className="flex items-center justify-center p-8">
+    <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+  </div>
+);
 
 import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
 import { canExportData, canSendMessages } from './services/permissionService';
@@ -1377,9 +1386,29 @@ const App: React.FC = () => {
   }, [isResizing, user, importerListWidth]);
 
   const renderMainView = () => {
-      if (activeView === 'campaigns') return <ErrorBoundary><CampaignManager campaigns={campaigns} onChange={setCampaigns} importers={importers} /></ErrorBoundary>;
-      if (activeView === 'calendar') return <ErrorBoundary><CalendarView events={calendarEvents} onEventClick={(id) => alert(`Event ${id}`)} /></ErrorBoundary>;
-      if (activeView === 'products') return <ErrorBoundary><div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100" style={{ height: '100%', minHeight: 0, flex: '1 1 0%', overflowY: 'auto' }}><ProductsCatalogPanel user={user} /></div></ErrorBoundary>;
+      if (activeView === 'campaigns') return (
+        <ErrorBoundary>
+          <Suspense fallback={<ComponentLoader />}>
+            <CampaignManager campaigns={campaigns} onChange={setCampaigns} importers={importers} />
+          </Suspense>
+        </ErrorBoundary>
+      );
+      if (activeView === 'calendar') return (
+        <ErrorBoundary>
+          <Suspense fallback={<ComponentLoader />}>
+            <CalendarView events={calendarEvents} onEventClick={(id) => alert(`Event ${id}`)} />
+          </Suspense>
+        </ErrorBoundary>
+      );
+      if (activeView === 'products') return (
+        <ErrorBoundary>
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100" style={{ height: '100%', minHeight: 0, flex: '1 1 0%', overflowY: 'auto' }}>
+            <Suspense fallback={<ComponentLoader />}>
+              <ProductsCatalogPanel user={user} />
+            </Suspense>
+          </div>
+        </ErrorBoundary>
+      );
       
       // Dashboard (Default)
       return (
@@ -1483,10 +1512,12 @@ const App: React.FC = () => {
             >
               ← Back to App
             </button>
-            <OwnerAdminPanel
-              user={user}
-              onSourceCodeAccess={() => setShowSourceCodeViewer(true)}
-            />
+            <Suspense fallback={<ComponentLoader />}>
+              <OwnerAdminPanel
+                user={user}
+                onSourceCodeAccess={() => setShowSourceCodeViewer(true)}
+              />
+            </Suspense>
             <SourceCodeViewer
               isOpen={showSourceCodeViewer}
               onClose={() => setShowSourceCodeViewer(false)}
@@ -1507,22 +1538,26 @@ const App: React.FC = () => {
               onComplete={handleImportComplete} 
             />
           </ErrorBoundary>
-        <SettingsModal 
-            isOpen={showSettingsModal} 
-            onClose={() => setShowSettingsModal(false)} 
-            templates={templates} 
-            onSave={setTemplates} 
-            language={language} 
-            setLanguage={setLanguage} 
-            userRole={user.role}
-            user={user} 
-            connectedPlatforms={connectedPlatforms} 
-            onUpdateConnection={handlePlatformUpdate} 
-            notificationConfig={notificationConfig} 
-            onSaveNotifications={setNotificationConfig}
-            importers={importers}
-            onRestoreData={handleDataRestore}
-        />
+        {showSettingsModal && (
+          <Suspense fallback={<ComponentLoader />}>
+            <SettingsModal 
+              isOpen={showSettingsModal} 
+              onClose={() => setShowSettingsModal(false)} 
+              templates={templates} 
+              onSave={setTemplates} 
+              language={language} 
+              setLanguage={setLanguage} 
+              userRole={user.role}
+              user={user} 
+              connectedPlatforms={connectedPlatforms} 
+              onUpdateConnection={handlePlatformUpdate} 
+              notificationConfig={notificationConfig} 
+              onSaveNotifications={setNotificationConfig}
+              importers={importers}
+              onRestoreData={handleDataRestore}
+            />
+          </Suspense>
+        )}
         <ReportConfigModal isOpen={showReportConfig} onClose={() => setShowReportConfig(false)} config={reportConfig} onSave={setReportConfig} />
         <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />
         
@@ -1542,14 +1577,16 @@ const App: React.FC = () => {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <AdminMonitoringDashboard
-                  user={user}
-                  importers={importers}
-                  onNavigateToSettings={() => {
-                    setShowAdminDashboard(false);
-                    setShowSettingsModal(true);
-                  }}
-                />
+                <Suspense fallback={<ComponentLoader />}>
+                  <AdminMonitoringDashboard
+                    user={user}
+                    importers={importers}
+                    onNavigateToSettings={() => {
+                      setShowAdminDashboard(false);
+                      setShowSettingsModal(true);
+                    }}
+                  />
+                </Suspense>
               </div>
             </div>
           </div>
@@ -1571,7 +1608,9 @@ const App: React.FC = () => {
       />
       <ErrorBoundary>
         <div className={`fixed md:absolute top-0 bottom-16 md:bottom-0 left-0 md:left-20 w-full md:w-96 bg-white border-r border-slate-200 shadow-2xl z-40 transition-transform duration-300 ${showAnalytics ? 'translate-x-0' : '-translate-x-[120%] md:-translate-x-full'}`}>
-           <AnalyticsDashboard importers={importers} forecastData={forecastData} reportConfig={reportConfig} onDrillDown={setStatusFilter} onGenerateForecast={async () => { setIsForecasting(true); setForecastData(await generateSalesForecast(importers)); setIsForecasting(false); }} onConfigure={() => setShowReportConfig(true)} onClose={() => setShowAnalytics(false)} isForecasting={isForecasting} />
+          <Suspense fallback={<ComponentLoader />}>
+            <AnalyticsDashboard importers={importers} forecastData={forecastData} reportConfig={reportConfig} onDrillDown={setStatusFilter} onGenerateForecast={async () => { setIsForecasting(true); setForecastData(await generateSalesForecast(importers)); setIsForecasting(false); }} onConfigure={() => setShowReportConfig(true)} onClose={() => setShowAnalytics(false)} isForecasting={isForecasting} />
+          </Suspense>
         </div>
       </ErrorBoundary>
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 ml-0 relative z-0" style={{ width: '100%', maxWidth: '100%', height: '100%', minHeight: 0, flex: '1 1 0%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

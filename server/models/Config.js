@@ -28,14 +28,14 @@ function ensureParseInitialized() {
   // Try to initialize if we have the required environment variable
   if (process.env.PARSE_APPLICATION_ID && process.env.PARSE_APPLICATION_ID.trim() !== '') {
     try {
-      Parse.initialize(
-        process.env.PARSE_APPLICATION_ID,
-        process.env.PARSE_JAVASCRIPT_KEY || ''
-      );
-      Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
-      if (process.env.PARSE_MASTER_KEY) {
-        Parse.masterKey = process.env.PARSE_MASTER_KEY;
-      }
+    Parse.initialize(
+      process.env.PARSE_APPLICATION_ID,
+      process.env.PARSE_JAVASCRIPT_KEY || ''
+    );
+    Parse.serverURL = process.env.PARSE_SERVER_URL || 'https://parseapi.back4app.com/';
+    if (process.env.PARSE_MASTER_KEY) {
+      Parse.masterKey = process.env.PARSE_MASTER_KEY;
+    }
       
       // Verify initialization succeeded
       if (isParseInitialized()) {

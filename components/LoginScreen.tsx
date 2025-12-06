@@ -5,6 +5,7 @@ import { AuthService } from '../services/authService';
 import { saveUserSession } from '../services/securityService';
 import { Shield, Mail, Lock, UserPlus } from 'lucide-react';
 import SignupScreen from './SignupScreen';
+import { OptimizedButton } from './OptimizedButton';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -119,22 +120,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             </div>
           )}
 
-          <button
+          <OptimizedButton
             type="submit"
-            disabled={loading}
-            className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
+            loading={loading}
+            variant="primary"
+            className="w-full"
           >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Authenticating...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <Lock className="w-4 h-4" /> Sign In
-              </span>
-            )}
-          </button>
+            <Lock className="w-4 h-4" /> Sign In
+          </OptimizedButton>
         </form>
 
         <div className="mt-6 text-center">

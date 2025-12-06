@@ -26,6 +26,8 @@ import WhatsAppWebBanRiskDashboard from './WhatsAppWebBanRiskDashboard';
 import EmailOAuthModal from './EmailOAuthModal';
 import IntegrationCard from './IntegrationCard';
 import { IntegrationAnalyticsService } from '../services/integrationAnalyticsService';
+import { OptimizedButton } from './OptimizedButton';
+import PerformanceDashboard from './PerformanceDashboard';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -62,7 +64,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localTemplates, setLocalTemplates] = useState<AppTemplates>(templates);
   const [localNotifications, setLocalNotifications] = useState<NotificationConfig>(notificationConfig);
-  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users' | 'performance'>('general');
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   
@@ -550,9 +552,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Header - Fixed at top */}
         <div className="p-4 sm:p-6 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-slate-50 to-white shrink-0 flex-shrink-0 shadow-sm">
           <h2 className="text-lg sm:text-xl font-bold text-slate-800">{t('settings', language)}</h2>
-          <button onClick={onClose} aria-label="Close settings" className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+          <OptimizedButton
+            onClick={onClose}
+            variant="ghost"
+            className="p-2"
+            aria-label="Close settings"
+          >
             <X className="w-5 h-5 text-slate-500" />
-          </button>
+          </OptimizedButton>
         </div>
 
         <div className="border-b border-slate-200 shrink-0 flex-shrink-0 bg-white">
@@ -575,9 +582,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       'pricing': DollarSign,
                       'users': Users,
                       'network': Network,
+                      'performance': Activity,
                   };
                   const Icon = tabIcons[tab];
-                  const tabLabel = tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab;
+                  const tabLabel = tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab === 'performance' ? 'Performance' : tab;
                   return (
                   <button 
                       key={tab}
@@ -1206,12 +1214,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           Create encrypted snapshots of your entire CRM database.
                       </p>
                       <div className="flex gap-3">
-                          <button onClick={handleBackup} className="flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-50 shadow-sm">
+                          <OptimizedButton
+                            onClick={handleBackup}
+                            variant="secondary"
+                            className="flex items-center gap-2"
+                          >
                               <Download className="w-4 h-4" /> Create Snapshot
-                          </button>
-                          <button onClick={handleRestore} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm">
+                          </OptimizedButton>
+                          <OptimizedButton
+                            onClick={handleRestore}
+                            variant="primary"
+                            className="flex items-center gap-2"
+                          >
                               <Upload className="w-4 h-4" /> Restore Data
-                          </button>
+                          </OptimizedButton>
                       </div>
                       {backupStatus && <div className={`mt-3 text-xs font-bold ${backupStatus.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>{backupStatus}</div>}
                   </div>
@@ -1362,22 +1378,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               <UserManagementPanel user={user} />
             </div>
           )}
+
+          {/* PERFORMANCE DASHBOARD */}
+          {activeTab === 'performance' && user && isOwner(user) && (
+            <div>
+              <PerformanceDashboard />
+            </div>
+          )}
         </div>
 
         {/* Footer - Fixed at bottom */}
         <div className="p-4 sm:p-6 border-t-2 border-slate-200 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row justify-between gap-3 shrink-0 shadow-lg" style={{ flexShrink: 0, zIndex: 10 }}>
-          <button onClick={handleReset} disabled={userRole !== UserRole.ADMIN} className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 text-sm font-medium disabled:opacity-50 w-full sm:w-auto justify-center sm:justify-start">
+          <OptimizedButton
+            onClick={handleReset}
+            disabled={userRole !== UserRole.ADMIN}
+            variant="ghost"
+            className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 text-sm font-medium w-full sm:w-auto justify-center sm:justify-start"
+          >
             <RefreshCcw className="w-4 h-4" /> Reset to Defaults
-          </button>
+          </OptimizedButton>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-             <button onClick={onClose} className="w-full sm:w-auto px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg">Cancel</button>
-             <button 
+             <OptimizedButton
+               onClick={onClose}
+               variant="ghost"
+               className="w-full sm:w-auto"
+             >
+               Cancel
+             </OptimizedButton>
+             <OptimizedButton
                disabled={userRole !== UserRole.ADMIN && !['integrations', 'security', 'notifications', 'system', 'data', 'diagnostics', 'tuning'].includes(activeTab)}
                onClick={handleSaveAll}
-               className="flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow-lg shadow-indigo-600/20 disabled:bg-slate-400 disabled:cursor-not-allowed"
+               variant="primary"
+               className="flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-indigo-600/20"
              >
                <Save className="w-4 h-4" /> Save Configuration
-             </button>
+             </OptimizedButton>
           </div>
         </div>
       </div>

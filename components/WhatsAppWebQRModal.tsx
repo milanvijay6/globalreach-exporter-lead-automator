@@ -5,7 +5,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
-import QRCode from 'qrcode';
 
 interface WhatsAppWebQRModalProps {
   isOpen: boolean;
@@ -27,17 +26,23 @@ const WhatsAppWebQRModal: React.FC<WhatsAppWebQRModalProps> = ({
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (qrCode) {
-      QRCode.toDataURL(qrCode)
-        .then(url => setQrImageUrl(url))
-        .catch(err => {
-          console.error('Failed to generate QR code image:', err);
-          setQrImageUrl(null);
-        });
+    if (qrCode && isOpen) {
+      // Dynamically import qrcode only when needed
+      import('qrcode').then(QRCode => {
+        QRCode.default.toDataURL(qrCode)
+          .then(url => setQrImageUrl(url))
+          .catch(err => {
+            console.error('Failed to generate QR code image:', err);
+            setQrImageUrl(null);
+          });
+      }).catch(err => {
+        console.error('Failed to load qrcode library:', err);
+        setQrImageUrl(null);
+      });
     } else {
       setQrImageUrl(null);
     }
-  }, [qrCode]);
+  }, [qrCode, isOpen]);
 
   if (!isOpen) return null;
 

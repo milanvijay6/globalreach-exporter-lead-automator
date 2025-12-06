@@ -199,6 +199,25 @@ if (!rootElement.innerHTML.trim()) {
   rootElement.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #f1f5f9;"><div style="text-align: center;"><div style="width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div><p style="color: #64748b; font-family: Inter, sans-serif;">Loading GlobalReach...</p></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>';
 }
 
+// Register Service Worker (web only, not in Electron)
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !(window as any).electronAPI) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('[Service Worker] Registered:', registration.scope);
+        
+        // Check for updates every hour
+        setInterval(() => {
+          registration.update();
+        }, 60 * 60 * 1000);
+      })
+      .catch((error) => {
+        console.warn('[Service Worker] Registration failed:', error);
+      });
+  });
+}
+
 try {
   const root = ReactDOM.createRoot(rootElement);
   root.render(

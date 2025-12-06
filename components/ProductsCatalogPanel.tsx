@@ -6,6 +6,7 @@ import { canManageProducts } from '../services/permissionService';
 import { User } from '../types';
 import { Logger } from '../services/loggerService';
 import ProductFormModal from './ProductFormModal';
+import { OptimizedButton } from './OptimizedButton';
 
 interface ProductsCatalogPanelProps {
   user?: User;
@@ -168,24 +169,27 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
         <div className="flex gap-2">
           {canEdit && (
             <>
-              <button
+              <OptimizedButton
                 onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50"
+                variant="secondary"
+                className="flex items-center gap-2"
               >
                 <Upload className="w-4 h-4" /> Import
-              </button>
-              <button
+              </OptimizedButton>
+              <OptimizedButton
                 onClick={() => handleExport('csv')}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg text-sm hover:bg-slate-50"
+                variant="secondary"
+                className="flex items-center gap-2"
               >
                 <Download className="w-4 h-4" /> Export CSV
-              </button>
-              <button
+              </OptimizedButton>
+              <OptimizedButton
                 onClick={() => setShowModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                variant="primary"
+                className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" /> Add Product
-              </button>
+              </OptimizedButton>
             </>
           )}
         </div>
@@ -315,21 +319,25 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
                 
             {canEdit && (
               <div className="flex gap-2 pt-2 border-t border-slate-200">
-                <button
+                <OptimizedButton
                   onClick={() => {
                     setEditingProduct(product);
                     setShowModal(true);
                   }}
-                  className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded hover:bg-slate-50 flex items-center justify-center gap-1"
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1"
                 >
                   <Edit className="w-3 h-3" /> Edit
-                </button>
-                <button
+                </OptimizedButton>
+                <OptimizedButton
                   onClick={() => handleDelete(product.id)}
-                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center justify-center gap-1"
+                  variant="danger"
+                  size="sm"
+                  className="px-3"
                 >
                   <Trash2 className="w-3 h-3" />
-                </button>
+                </OptimizedButton>
               </div>
             )}
           </div>
@@ -394,19 +402,20 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
                 </div>
               )}
               <div className="flex justify-end gap-2">
-                <button
+                <OptimizedButton
                   onClick={() => setShowImportModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                  variant="ghost"
                 >
                   Cancel
-                </button>
-                <button
+                </OptimizedButton>
+                <OptimizedButton
                   onClick={handleImport}
                   disabled={!importFile || importing}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-400"
+                  loading={importing}
+                  variant="primary"
                 >
-                  {importing ? 'Importing...' : 'Import'}
-                </button>
+                  Import
+                </OptimizedButton>
               </div>
             </div>
           </div>

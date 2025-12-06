@@ -52,9 +52,56 @@ html, body {
 }
 
 /* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
 .scroll-smooth {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+}
+
+/* GPU Acceleration Classes */
+.gpu-accelerated {
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Click feedback instant visual feedback */
+.click-feedback {
+  transition: opacity 0.1s ease-out;
+}
+
+.click-feedback:active {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Layout containment for performance */
+.layout-contained {
+  contain: layout;
+}
+
+/* Optimize animations - use transform and opacity only */
+.animate-transform {
+  will-change: transform;
+}
+
+.animate-opacity {
+  will-change: opacity;
+}
+
+/* Prevent layout shifts */
+img, video {
+  content-visibility: auto;
+}
+
+/* Optimize font loading */
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
 }
 
 /* Custom scrollbar for chat logs */

@@ -4,11 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GlobalReach - AI Exporter Agent</title>
+    
+    <!-- Preconnect to external domains -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/index.css">
-</head>
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="/index.css" as="style">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" as="style">
+    
+    <!-- Load fonts with display swap for performance -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    
+    <!-- Critical CSS inline would go here, but keeping external for now -->
+    <link rel="stylesheet" href="/index.css">
+  </head>
   <body class="bg-slate-100 text-slate-900 h-full overflow-hidden" style="margin: 0; padding: 0; width: 100%; height: 100%;">
     <div id="root" class="h-full w-full" style="margin: 0; padding: 0; width: 100%; height: 100%;"></div>
   <script type="module" src="/index.tsx"></script>

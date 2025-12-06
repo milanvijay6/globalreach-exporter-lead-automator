@@ -6,6 +6,7 @@ import { validateApiKey, sanitizeInput } from '../services/validationService';
 import { canManageApiKeys } from '../services/permissionService';
 import { Logger } from '../services/loggerService';
 import { ToastContainer, useToast, showToast } from './Toast';
+import { OptimizedButton } from './OptimizedButton';
 
 interface ApiKeyManagementTabProps {
   user: User;
@@ -267,12 +268,13 @@ const ApiKeyManagementTab: React.FC<ApiKeyManagementTabProps> = ({ user }) => {
           className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
         />
         
-        <button
+        <OptimizedButton
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+          variant="primary"
+          className="flex items-center gap-2"
         >
           <Plus className="w-4 h-4" /> Add Key
-        </button>
+        </OptimizedButton>
       </div>
 
       {/* Keys List */}
@@ -354,46 +356,51 @@ const ApiKeyManagementTab: React.FC<ApiKeyManagementTabProps> = ({ user }) => {
                 
                 <div className="flex gap-2">
                   {key.metadata.isActive && !key.metadata.isPrimary && (
-                    <button
+                    <OptimizedButton
                       onClick={() => handleSetPrimary(key)}
-                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg"
+                      variant="ghost"
+                      className="p-2 text-indigo-600 hover:bg-indigo-50"
                       title="Set as Primary"
                     >
                       <CheckCircle className="w-4 h-4" />
-                    </button>
+                    </OptimizedButton>
                   )}
                   {key.metadata.isActive && (
-                    <button
+                    <OptimizedButton
                       onClick={() => setShowRotateModal(key)}
-                      className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                      variant="ghost"
+                      className="p-2 text-slate-600 hover:bg-slate-100"
                       title="Rotate Key"
                     >
                       <RotateCw className="w-4 h-4" />
-                    </button>
+                    </OptimizedButton>
                   )}
                   {key.metadata.isActive && (
-                    <button
+                    <OptimizedButton
                       onClick={() => handleRevokeKey(key)}
-                      className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
+                      variant="ghost"
+                      className="p-2 text-orange-600 hover:bg-orange-50"
                       title="Revoke Key"
                     >
                       <X className="w-4 h-4" />
-                    </button>
+                    </OptimizedButton>
                   )}
-                  <button
+                  <OptimizedButton
                     onClick={() => setShowEditModal(key)}
-                    className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                    variant="ghost"
+                    className="p-2 text-slate-600 hover:bg-slate-100"
                     title="Edit Key"
                   >
                     <Edit className="w-4 h-4" />
-                  </button>
-                  <button
+                  </OptimizedButton>
+                  <OptimizedButton
                     onClick={() => setShowDeleteModal(key)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    variant="ghost"
+                    className="p-2 text-red-600 hover:bg-red-50"
                     title="Delete Key"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </OptimizedButton>
                 </div>
               </div>
             </div>
@@ -607,19 +614,20 @@ const AddKeyModal: React.FC<{
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
-          <button
+          <OptimizedButton
             onClick={onClose}
-            className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+            variant="ghost"
           >
             Cancel
-          </button>
-          <button
+          </OptimizedButton>
+          <OptimizedButton
             onClick={onSave}
             disabled={loading || !label.trim() || !keyValue.trim()}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-400"
+            loading={loading}
+            variant="primary"
           >
-            {loading ? 'Saving...' : 'Save Key'}
-          </button>
+            Save Key
+          </OptimizedButton>
         </div>
       </div>
     </div>

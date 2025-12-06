@@ -1,10 +1,14 @@
 
 import { Importer } from '../types';
 import { loadUserSession } from './securityService';
+import { IndexedDBService } from './indexedDBService';
 
 // Helper to get storage key for user-specific importers
 const getStorageKey = (userId: string): string => `globalreach_data_encrypted_${userId}`;
 const GLOBAL_STORAGE_KEY = 'globalreach_data_encrypted';
+
+// Migration flag
+let migrationDone = false;
 
 // Simple mock encryption/decryption to demonstrate secure storage intent
 // In a production app, this would use Web Crypto API or server-side encryption
@@ -39,26 +43,67 @@ const getCurrentUserId = async (): Promise<string | null> => {
   }
 };
 
-// Migrate global importers to user-specific storage
-const migrateGlobalImporters = async (userId: string): Promise<void> => {
+// Migrate from localStorage to IndexedDB (one-time)
+const migrateToIndexedDB = async (userId: string): Promise<void> => {
+  if (migrationDone) return;
+
   try {
-    // Check if user already has importers (migration already done)
-    const userKey = getStorageKey(userId);
-    const userData = localStorage.getItem(userKey);
-    if (userData) {
-      return; // Already migrated
+    // Initialize IndexedDB
+    await IndexedDBService.init();
+
+    // Check if already migrated
+    const existing = await IndexedDBService.getAll<Importer>('importers', 'userId', userId);
+    if (existing.length > 0) {
+      migrationDone = true;
+      return;
     }
 
-    // Check for global importers
-    const globalData = localStorage.getItem(GLOBAL_STORAGE_KEY);
-    if (globalData) {
-      console.log(`[StorageService] Migrating global importers to user ${userId}`);
-      // Copy global importers to user-specific storage
-      localStorage.setItem(userKey, globalData);
-      console.log('[StorageService] Migration completed');
+    // Try to load from localStorage first
+    const storageKey = getStorageKey(userId);
+    let importers: Importer[] | null = null;
+
+    // Try user-specific storage
+    const userData = localStorage.getItem(storageKey);
+    if (userData) {
+      try {
+        const json = decrypt(userData);
+        importers = JSON.parse(json);
+      } catch (e) {
+        console.warn('[StorageService] Failed to parse user storage:', e);
+      }
     }
+
+    // Try global storage if no user data
+    if (!importers || importers.length === 0) {
+      const globalData = localStorage.getItem(GLOBAL_STORAGE_KEY);
+      if (globalData) {
+        try {
+          const json = decrypt(globalData);
+          importers = JSON.parse(json);
+        } catch (e) {
+          console.warn('[StorageService] Failed to parse global storage:', e);
+        }
+      }
+    }
+
+    // Migrate to IndexedDB
+    if (importers && importers.length > 0) {
+      console.log(`[StorageService] Migrating ${importers.length} importers from localStorage to IndexedDB`);
+      
+      // Add userId to each importer
+      const importersWithUserId = importers.map(imp => ({
+        ...imp,
+        userId
+      }));
+
+      await IndexedDBService.put('importers', importersWithUserId);
+      console.log('[StorageService] Migration to IndexedDB completed');
+    }
+
+    migrationDone = true;
   } catch (error) {
-    console.error('[StorageService] Migration failed:', error);
+    console.error('[StorageService] Migration to IndexedDB failed:', error);
+    // Continue with localStorage fallback
   }
 };
 
@@ -76,11 +121,27 @@ export const StorageService = {
         return;
       }
 
-      const storageKey = getStorageKey(currentUserId);
-      const json = JSON.stringify(importers);
-      const encrypted = encrypt(json);
-      localStorage.setItem(storageKey, encrypted);
-      console.log(`[StorageService] Saved ${importers.length} records for user ${currentUserId}.`);
+      // Ensure migration is done
+      await migrateToIndexedDB(currentUserId);
+
+      try {
+        // Try IndexedDB first
+        await IndexedDBService.init();
+        const importersWithUserId = importers.map(imp => ({
+          ...imp,
+          userId: currentUserId
+        }));
+        await IndexedDBService.put('importers', importersWithUserId);
+        console.log(`[StorageService] Saved ${importers.length} records to IndexedDB for user ${currentUserId}.`);
+      } catch (indexedDBError) {
+        // Fallback to localStorage
+        console.warn('[StorageService] IndexedDB save failed, falling back to localStorage:', indexedDBError);
+        const storageKey = getStorageKey(currentUserId);
+        const json = JSON.stringify(importers);
+        const encrypted = encrypt(json);
+        localStorage.setItem(storageKey, encrypted);
+        console.log(`[StorageService] Saved ${importers.length} records to localStorage for user ${currentUserId}.`);
+      }
     } catch (e) {
       console.error("Failed to save importers", e);
     }
@@ -91,28 +152,45 @@ export const StorageService = {
       const currentUserId = userId || await getCurrentUserId();
       
       if (currentUserId) {
-        // Migrate global data if needed
-        await migrateGlobalImporters(currentUserId);
-        
+        // Ensure migration is done
+        await migrateToIndexedDB(currentUserId);
+
+        try {
+          // Try IndexedDB first
+          await IndexedDBService.init();
+          const importers = await IndexedDBService.getAll<Importer>('importers', 'userId', currentUserId);
+          if (importers && importers.length > 0) {
+            // Remove userId from importer objects before returning
+            const cleaned = importers.map(({ userId, ...imp }) => imp);
+            console.log(`[StorageService] Loaded ${cleaned.length} records from IndexedDB for user ${currentUserId}.`);
+            return cleaned;
+          }
+        } catch (indexedDBError) {
+          console.warn('[StorageService] IndexedDB load failed, falling back to localStorage:', indexedDBError);
+        }
+
+        // Fallback to localStorage
         const storageKey = getStorageKey(currentUserId);
         const encrypted = localStorage.getItem(storageKey);
         if (!encrypted) return null;
         
         try {
           const json = decrypt(encrypted);
-          return JSON.parse(json);
+          const importers = JSON.parse(json);
+          console.log(`[StorageService] Loaded ${importers.length} records from localStorage for user ${currentUserId}.`);
+          return importers;
         } catch (e) {
-          console.error("Failed to load importers", e);
+          console.error("Failed to load importers from localStorage", e);
           return null;
         }
       } else {
         // Fallback to global storage if no user ID
         const encrypted = localStorage.getItem(GLOBAL_STORAGE_KEY);
-    if (!encrypted) return null;
+        if (!encrypted) return null;
     
-    try {
-      const json = decrypt(encrypted);
-      return JSON.parse(json);
+        try {
+          const json = decrypt(encrypted);
+          return JSON.parse(json);
         } catch (e) {
           console.error("Failed to load importers", e);
           return null;
@@ -128,9 +206,22 @@ export const StorageService = {
     try {
       const currentUserId = userId || await getCurrentUserId();
       if (currentUserId) {
+        try {
+          // Clear IndexedDB
+          await IndexedDBService.init();
+          const importers = await IndexedDBService.getAll<Importer>('importers', 'userId', currentUserId);
+          if (importers.length > 0) {
+            await IndexedDBService.remove('importers', importers.map(i => i.id));
+            console.log(`[StorageService] Cleared ${importers.length} records from IndexedDB for user ${currentUserId}`);
+          }
+        } catch (indexedDBError) {
+          console.warn('[StorageService] IndexedDB clear failed, clearing localStorage:', indexedDBError);
+        }
+
+        // Also clear localStorage
         const storageKey = getStorageKey(currentUserId);
         localStorage.removeItem(storageKey);
-        console.log(`[StorageService] Cleared storage for user ${currentUserId}`);
+        console.log(`[StorageService] Cleared localStorage for user ${currentUserId}`);
       } else {
         localStorage.removeItem(GLOBAL_STORAGE_KEY);
         console.log('[StorageService] Cleared global storage');

@@ -34,7 +34,7 @@ try {
   if (parseInitialized && Parse.applicationId && Parse.applicationId.trim() !== '') {
     logger.info('[Server] ✅ Parse initialized successfully');
     logger.info(`[Server] Parse Application ID: ${Parse.applicationId.substring(0, 8)}...`);
-    logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
+  logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
     logger.info(`[Server] Parse Master Key: ${Parse.masterKey ? 'Set' : 'Not set (optional)'}`);
   } else {
     logger.warn('[Server] ⚠️  Parse not initialized');
