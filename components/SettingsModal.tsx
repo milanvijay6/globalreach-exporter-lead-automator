@@ -63,7 +63,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [localTemplates, setLocalTemplates] = useState<AppTemplates>(templates);
   const [localNotifications, setLocalNotifications] = useState<NotificationConfig>(notificationConfig);
-  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users' | 'owner-backend'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations' | 'templates' | 'security' | 'notifications' | 'system' | 'data' | 'diagnostics' | 'tuning' | 'api-keys' | 'admin-monitoring' | 'resources' | 'network' | 'company' | 'products' | 'pricing' | 'users' | 'owner-admin'>('general');
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel>(Channel.WHATSAPP);
   
@@ -557,7 +557,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex border-b border-slate-200 px-4 sm:px-6 gap-4 sm:gap-6 overflow-x-auto scrollbar-hide shrink-0 flex-shrink-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : []), ...(user && isOwner(user) ? ['owner-backend'] : [])].map(tab => {
+            {['general', 'notifications', 'integrations', 'templates', 'tuning', 'security', 'system', 'resources', 'network', 'data', 'diagnostics', 'api-keys', 'company', 'products', 'pricing', ...(user && hasAdminAccess(user) ? ['users'] : []), ...(user && hasAdminAccess(user) ? ['admin-monitoring'] : []), ...(user && isOwner(user) ? ['owner-admin'] : [])].map(tab => {
                 // Skip products tab if user doesn't have access (but allow viewing for all)
                 // Products tab is visible to all, but editing requires permissions
                 const tabIcons: Record<string, any> = {
@@ -576,7 +576,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         ${activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                         {Icon && <Icon className="w-4 h-4" />}
-                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab === 'owner-backend' ? 'Owner Backend Settings' : tab}
+                    {tab === 'tuning' ? t('aiTuning', language) : tab === 'admin-monitoring' ? 'Admin Monitoring' : tab === 'products' ? 'Products' : tab === 'pricing' ? 'Pricing' : tab === 'owner-admin' ? 'Owner Admin' : tab}
                 </button>
                 );
             })}
@@ -986,8 +986,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
              </div>
           )}
 
-          {/* OWNER BACKEND SETTINGS */}
-          {activeTab === 'owner-backend' && user && isOwner(user) && (
+          {/* OWNER ADMIN */}
+          {activeTab === 'owner-admin' && user && isOwner(user) && (
             <div className="space-y-4 sm:space-y-6 lg:space-y-8 w-full max-w-full" style={{ overflow: 'visible', width: '100%' }}>
               <OwnerBackendSettings />
             </div>
