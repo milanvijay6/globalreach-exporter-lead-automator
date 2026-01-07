@@ -2,8 +2,8 @@
 
 ## ✅ Your Cloudflare Credentials:
 
-- **API Token**: `TMBjozKlShmeEytu93qfEYfpIZzWuix2DgVwDvpO`
-- **Account ID**: `fd11ab247a2ee76e8af41cb2b0408386`
+- **API Token**: `YOUR_CLOUDFLARE_API_TOKEN`
+- **Account ID**: `YOUR_CLOUDFLARE_ACCOUNT_ID`
 
 ---
 
@@ -26,14 +26,14 @@
 4. **Add First Variable:**
    ```
    Variable Name:  CLOUDFLARE_API_TOKEN
-   Variable Value: TMBjozKlShmeEytu93qfEYfpIZzWuix2DgVwDvpO
+   Variable Value: YOUR_CLOUDFLARE_API_TOKEN
    ```
    - Click **Save** or **Add**
 
 5. **Add Second Variable:**
    ```
    Variable Name:  CLOUDFLARE_ACCOUNT_ID
-   Variable Value: fd11ab247a2ee76e8af41cb2b0408386
+   Variable Value: YOUR_CLOUDFLARE_ACCOUNT_ID
    ```
    - Click **Save** or **Add**
 
@@ -118,8 +118,8 @@ The Parse Master Key is required for the worker deployment script. Here's how to
 If you have Back4App CLI installed:
 
 ```bash
-back4app env set CLOUDFLARE_API_TOKEN=TMBjozKlShmeEytu93qfEYfpIZzWuix2DgVwDvpO
-back4app env set CLOUDFLARE_ACCOUNT_ID=fd11ab247a2ee76e8af41cb2b0408386
+back4app env set CLOUDFLARE_API_TOKEN=YOUR_CLOUDFLARE_API_TOKEN
+back4app env set CLOUDFLARE_ACCOUNT_ID=YOUR_CLOUDFLARE_ACCOUNT_ID
 back4app env set PARSE_MASTER_KEY=your_master_key_here
 back4app env set ENABLE_AUTO_WORKER_DEPLOY=true
 ```
@@ -205,7 +205,7 @@ If you prefer to deploy manually:
 - Make sure token hasn't been deleted
 
 ### "Account ID not found" Error
-- Verify Account ID: `fd11ab247a2ee76e8af41cb2b0408386`
+- Verify Account ID: `YOUR_CLOUDFLARE_ACCOUNT_ID`
 - Check for typos or extra spaces
 
 ### "Cannot use the Master Key, it has not been provided" Error
@@ -233,8 +233,8 @@ After setting up environment variables:
 
 **Environment Variables to Add:**
 ```
-CLOUDFLARE_API_TOKEN=TMBjozKlShmeEytu93qfEYfpIZzWuix2DgVwDvpO
-CLOUDFLARE_ACCOUNT_ID=fd11ab247a2ee76e8af41cb2b0408386
+CLOUDFLARE_API_TOKEN=YOUR_CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID=YOUR_CLOUDFLARE_ACCOUNT_ID
 PARSE_MASTER_KEY=your_master_key_here (REQUIRED - find it in Back4App App Settings → Security & Keys)
 ENABLE_AUTO_WORKER_DEPLOY=true (optional)
 ```

@@ -91,7 +91,7 @@ Check the server logs for OAuth callback:
 
 ## 📋 What to Check
 
-- [ ] Client ID matches Azure App ID (649aa87d-4799-466b-ae15-078049518573)
+- [ ] Client ID matches Azure App ID (YOUR_AZURE_APP_CLIENT_ID)
 - [ ] Client Secret is the VALUE (not the Secret ID)
 - [ ] Redirect URI in Azure matches: `http://localhost:[PORT]/api/oauth/callback`
 - [ ] Server port matches in Settings → System
@@ -117,6 +117,8 @@ Share these details:
 2. **Server logs** (from logs/combined.log)
 3. **Your server port** (Settings → System)
 4. **Screenshot of Azure Portal** → Authentication → Platform configurations
+
+
 
 
 

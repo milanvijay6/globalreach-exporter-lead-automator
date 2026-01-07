@@ -13,7 +13,7 @@ Azure Portal shows "Web" is selected, but you're still getting "Single-Page Appl
 2. Sign in
 3. Search: **"App registrations"**
 4. Click: **"App registrations"**
-5. Click: Your app (**649aa87d-4799-466b-ae15-078049518573**)
+5. Click: your app (**YOUR_AZURE_APP_CLIENT_ID**)
 
 ---
 
@@ -202,6 +202,8 @@ If STILL not working after all this, the issue might be:
 - Client Secret is wrong
 - Client ID is wrong
 - Or we need to create a new app registration
+
+
 
 
 

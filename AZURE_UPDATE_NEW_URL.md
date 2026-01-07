@@ -21,7 +21,7 @@ But Azure Portal only has the old URL configured.
 2. Sign in with your Microsoft account
 3. Search for **"App registrations"**
 4. Click on **"App registrations"**
-5. Select your app: **649aa87d-4799-466b-ae15-078049518573**
+5. Select your app: **YOUR_AZURE_APP_CLIENT_ID**
 
 ### **Step 2: Update Authentication Settings**
 1. Click **"Authentication"** in the left sidebar

@@ -17,7 +17,16 @@
     "version:major": "npm version major && git push && git push --tags",
     "deploy": "npm run build:react && git add . && git commit -m 'chore: build update' && git push",
     "deploy:pages": "npm run build:pages && wrangler pages deploy cloudflare-pages/dist --project-name=shreenathji-app",
-    "migrate:parse": "node scripts/migrate-to-parse.js"
+    "migrate:parse": "node scripts/migrate-to-parse.js",
+    "cap:sync": "cap sync",
+    "cap:copy": "cap copy",
+    "cap:update": "cap update",
+    "cap:add:android": "cap add android",
+    "cap:add:ios": "cap add ios",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios",
+    "build:android": "npm run build:react && cap sync && cap copy android",
+    "build:ios": "npm run build:react && cap sync && cap copy ios"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
@@ -51,9 +60,18 @@
     "systeminformation": "^5.21.20",
     "whatsapp-web.js": "^1.23.0",
     "winston": "^3.11.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/keyboard": "^6.0.1",
+    "@capacitor/status-bar": "^6.0.1",
+    "@capacitor/splash-screen": "^6.0.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2",
     "@tailwindcss/postcss": "^4.1.17",
     "@types/crypto-js": "^4.2.2",
     "@types/imap": "^0.8.40",

@@ -152,26 +152,138 @@ const Navigation: React.FC<NavigationProps> = ({
       </div>
 
       {/* Mobile Bottom Nav (simplified) / Hamburger */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-3 z-[60] safe-area-pb shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-         <button onClick={() => { setActiveView('dashboard'); }} className={`p-2 rounded-lg ${activeView === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}>
-            <LayoutDashboard className="w-6 h-6" />
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center p-2 z-[60] safe-area-pb shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] touch-feedback">
+         <button 
+           onClick={() => { setActiveView('dashboard'); setIsMobileMenuOpen(false); }} 
+           className={`flex-1 flex flex-col items-center justify-center p-2 rounded-lg min-h-[44px] touch-feedback ${activeView === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+           aria-label="Dashboard"
+         >
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Dashboard</span>
          </button>
-         <button onClick={() => { setActiveView('campaigns'); }} className={`p-2 rounded-lg ${activeView === 'campaigns' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}>
-            <Megaphone className="w-6 h-6" />
+         <button 
+           onClick={() => { setActiveView('campaigns'); setIsMobileMenuOpen(false); }} 
+           className={`flex-1 flex flex-col items-center justify-center p-2 rounded-lg min-h-[44px] touch-feedback ${activeView === 'campaigns' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+           aria-label="Campaigns"
+         >
+            <Megaphone className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Campaigns</span>
          </button>
-         <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-slate-500">
-            <Menu className="w-6 h-6" />
+         <button 
+           onClick={() => { setActiveView('calendar'); setIsMobileMenuOpen(false); }} 
+           className={`flex-1 flex flex-col items-center justify-center p-2 rounded-lg min-h-[44px] touch-feedback ${activeView === 'calendar' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+           aria-label="Calendar"
+         >
+            <Calendar className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">Calendar</span>
+         </button>
+         <button 
+           onClick={() => setIsMobileMenuOpen(true)} 
+           className="flex-1 flex flex-col items-center justify-center p-2 rounded-lg min-h-[44px] touch-feedback text-slate-500"
+           aria-label="More"
+         >
+            <Menu className="w-5 h-5" />
+            <span className="text-[10px] mt-0.5">More</span>
          </button>
       </div>
 
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex justify-end">
-           <div className="w-24 bg-slate-900 h-full flex flex-col items-center py-6 gap-6 text-slate-400 animate-in slide-in-from-right">
-              <button onClick={() => setIsMobileMenuOpen(false)} className="mb-4 text-white">
+        <div 
+          className="md:hidden fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex justify-end"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+           <div 
+             className="w-64 bg-slate-900 h-full flex flex-col items-start py-6 px-4 gap-4 text-slate-400 overflow-y-auto safe-area-pr"
+             onClick={(e) => e.stopPropagation()}
+           >
+              <div className="flex items-center justify-between w-full mb-4">
+                <h2 className="text-white font-semibold text-lg">Menu</h2>
+                <button 
+                  onClick={() => setIsMobileMenuOpen(false)} 
+                  className="text-white p-2 rounded-lg hover:bg-slate-800 touch-feedback min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Close menu"
+                >
                   <X className="w-6 h-6" />
-              </button>
-              <NavItems />
+                </button>
+              </div>
+              
+              {/* Mobile-optimized menu items */}
+              <div className="flex flex-col gap-2 w-full">
+                <button 
+                  onClick={() => { setShowAnalytics(!showAnalytics); setIsMobileMenuOpen(false); }}
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                >
+                  <BarChart3 className="w-5 h-5" />
+                  <span>Analytics</span>
+                </button>
+                
+                {canEditSettings(user.role) && (
+                  <button 
+                    onClick={() => { setShowImportModal(true); setIsMobileMenuOpen(false); }} 
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                  >
+                    <Upload className="w-5 h-5" />
+                    <span>{t('import', language)}</span>
+                  </button>
+                )}
+                
+                {hasAdminAccess(user) && setShowAdminDashboard && (
+                  <button 
+                    onClick={() => { setShowAdminDashboard(true); setIsMobileMenuOpen(false); }} 
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                  >
+                    <Shield className="w-5 h-5" />
+                    <span>Admin</span>
+                  </button>
+                )}
+                
+                {isOwner(user) && setShowOwnerAdmin && (
+                  <button 
+                    onClick={() => { setShowOwnerAdmin(true); setIsMobileMenuOpen(false); }} 
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                  >
+                    <Server className="w-5 h-5" />
+                    <span>Owner Admin</span>
+                  </button>
+                )}
+                
+                <div className="border-t border-slate-700 my-2"></div>
+                
+                <button 
+                  onClick={() => { setActiveView('products'); setIsMobileMenuOpen(false); }}
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                >
+                  <Package className="w-5 h-5" />
+                  <span>Products</span>
+                </button>
+                
+                <button 
+                  onClick={() => { setShowSettingsModal(true); setIsMobileMenuOpen(false); }} 
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                >
+                  <Settings className="w-5 h-5" />
+                  <span>{t('settings', language)}</span>
+                </button>
+                
+                <button 
+                  onClick={() => { setShowHelpModal(true); setIsMobileMenuOpen(false); }} 
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-800 hover:text-white touch-feedback min-h-[44px] text-left w-full"
+                >
+                  <HelpCircle className="w-5 h-5" />
+                  <span>Help</span>
+                </button>
+                
+                <div className="border-t border-slate-700 my-2"></div>
+                
+                <button 
+                  onClick={onLogout} 
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-red-900/50 hover:text-red-400 touch-feedback min-h-[44px] text-left w-full text-slate-500"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span>{t('logout', language)}</span>
+                </button>
+              </div>
            </div>
         </div>
       )}

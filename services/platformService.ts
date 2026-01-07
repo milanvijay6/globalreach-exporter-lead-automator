@@ -26,6 +26,40 @@ export const isDesktop = (): boolean => {
   return !!window.electronAPI;
 };
 
+export const isMobile = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  // Check for Capacitor
+  if ((window as any).Capacitor) {
+    const platform = (window as any).Capacitor.getPlatform();
+    return platform === 'ios' || platform === 'android';
+  }
+  // Fallback to user agent detection
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+export const isIOS = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if ((window as any).Capacitor) {
+    return (window as any).Capacitor.getPlatform() === 'ios';
+  }
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+};
+
+export const isAndroid = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if ((window as any).Capacitor) {
+    return (window as any).Capacitor.getPlatform() === 'android';
+  }
+  return /Android/i.test(navigator.userAgent);
+};
+
+export const getPlatform = (): 'web' | 'desktop' | 'ios' | 'android' => {
+  if (isDesktop()) return 'desktop';
+  if (isIOS()) return 'ios';
+  if (isAndroid()) return 'android';
+  return 'web';
+};
+
 export const isCloudflarePages = (): boolean => {
   if (typeof window === 'undefined') return false;
   return window.location.hostname.includes('pages.dev') || 

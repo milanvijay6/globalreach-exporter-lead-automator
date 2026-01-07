@@ -19,7 +19,7 @@ Azure is still detecting your redirect URI as a "Single-page application" even t
 
 1. Go to: https://portal.azure.com
 2. Search: **"App registrations"**
-3. Click: Your app (**649aa87d-4799-466b-ae15-078049518573**)
+3. Click: your app (**YOUR_AZURE_APP_CLIENT_ID**)
 4. Click: **"Authentication"** (left sidebar)
 5. Scroll to: **"Platform configurations"**
 
@@ -98,7 +98,7 @@ Common mistakes:
 
 #### **Check 2: Verify App Registration ID**
 Make sure you're editing the correct app:
-- App ID: **649aa87d-4799-466b-ae15-078049518573**
+- App ID: **YOUR_AZURE_APP_CLIENT_ID**
 - Check the "Application (client) ID" in Azure matches this
 
 #### **Check 3: Check for Multiple Redirect URIs**
@@ -141,7 +141,7 @@ Before trying to connect again, verify:
 - [ ] Saved all changes in Azure Portal
 - [ ] Waited 3-5 minutes for Azure propagation
 - [ ] Closed and restarted Electron app
-- [ ] Verified app registration ID matches (649aa87d-4799-466b-ae15-078049518573)
+- [ ] Verified app registration ID matches (YOUR_AZURE_APP_CLIENT_ID)
 
 ---
 
@@ -190,6 +190,8 @@ If none of these steps work, provide:
 1. Screenshot of Azure Portal → Authentication → Platform configurations
 2. The exact error message you're seeing
 3. Whether you see the redirect URI in both "Web" and "Single-page application"
+
+
 
 
 

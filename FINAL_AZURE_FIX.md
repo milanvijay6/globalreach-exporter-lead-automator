@@ -9,7 +9,7 @@ Your redirect URI `http://localhost:4000/api/oauth/callback` exists in BOTH "Sin
 
 ### **Step 1: Open Azure Portal**
 1. Go to: https://portal.azure.com
-2. App registrations → Your app (**649aa87d-4799-466b-ae15-078049518573**)
+2. App registrations → your app (**YOUR_AZURE_APP_CLIENT_ID**)
 3. Click **"Authentication"**
 
 ---
@@ -109,6 +109,8 @@ After waiting, verify:
 ---
 
 The error message will now guide you through the exact steps. Follow it carefully!
+
+
 
 
 

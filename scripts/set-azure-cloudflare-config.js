@@ -8,24 +8,24 @@
 const path = require('path');
 const fs = require('fs');
 
-// Azure OAuth Configuration
+// Azure OAuth Configuration (must be provided via environment variables)
 const AZURE_CONFIG = {
-  clientId: '649aa87d-4799-466b-ae15-078049518573',
-  tenantId: 'e87ff696-4a5a-4482-aec1-3ad475608ee1',
-  clientSecret: 'qke8Q~Ie5CeQlTfogCm147w.rF~Axl~8mWYb5c8r',
-  secretId: '6a7e6b99-8edc-4d0e-81cc-d881ac3fa6e1' // For reference
+  clientId: process.env.AZURE_CLIENT_ID || '',
+  tenantId: process.env.AZURE_TENANT_ID || '',
+  clientSecret: process.env.AZURE_CLIENT_SECRET || '',
+  secretId: process.env.AZURE_SECRET_ID || ''
 };
 
-// Gmail OAuth Configuration
+// Gmail OAuth Configuration (provide via environment variables)
 const GMAIL_CONFIG = {
-  clientId: '393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com',
-  clientSecret: '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'
+  clientId: process.env.GMAIL_CLIENT_ID || '',
+  clientSecret: process.env.GMAIL_CLIENT_SECRET || ''
 };
 
-// Cloudflare Configuration
+// Cloudflare Configuration (must be provided via environment variables)
 const CLOUDFLARE_CONFIG = {
-  apiKey: 'TMBjozKlShmeEytu93qfEYfpIZzWuix2DgVwDvpO',
-  url: 'globalreach-exporter-lead-automator.duckdns.org'
+  apiKey: process.env.CLOUDFLARE_API_TOKEN || '',
+  url: process.env.CLOUDFLARE_BASE_URL || process.env.PUBLIC_URL || ''
 };
 
 // Get config path (Electron app config location)
@@ -87,58 +87,78 @@ function main() {
   }
 
   // Set Outlook OAuth config
-  oauthConfig.outlook = {
-    clientId: AZURE_CONFIG.clientId,
-    clientSecret: AZURE_CONFIG.clientSecret,
-    tenantId: AZURE_CONFIG.tenantId
-  };
+  if (AZURE_CONFIG.clientId && AZURE_CONFIG.clientSecret && AZURE_CONFIG.tenantId) {
+    oauthConfig.outlook = {
+      clientId: AZURE_CONFIG.clientId,
+      clientSecret: AZURE_CONFIG.clientSecret,
+      tenantId: AZURE_CONFIG.tenantId
+    };
+  }
 
-  // Set Gmail OAuth config
-  oauthConfig.gmail = {
-    clientId: GMAIL_CONFIG.clientId,
-    clientSecret: GMAIL_CONFIG.clientSecret
-  };
+  // Set Gmail OAuth config (only if provided)
+  if (GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret) {
+    oauthConfig.gmail = {
+      clientId: GMAIL_CONFIG.clientId,
+      clientSecret: GMAIL_CONFIG.clientSecret
+    };
+  }
 
   config.oauthConfig = JSON.stringify(oauthConfig);
 
   // Also set individual config keys for backward compatibility
-  config.outlookClientId = AZURE_CONFIG.clientId;
-  config.outlookClientSecret = AZURE_CONFIG.clientSecret;
-  config.outlookTenantId = AZURE_CONFIG.tenantId;
-  config.gmailClientId = GMAIL_CONFIG.clientId;
-  config.gmailClientSecret = GMAIL_CONFIG.clientSecret;
+  if (AZURE_CONFIG.clientId && AZURE_CONFIG.clientSecret && AZURE_CONFIG.tenantId) {
+    config.outlookClientId = AZURE_CONFIG.clientId;
+    config.outlookClientSecret = AZURE_CONFIG.clientSecret;
+    config.outlookTenantId = AZURE_CONFIG.tenantId;
+  }
+  if (GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret) {
+    config.gmailClientId = GMAIL_CONFIG.clientId;
+    config.gmailClientSecret = GMAIL_CONFIG.clientSecret;
+  }
 
-  console.log('   ✅ Azure Client ID:', AZURE_CONFIG.clientId);
-  console.log('   ✅ Azure Tenant ID:', AZURE_CONFIG.tenantId);
-  console.log('   ✅ Azure Client Secret: [HIDDEN]');
+  if (AZURE_CONFIG.clientId && AZURE_CONFIG.clientSecret && AZURE_CONFIG.tenantId) {
+    console.log('   ✅ Azure Client ID:', AZURE_CONFIG.clientId);
+    console.log('   ✅ Azure Tenant ID:', AZURE_CONFIG.tenantId);
+    console.log('   ✅ Azure Client Secret: [HIDDEN]');
+  } else {
+    console.log('   ⚠️  Skipping Azure config: set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID env vars.');
+  }
 
   // Set Gmail OAuth configuration
   console.log('');
   console.log('Setting Gmail OAuth Configuration...');
-  console.log('   ✅ Gmail Client ID:', GMAIL_CONFIG.clientId);
-  console.log('   ✅ Gmail Client Secret: [HIDDEN]');
+  if (GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret) {
+    console.log('   ✅ Gmail Client ID:', GMAIL_CONFIG.clientId);
+    console.log('   ✅ Gmail Client Secret: [HIDDEN]');
+  } else {
+    console.log('   ⚠️  Skipping Gmail config: set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET env vars.');
+  }
 
   // Set Cloudflare configuration
   console.log('');
   console.log('Setting Cloudflare Configuration...');
   
-  // Set Cloudflare URL (ensure it has protocol)
-  let cloudflareUrl = CLOUDFLARE_CONFIG.url;
-  if (!cloudflareUrl.startsWith('http://') && !cloudflareUrl.startsWith('https://')) {
-    cloudflareUrl = `https://${cloudflareUrl}`;
-  }
-  
-  config.cloudflareUrl = cloudflareUrl;
-  config.cloudflareApiKey = CLOUDFLARE_CONFIG.apiKey;
-  
-  // Also set related URLs
-  config.webhookUrl = `${cloudflareUrl}/webhooks/whatsapp`;
-  config.oauthCallbackUrl = `${cloudflareUrl}/api/oauth/callback`;
+  if (CLOUDFLARE_CONFIG.apiKey && CLOUDFLARE_CONFIG.url) {
+    // Set Cloudflare URL (ensure it has protocol)
+    let cloudflareUrl = CLOUDFLARE_CONFIG.url;
+    if (!cloudflareUrl.startsWith('http://') && !cloudflareUrl.startsWith('https://')) {
+      cloudflareUrl = `https://${cloudflareUrl}`;
+    }
 
-  console.log('   ✅ Cloudflare URL:', cloudflareUrl);
-  console.log('   ✅ Cloudflare API Key: [HIDDEN]');
-  console.log('   ✅ Webhook URL:', config.webhookUrl);
-  console.log('   ✅ OAuth Callback URL:', config.oauthCallbackUrl);
+    config.cloudflareUrl = cloudflareUrl;
+    config.cloudflareApiKey = CLOUDFLARE_CONFIG.apiKey;
+    
+    // Also set related URLs
+    config.webhookUrl = `${cloudflareUrl}/webhooks/whatsapp`;
+    config.oauthCallbackUrl = `${cloudflareUrl}/api/oauth/callback`;
+
+    console.log('   ✅ Cloudflare URL:', cloudflareUrl);
+    console.log('   ✅ Cloudflare API Key: [HIDDEN]');
+    console.log('   ✅ Webhook URL:', config.webhookUrl);
+    console.log('   ✅ OAuth Callback URL:', config.oauthCallbackUrl);
+  } else {
+    console.log('   ⚠️  Skipping Cloudflare config: set CLOUDFLARE_API_TOKEN and CLOUDFLARE_BASE_URL env vars.');
+  }
 
   // Write config
   try {
@@ -150,31 +170,43 @@ function main() {
     console.log('   Config file:', configPath);
     console.log('');
     console.log('   Azure OAuth:');
-    console.log('   - Client ID:', AZURE_CONFIG.clientId);
-    console.log('   - Tenant ID:', AZURE_CONFIG.tenantId);
-    console.log('   - Client Secret: [CONFIGURED]');
+    if (AZURE_CONFIG.clientId && AZURE_CONFIG.clientSecret && AZURE_CONFIG.tenantId) {
+      console.log('   - Client ID:', AZURE_CONFIG.clientId);
+      console.log('   - Tenant ID:', AZURE_CONFIG.tenantId);
+      console.log('   - Client Secret: [CONFIGURED]');
+    } else {
+      console.log('   - Not configured (set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID)');
+    }
     console.log('');
     console.log('   Gmail OAuth:');
-    console.log('   - Client ID:', GMAIL_CONFIG.clientId);
-    console.log('   - Client Secret: [CONFIGURED]');
+    if (GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret) {
+      console.log('   - Client ID:', GMAIL_CONFIG.clientId);
+      console.log('   - Client Secret: [CONFIGURED]');
+    } else {
+      console.log('   - Not configured (set GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET)');
+    }
     console.log('');
     console.log('   Cloudflare:');
-    console.log('   - URL:', cloudflareUrl);
-    console.log('   - API Key: [CONFIGURED]');
-    console.log('   - Webhook URL:', config.webhookUrl);
-    console.log('   - OAuth Callback URL:', config.oauthCallbackUrl);
+    if (CLOUDFLARE_CONFIG.apiKey && CLOUDFLARE_CONFIG.url) {
+      console.log('   - URL:', CLOUDFLARE_CONFIG.url);
+      console.log('   - API Key: [CONFIGURED]');
+      if (config.webhookUrl) {
+        console.log('   - Webhook URL:', config.webhookUrl);
+      }
+      if (config.oauthCallbackUrl) {
+        console.log('   - OAuth Callback URL:', config.oauthCallbackUrl);
+      }
+    } else {
+      console.log('   - Not configured (set CLOUDFLARE_API_TOKEN and CLOUDFLARE_BASE_URL)');
+    }
     console.log('');
-    console.log('⚠️  IMPORTANT: Cloudflare API Key');
-    console.log('   For server-side usage, also set as environment variable:');
-    console.log(`   CLOUDFLARE_API_TOKEN=${CLOUDFLARE_CONFIG.apiKey}`);
+    console.log('⚠️  IMPORTANT: Keep secrets out of source control.');
+    console.log('   Provide them via environment variables or a secure secrets manager.');
     console.log('');
     console.log('💡 Next Steps:');
     console.log('   1. Restart the app for changes to take effect');
-    console.log('   2. Update Azure Portal redirect URI to:');
-    console.log(`      ${config.oauthCallbackUrl}`);
-    console.log('   3. Update Google Cloud Console redirect URI to:');
-    console.log(`      ${config.oauthCallbackUrl}`);
-    console.log('   4. For Back4App deployment, set CLOUDFLARE_API_TOKEN environment variable');
+    console.log('   2. Update Azure/Google redirect URIs to match your CLOUDFLARE_BASE_URL (if set)');
+    console.log('   3. For Back4App deployment, set CLOUDFLARE_API_TOKEN and AZURE/GMAIL env vars');
     console.log('');
   } catch (e) {
     console.error('');

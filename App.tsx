@@ -42,7 +42,7 @@ import { StorageService } from './services/storageService';
 import { CampaignService } from './services/campaignService';
 import { CalendarService } from './services/calendarService';
 import { t } from './services/i18n';
-import { isDesktop, PlatformService } from './services/platformService';
+import { isDesktop, isMobile, getPlatform, PlatformService } from './services/platformService';
 import { LoadingService } from './services/loadingService';
 
 // Mock Data
@@ -219,7 +219,7 @@ const App: React.FC = () => {
   const [forecastData, setForecastData] = useState<SalesForecast[] | null>(null);
   const [isForecasting, setIsForecasting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768 || isMobile());
   const [showOwnerAdmin, setShowOwnerAdmin] = useState(false);
   const [showSourceCodeViewer, setShowSourceCodeViewer] = useState(false);
   
@@ -645,7 +645,7 @@ const App: React.FC = () => {
     const handleResize = () => {
       const newWidth = window.innerWidth;
       const newHeight = window.innerHeight;
-      setIsMobile(newWidth < 768);
+      setIsMobileView(newWidth < 768 || isMobile());
       setWindowSize({ width: newWidth, height: newHeight });
     };
     
@@ -678,13 +678,13 @@ const App: React.FC = () => {
     }
     
     // Only auto-select if importers list length changed (new items added) and we're on desktop
-    if (!isMobile && !selectedId && importers.length > 0 && importers.length !== prevImportersLengthRef.current) {
+    if (!isMobileView && !selectedId && importers.length > 0 && importers.length !== prevImportersLengthRef.current) {
       setSelectedId(importers[0].id);
       prevImportersLengthRef.current = importers.length;
     } else if (importers.length !== prevImportersLengthRef.current) {
       prevImportersLengthRef.current = importers.length;
     }
-  }, [isMobile, importers.length, selectedId]); // Only depend on length, not the array
+  }, [isMobileView, importers.length, selectedId]); // Only depend on length, not the array
 
   // Auto-response rate limiting (per conversation)
   const lastAutoResponseTime = useRef<Record<string, number>>({});
@@ -1461,19 +1461,19 @@ const App: React.FC = () => {
         <div className="flex-1 flex overflow-hidden p-0 md:p-6 gap-0 bg-slate-100 relative" style={{ width: '100%', maxWidth: '100%', height: '100%', minHeight: '100%', flex: '1 1 auto' }}>
             {/* Importer List Panel - Resizable */}
             <div 
-              className={`w-full flex flex-col shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-10 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && selectedId ? '-translate-x-full' : 'translate-x-0'} ${isResizing ? '' : 'transition-all'}`}
+              className={`w-full flex flex-col shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-10 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobileView && selectedId ? '-translate-x-full' : 'translate-x-0'} ${isResizing ? '' : 'transition-all'}`}
               style={{ 
                 flexShrink: 0,
-                width: isMobile ? '100%' : `${importerListWidth}px`,
-                minWidth: isMobile ? '280px' : '200px',
-                maxWidth: isMobile ? '100%' : '600px'
+                width: isMobileView ? '100%' : `${importerListWidth}px`,
+                minWidth: isMobileView ? '280px' : '200px',
+                maxWidth: isMobileView ? '100%' : '600px'
               }}
             >
                 <ImporterList importers={importers} selectedId={selectedId} onSelect={setSelectedId} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} language={language} />
             </div>
             
             {/* Resize Handle - Only visible on desktop */}
-            {!isMobile && (
+            {!isMobileView && (
               <div
                 onMouseDown={handleResizeStart}
                 className="w-1 bg-slate-300 hover:bg-indigo-500 cursor-col-resize transition-colors z-30 relative"
@@ -1482,7 +1482,7 @@ const App: React.FC = () => {
             )}
             
             {/* Chat Interface Panel */}
-            <div className={`flex-1 flex flex-col w-full shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-20 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobile && !selectedId ? 'translate-x-full' : 'translate-x-0'}`} style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <div className={`flex-1 flex flex-col w-full shadow-sm absolute md:relative top-0 left-0 right-0 bottom-16 md:bottom-0 z-20 md:z-auto bg-slate-100 transition-transform duration-300 ${isMobileView && !selectedId ? 'translate-x-full' : 'translate-x-0'}`} style={{ minWidth: 0, flex: '1 1 auto' }}>
                 {importers.find(i => i.id === selectedId) ? 
                   <ChatInterface 
                     importer={importers.find(i => i.id === selectedId)!} 

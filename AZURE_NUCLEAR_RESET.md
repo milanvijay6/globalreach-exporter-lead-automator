@@ -8,7 +8,7 @@ Azure is STILL detecting your app as SPA even after adding to Web platform. This
 ### **Step 1: Remove EVERYTHING (Complete Clean Slate)**
 
 1. Go to: https://portal.azure.com
-2. Navigate to: **App registrations** → Your app (**649aa87d-4799-466b-ae15-078049518573**)
+2. Navigate to: **App registrations** → your app (**YOUR_AZURE_APP_CLIENT_ID**)
 3. Click: **"Authentication"**
 4. Scroll to: **"Platform configurations"**
 
@@ -191,6 +191,8 @@ After completing all steps:
    - **Single-page application**: Does NOT exist or is empty ✅
 
 If you see the redirect URI in BOTH sections, Azure will still treat it as SPA!
+
+
 
 
 

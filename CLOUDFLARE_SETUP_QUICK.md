@@ -1,7 +1,7 @@
 # Quick Cloudflare Setup for Your App
 
 ## ✅ What You Have:
-- **Account ID**: `fd11ab247a2ee76e8af41cb2b0408386`
+- **Account ID**: `YOUR_CLOUDFLARE_ACCOUNT_ID`
 - **Zone ID**: `434f7b95819b4afe3fad1e08c4669be9` (optional, not needed for Workers)
 
 ## ⚠️ What You Still Need:
@@ -54,7 +54,7 @@ Value: [paste your API token here]
 ### Variable 2:
 ```
 Name:  CLOUDFLARE_ACCOUNT_ID
-Value: fd11ab247a2ee76e8af41cb2b0408386
+Value: YOUR_CLOUDFLARE_ACCOUNT_ID
 ```
 
 4. Click **Save** or **Add** for each variable
@@ -111,7 +111,7 @@ Use this URL in:
 - Check that the token hasn't been deleted
 
 ### "Account ID not found" Error
-- Verify: `fd11ab247a2ee76e8af41cb2b0408386` is correct
+- Verify: `YOUR_CLOUDFLARE_ACCOUNT_ID` is correct
 - Make sure there are no extra spaces
 
 ### Worker Not Deploying

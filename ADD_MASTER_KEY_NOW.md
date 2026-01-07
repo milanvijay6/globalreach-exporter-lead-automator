@@ -2,7 +2,7 @@
 
 ## ✅ Your Master Key:
 ```
-odGlTFN2QZNmerADS4WKxytfZ4wkNhxdMljNmHnE
+YOUR_PARSE_MASTER_KEY
 ```
 
 ## Step-by-Step Instructions:
@@ -22,7 +22,7 @@ PARSE_MASTER_KEY
 
 **Variable Value:**
 ```
-odGlTFN2QZNmerADS4WKxytfZ4wkNhxdMljNmHnE
+YOUR_PARSE_MASTER_KEY
 ```
 
 ### 3. Save
@@ -33,9 +33,9 @@ odGlTFN2QZNmerADS4WKxytfZ4wkNhxdMljNmHnE
 
 Make sure you have these 4 environment variables set:
 
-1. ✅ **CLOUDFLARE_API_TOKEN** = `TMBjozKlShmeEytu93qfEYfpIZzWuix2DgVwDvpO`
-2. ✅ **CLOUDFLARE_ACCOUNT_ID** = `fd11ab247a2ee76e8af41cb2b0408386`
-3. ✅ **PARSE_MASTER_KEY** = `odGlTFN2QZNmerADS4WKxytfZ4wkNhxdMljNmHnE` (add this now!)
+1. ✅ **CLOUDFLARE_API_TOKEN** = `YOUR_CLOUDFLARE_API_TOKEN`
+2. ✅ **CLOUDFLARE_ACCOUNT_ID** = `YOUR_CLOUDFLARE_ACCOUNT_ID`
+3. ✅ **PARSE_MASTER_KEY** = `YOUR_PARSE_MASTER_KEY` (add this now!)
 4. ⚠️ **ENABLE_AUTO_WORKER_DEPLOY** = `true` (optional, but recommended)
 
 ### 5. Redeploy Your App

@@ -110,7 +110,7 @@ If Google requires verification:
 ## 📋 Current Configuration
 
 Based on the error message, your app is using:
-- **Client ID**: `393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com`
+- **Client ID**: `YOUR_GOOGLE_OAUTH_CLIENT_ID`
 - **Redirect URI**: `https://globalreachexporterleadautomator-itb7p6h1.b4a.run/api/oauth/callback`
 - **Scopes**: 
   - `https://www.googleapis.com/auth/gmail.modify`

@@ -18,7 +18,7 @@ Azure is treating your redirect URI as "Single-Page Application" instead of "Web
 2. Sign in with your Microsoft account
 3. Search for: **"App registrations"** (in top search bar)
 4. Click: **"App registrations"**
-5. Find and click: Your app with ID **649aa87d-4799-466b-ae15-078049518573**
+5. Find and click: your app with ID **YOUR_AZURE_APP_CLIENT_ID**
 
 ### **Step 3: Go to Authentication Settings**
 
@@ -169,7 +169,7 @@ Both have redirect URI
 
 ### **Check 3: Check App Registration ID**
 Make sure you're editing the correct app:
-- App ID: **649aa87d-4799-466b-ae15-078049518573**
+- App ID: **YOUR_AZURE_APP_CLIENT_ID**
 - Check "Application (client) ID" in Azure matches
 
 ### **Check 4: Try Different Browser**
@@ -190,6 +190,8 @@ If none of these steps work, provide:
 1. Screenshot of Azure Portal → Authentication → Platform configurations
 2. Your server port (from Settings → System)
 3. The exact error message you're seeing
+
+
 
 
 

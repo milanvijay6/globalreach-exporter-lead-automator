@@ -8,7 +8,7 @@ Azure is still detecting your app as "Single-Page Application" even though you a
 ### **STEP 1: Remove EVERYTHING First**
 
 1. Go to: https://portal.azure.com
-2. Navigate to: **App registrations** → Your app (**649aa87d-4799-466b-ae15-078049518573**)
+2. Navigate to: **App registrations** → your app (**YOUR_AZURE_APP_CLIENT_ID**)
 3. Click: **"Authentication"**
 4. Scroll to: **"Platform configurations"**
 
@@ -120,6 +120,8 @@ Try creating a NEW app registration:
 5. Update your app with new credentials
 
 This avoids any cached/conflicting configurations.
+
+
 
 
 

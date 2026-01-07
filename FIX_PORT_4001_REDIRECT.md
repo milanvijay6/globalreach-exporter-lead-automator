@@ -14,7 +14,7 @@ Your server is running on port **4001** instead of 4000, but Azure redirect URI 
 ### Step 2: Update Azure Portal Redirect URI
 
 1. Go to: https://portal.azure.com
-2. Navigate to: **App registrations** → Your app (649aa87d-4799-466b-ae15-078049518573)
+2. Navigate to: **App registrations** → your app (YOUR_AZURE_APP_CLIENT_ID)
 3. Click: **"Authentication"**
 4. Under **"Platform configurations"** → **"Web"** section:
 
@@ -94,6 +94,8 @@ Based on your error, your server is running on:
 - **Redirect URI:** `http://localhost:4001/api/oauth/callback`
 
 Make sure this exact URI is configured in Azure Portal under **"Web"** platform.
+
+
 
 
 

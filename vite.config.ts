@@ -10,7 +10,7 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   build: {
-    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'build'),
+    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
     // Always enable source maps for better error debugging
     sourcemap: true,

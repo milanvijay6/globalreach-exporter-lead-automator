@@ -10,7 +10,7 @@ Azure app registration has redirect URI configured as "Single-page application" 
 2. Sign in
 3. Search for "App registrations" in top search bar
 4. Click on "App registrations"
-5. Find and click your app: **649aa87d-4799-466b-ae15-078049518573**
+5. Find and click your app: **YOUR_AZURE_APP_CLIENT_ID**
 
 ### Step 2: Go to Authentication
 1. In the left sidebar, click **"Authentication"**
@@ -65,9 +65,11 @@ After saving, verify:
 ## Still Not Working?
 If after following all steps you still get the error:
 1. Double-check the redirect URI is EXACTLY: `http://localhost:4000/auth/oauth/callback` (no trailing slash, exact case)
-2. Make sure you're editing the correct app registration (649aa87d-4799-466b-ae15-078049518573)
+2. Make sure you're editing the correct app registration (YOUR_AZURE_APP_CLIENT_ID)
 3. Try clearing browser cache and Azure Portal cache
 4. Wait 5 minutes and try again (Azure propagation can be slow)
+
+
 
 
 

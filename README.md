@@ -15,6 +15,7 @@ AI-powered CRM that automates international importer outreach via WhatsApp and E
 - 📊 **Analytics Dashboard** - Track performance, conversion rates, and engagement
 - 🔄 **Automated Workflows** - Drip campaigns, follow-ups, and trigger-based automation
 - 🔒 **Security & Compliance** - CAN-SPAM, GDPR compliance, secure credential storage
+- 📱 **Cross-Platform** - Works on Web, Desktop (Electron), Android, and iOS
 
 ## Run Locally
 
@@ -43,6 +44,48 @@ AI-powered CRM that automates international importer outreach via WhatsApp and E
    ```bash
    npm run dev
    ```
+
+## Secrets & Credentials (keep out of git)
+
+- Store all credentials in environment variables (`.env.local`, Back4App/DO env vars); `.gitignore` already excludes `.env` files.
+- Provide your own keys: Azure OAuth (`AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`), Gmail OAuth (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`), Cloudflare (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_BASE_URL`), Parse (`PARSE_MASTER_KEY`).
+- Rotate any previously committed secrets (Azure app, Cloudflare token/account ID, Parse master key) before reusing this code.
+- Never hardcode secrets in docs or scripts; use placeholders and env vars only.
+
+## Mobile & Cross-Platform Support
+
+This app now supports multiple platforms:
+- **Web** - Progressive Web App (PWA) ready
+- **Desktop** - Electron app for Windows, macOS, and Linux
+- **Android** - Native Android app via Capacitor
+- **iOS** - Native iOS app via Capacitor
+
+### Setting Up Mobile Development
+
+See [MOBILE_SETUP.md](MOBILE_SETUP.md) for detailed instructions on:
+- Setting up Android development environment
+- Setting up iOS development environment
+- Building and deploying mobile apps
+- Platform-specific features and optimizations
+
+### Quick Mobile Commands
+
+```bash
+# Build for Android
+npm run build:android
+
+# Build for iOS
+npm run build:ios
+
+# Sync Capacitor
+npm run cap:sync
+
+# Open in Android Studio
+npm run cap:open:android
+
+# Open in Xcode
+npm run cap:open:ios
+```
 
 ## Deployment to GitHub
 

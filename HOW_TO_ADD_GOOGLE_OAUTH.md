@@ -2,9 +2,9 @@
 
 This guide shows you how to add Google (Gmail) OAuth credentials to the GlobalReach application for OAuth services.
 
-## Method 1: Using the Configuration Script (Easiest - Already Done!)
+## Method 1: Using the Configuration Script (Recommended)
 
-The credentials have already been added using the setup script. If you need to update them, you can run:
+Provide your credentials via environment variables, then run:
 
 ```bash
 node scripts/set-azure-cloudflare-config.js
@@ -12,12 +12,12 @@ node scripts/set-azure-cloudflare-config.js
 
 This script automatically configures:
 - ✅ Azure OAuth credentials
-- ✅ Gmail OAuth credentials  
+- ✅ Gmail OAuth credentials (values pulled from `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET`)  
 - ✅ Cloudflare configuration
 
-**Your current Gmail OAuth credentials:**
-- **Client ID:** `393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com`
-- **Client Secret:** `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`
+**Provide your own Gmail OAuth credentials (not included in the repo):**
+- **Client ID:** `YOUR_GOOGLE_OAUTH_CLIENT_ID`
+- **Client Secret:** `YOUR_GOOGLE_OAUTH_CLIENT_SECRET`
 
 ---
 
@@ -56,12 +56,12 @@ You can set the Gmail OAuth credentials programmatically using the Config API:
 # Set Gmail Client ID
 curl -X POST http://localhost:4000/api/config/gmailClientId \
   -H "Content-Type: application/json" \
-  -d '{"value": "393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com"}'
+  -d '{"value": "YOUR_GOOGLE_OAUTH_CLIENT_ID"}'
 
 # Set Gmail Client Secret
 curl -X POST http://localhost:4000/api/config/gmailClientSecret \
   -H "Content-Type: application/json" \
-  -d '{"value": "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"}'
+  -d '{"value": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET"}'
 ```
 
 ### Using JavaScript/TypeScript:
@@ -70,8 +70,8 @@ curl -X POST http://localhost:4000/api/config/gmailClientSecret \
 import { PlatformService } from './services/platformService';
 
 // Set Gmail OAuth credentials
-await PlatformService.setAppConfig('gmailClientId', '393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com');
-await PlatformService.setAppConfig('gmailClientSecret', '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');
+await PlatformService.setAppConfig('gmailClientId', 'YOUR_GOOGLE_OAUTH_CLIENT_ID');
+await PlatformService.setAppConfig('gmailClientSecret', 'YOUR_GOOGLE_OAUTH_CLIENT_SECRET');
 ```
 
 ---
@@ -91,9 +91,9 @@ await PlatformService.setAppConfig('gmailClientSecret', 'GOCSPX-29fFTthi115L89V3
 
 ```json
 {
-  "oauthConfig": "{\"outlook\":{\"clientId\":\"649aa87d-4799-466b-ae15-078049518573\",\"clientSecret\":\"qke8Q~Ie5CeQlTfogCm147w.rF~Axl~8mWYb5c8r\",\"tenantId\":\"e87ff696-4a5a-4482-aec1-3ad475608ee1\"},\"gmail\":{\"clientId\":\"393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com\",\"clientSecret\":\"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\"}}",
-  "gmailClientId": "393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com",
-  "gmailClientSecret": "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"
+  "oauthConfig": "{\"outlook\":{\"clientId\":\"YOUR_AZURE_APP_CLIENT_ID\",\"clientSecret\":\"YOUR_AZURE_APP_CLIENT_SECRET\",\"tenantId\":\"YOUR_AZURE_TENANT_ID\"},\"gmail\":{\"clientId\":\"YOUR_GOOGLE_OAUTH_CLIENT_ID\",\"clientSecret\":\"YOUR_GOOGLE_OAUTH_CLIENT_SECRET\"}}",
+  "gmailClientId": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
+  "gmailClientSecret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET"
 }
 ```
 
@@ -109,19 +109,19 @@ If you're using Back4App or Parse Server, you can set the config via Parse:
 const Config = require('./server/models/Config');
 
 // Set Gmail OAuth credentials (use master key for server-side)
-await Config.set('gmailClientId', '393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com', null, true);
-await Config.set('gmailClientSecret', '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', null, true);
+await Config.set('gmailClientId', 'YOUR_GOOGLE_OAUTH_CLIENT_ID', null, true);
+await Config.set('gmailClientSecret', 'YOUR_GOOGLE_OAUTH_CLIENT_SECRET', null, true);
 
 // Or set in oauthConfig object
 const oauthConfig = {
   outlook: {
-    clientId: '649aa87d-4799-466b-ae15-078049518573',
-    clientSecret: 'qke8Q~Ie5CeQlTfogCm147w.rF~Axl~8mWYb5c8r',
-    tenantId: 'e87ff696-4a5a-4482-aec1-3ad475608ee1'
+    clientId: 'YOUR_AZURE_APP_CLIENT_ID',
+    clientSecret: 'YOUR_AZURE_APP_CLIENT_SECRET',
+    tenantId: 'YOUR_AZURE_TENANT_ID'
   },
   gmail: {
-    clientId: '393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com',
-    clientSecret: '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'
+    clientId: 'YOUR_GOOGLE_OAUTH_CLIENT_ID',
+    clientSecret: 'YOUR_GOOGLE_OAUTH_CLIENT_SECRET'
   }
 };
 await Config.set('oauthConfig', JSON.stringify(oauthConfig), null, true);
@@ -220,14 +220,13 @@ See the [Gmail OAuth Setup Guide](GMAIL_OAUTH_SETUP.md) for detailed Google Clou
 
 ---
 
-## Current Configuration Status
+## Current Configuration Checklist
 
-✅ **Gmail OAuth credentials are already configured via the setup script:**
-- Client ID: `393499424376-424k11sm0pij9a49v02atceotjh5f091.apps.googleusercontent.com`
-- Client Secret: `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`
-- Config file: `%APPDATA%\GlobalReach\config.json` (Windows)
+- Confirm you've set **Gmail Client ID** to your own `YOUR_GOOGLE_OAUTH_CLIENT_ID`.
+- Confirm you've set **Gmail Client Secret** to your own `YOUR_GOOGLE_OAUTH_CLIENT_SECRET`.
+- Verify the values are stored in `%APPDATA%\GlobalReach\config.json` (Windows) or the equivalent path per OS.
 
-You can start using Gmail OAuth immediately! Just restart the app if it's already running.
+Restart the app after saving credentials.
 
 ---
 

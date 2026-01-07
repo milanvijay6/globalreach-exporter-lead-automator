@@ -57,3 +57,10 @@ config.json
 secrets.json
 *_CREDENTIALS.md
 *_CREDENTIALS.txt
+
+# Capacitor
+android/
+ios/
+.capacitor/
+*.keystore
+*.jks

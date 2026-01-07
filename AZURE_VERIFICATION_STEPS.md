@@ -3,7 +3,7 @@
 ## Current Redirect URI Configuration
 - **Redirect URI**: `http://localhost:4000/auth/oauth/callback`
 - **Platform Type**: Must be **"Web"** (NOT "Single-page application")
-- **App Registration ID**: `649aa87d-4799-466b-ae15-078049518573`
+- **App Registration ID**: `YOUR_AZURE_APP_CLIENT_ID`
 
 ## Step-by-Step Verification in Azure Portal
 
@@ -12,7 +12,7 @@
 2. Sign in with your Microsoft account
 3. Search for "App registrations" in the top search bar
 4. Click on "App registrations"
-5. Find and click your app: **649aa87d-4799-466b-ae15-078049518573**
+5. Find and click your app: **YOUR_AZURE_APP_CLIENT_ID**
 
 ### 2. Go to Authentication Section
 1. In the left sidebar, click **"Authentication"**
@@ -100,6 +100,8 @@ Platform configurations:
 └── Single-page application
     └── http://localhost:4000/auth/oauth/callback ✗ (MUST REMOVE)
 ```
+
+
 
 
 
