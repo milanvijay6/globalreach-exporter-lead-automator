@@ -1,5 +1,6 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Importer, LeadStatus, Language, SentimentData, EmotionData } from '../types';
 import { CheckCircle, XCircle, Clock, MessageCircle, AlertCircle, AlertTriangle, Search, Filter, Phone, Mail, MessageSquare, UserCog, Flame, Smile, Frown, Meh, AlertOctagon, Zap, HelpCircle, Heart } from 'lucide-react';
 import { t } from '../services/i18n';
@@ -108,6 +109,44 @@ const ImporterList: React.FC<ImporterListProps> = ({ importers, selectedId, onSe
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [showDateFilters, setShowDateFilters] = useState(false);
+  
+  // Progressive loading state
+  const [loadedCount, setLoadedCount] = useState(50);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  
+  // Virtual scrolling ref
+  const parentRef = useRef<HTMLDivElement>(null);
+  
+  // Progressive loading: show first 50, load rest in background
+  const displayedImporters = useMemo(() => {
+    return importers.slice(0, loadedCount);
+  }, [importers, loadedCount]);
+  
+  // Load more importers when scrolling near bottom
+  useEffect(() => {
+    if (loadedCount >= importers.length || isLoadingMore) return;
+    
+    const handleScroll = () => {
+      if (!parentRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = parentRef.current;
+      const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+      
+      // Load more when 80% scrolled
+      if (scrollPercentage > 0.8 && loadedCount < importers.length) {
+        setIsLoadingMore(true);
+        setTimeout(() => {
+          setLoadedCount(prev => Math.min(prev + 50, importers.length));
+          setIsLoadingMore(false);
+        }, 100);
+      }
+    };
+    
+    const scrollElement = parentRef.current;
+    if (scrollElement) {
+      scrollElement.addEventListener('scroll', handleScroll);
+      return () => scrollElement.removeEventListener('scroll', handleScroll);
+    }
+  }, [loadedCount, importers.length, isLoadingMore]);
 
   // Extract unique countries for filter
   const countries = useMemo(() => {
@@ -164,6 +203,14 @@ const ImporterList: React.FC<ImporterListProps> = ({ importers, selectedId, onSe
     });
 
   }, [importers, searchTerm, statusFilter, countryFilter, sentimentFilter, startDate, endDate, sortBy]);
+
+  // Virtual scrolling setup - use displayed importers for progressive loading
+  const virtualizer = useVirtualizer({
+    count: filteredImporters.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 120, // Estimated row height in pixels
+    overscan: 5, // Render 5 extra items outside viewport
+  });
 
   return (
     <div className="bg-white md:rounded-lg md:shadow md:border border-slate-200 flex flex-col h-full w-full">
@@ -280,9 +327,13 @@ const ImporterList: React.FC<ImporterListProps> = ({ importers, selectedId, onSe
       </div>
 
       {/* List */}
-      <div className="overflow-y-auto flex-1 p-2 space-y-2 scrollbar-hide">
+      <div 
+        ref={parentRef}
+        className="overflow-y-auto flex-1 scrollbar-hide"
+        style={{ contain: 'strict' }}
+      >
         {filteredImporters.length === 0 ? (
-          <div className="text-center text-slate-400 text-sm py-8 flex flex-col items-center h-full justify-center">
+          <div className="text-center text-slate-400 text-sm py-8 flex flex-col items-center h-full justify-center p-2">
             <Search className="w-8 h-8 mb-2 opacity-20" />
             <p>No leads match your filters.</p>
             {(startDate || endDate) && (
@@ -295,22 +346,41 @@ const ImporterList: React.FC<ImporterListProps> = ({ importers, selectedId, onSe
             )}
           </div>
         ) : (
-          filteredImporters.map((imp) => {
-            const { isValid, errors, whatsappAvailable, wechatAvailable, emailMxValid } = imp.validation;
-            
-            return (
-              <button
-                key={imp.id}
-                onClick={() => isValid && onSelect(imp.id)}
-                disabled={!isValid}
-                className={`
-                  w-full text-left relative p-3 md:p-4 rounded-lg border transition-all duration-200 active:scale-[0.99]
-                  ${!isValid ? 'bg-red-50 border-red-200 cursor-not-allowed opacity-80' : 'cursor-pointer hover:shadow-md'}
-                  ${isValid && selectedId === imp.id 
-                    ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300 shadow-sm' 
-                    : (isValid ? 'bg-white border-slate-100 hover:border-slate-300' : '')}
-                `}
-              >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const imp = filteredImporters[virtualRow.index];
+              const { isValid, errors, whatsappAvailable, wechatAvailable, emailMxValid } = imp.validation;
+              
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className="p-2"
+                >
+                  <button
+                    onClick={() => isValid && onSelect(imp.id)}
+                    disabled={!isValid}
+                    className={`
+                      w-full text-left relative p-3 md:p-4 rounded-lg border transition-all duration-200 active:scale-[0.99]
+                      ${!isValid ? 'bg-red-50 border-red-200 cursor-not-allowed opacity-80' : 'cursor-pointer hover:shadow-md'}
+                      ${isValid && selectedId === imp.id 
+                        ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300 shadow-sm' 
+                        : (isValid ? 'bg-white border-slate-100 hover:border-slate-300' : '')}
+                    `}
+                  >
                 <div className="flex justify-between items-start mb-1">
                   <h3 className={`font-bold text-sm truncate w-2/3 ${!isValid ? 'text-red-800' : 'text-slate-800'}`}>
                     {imp.companyName}
@@ -361,14 +431,25 @@ const ImporterList: React.FC<ImporterListProps> = ({ importers, selectedId, onSe
                       {new Date(imp.lastContacted).toLocaleDateString()}
                     </span>
                   )}
+                  </div>
+                </button>
                 </div>
-              </button>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
   );
 };
 
-export default ImporterList;
+// Memoize component to prevent unnecessary re-renders
+export default React.memo(ImporterList, (prevProps, nextProps) => {
+  // Only re-render if these props change
+  return (
+    prevProps.importers === nextProps.importers &&
+    prevProps.selectedId === nextProps.selectedId &&
+    prevProps.statusFilter === nextProps.statusFilter &&
+    prevProps.language === nextProps.language
+  );
+});

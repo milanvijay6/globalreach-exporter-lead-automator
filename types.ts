@@ -777,6 +777,7 @@ export interface CompanyDetails {
 
 // Products Catalog
 export interface ProductPhoto {
+  blurhash?: string; // BlurHash placeholder for lazy loading
   id: string;
   url: string; // Public URL for sharing
   thumbnailUrl?: string; // Optimized thumbnail

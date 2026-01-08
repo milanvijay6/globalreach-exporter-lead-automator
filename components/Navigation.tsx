@@ -37,6 +37,33 @@ const Navigation: React.FC<NavigationProps> = ({
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Route prefetching on hover
+  const prefetchRoute = (route: string) => {
+    switch (route) {
+      case 'analytics':
+        import('../components/AnalyticsDashboard');
+        break;
+      case 'campaigns':
+        import('../components/CampaignManager');
+        break;
+      case 'calendar':
+        import('../components/CalendarView');
+        break;
+      case 'products':
+        import('../components/ProductsCatalogPanel');
+        break;
+      case 'settings':
+        import('../components/SettingsModal');
+        break;
+      case 'admin':
+        import('../components/AdminMonitoringDashboard');
+        break;
+      case 'owner':
+        import('../components/OwnerAdminPanel');
+        break;
+    }
+  };
+
   const NavItems = () => (
     <>
       {/* Top Section */}
@@ -54,6 +81,7 @@ const Navigation: React.FC<NavigationProps> = ({
         </button>
 
         <button 
+          onMouseEnter={() => prefetchRoute('campaigns')}
           onClick={() => { setActiveView('campaigns'); setIsMobileMenuOpen(false); }}
           title="Campaigns"
           className={`p-3 rounded-xl transition-all ${activeView === 'campaigns' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
@@ -61,6 +89,7 @@ const Navigation: React.FC<NavigationProps> = ({
         </button>
 
         <button 
+          onMouseEnter={() => prefetchRoute('calendar')}
           onClick={() => { setActiveView('calendar'); setIsMobileMenuOpen(false); }}
           title="Calendar"
           className={`p-3 rounded-xl transition-all ${activeView === 'calendar' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
@@ -68,6 +97,7 @@ const Navigation: React.FC<NavigationProps> = ({
         </button>
 
         <button 
+          onMouseEnter={() => prefetchRoute('products')}
           onClick={() => { setActiveView('products'); setIsMobileMenuOpen(false); }}
           title="Products"
           className={`p-3 rounded-xl transition-all ${activeView === 'products' ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
@@ -81,6 +111,7 @@ const Navigation: React.FC<NavigationProps> = ({
       {/* Middle Section - Utilities */}
       <div className="flex flex-col items-center gap-2 shrink-0">
         <button 
+          onMouseEnter={() => prefetchRoute('analytics')}
           onClick={() => { setShowAnalytics(!showAnalytics); setIsMobileMenuOpen(false); }}
           title="Toggle Analytics"
           className={`p-3 rounded-xl transition-all ${showAnalytics ? 'bg-slate-800 text-white shadow-inner' : 'hover:bg-slate-800 hover:text-white'}`}>
@@ -98,6 +129,7 @@ const Navigation: React.FC<NavigationProps> = ({
 
         {hasAdminAccess(user) && setShowAdminDashboard && (
           <button 
+            onMouseEnter={() => prefetchRoute('admin')}
             onClick={() => { setShowAdminDashboard(true); setIsMobileMenuOpen(false); }} 
             title="Admin Monitoring"
             className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
@@ -107,6 +139,7 @@ const Navigation: React.FC<NavigationProps> = ({
 
         {isOwner(user) && setShowOwnerAdmin && (
           <button 
+            onMouseEnter={() => prefetchRoute('owner')}
             onClick={() => { setShowOwnerAdmin(true); setIsMobileMenuOpen(false); }} 
             title="Owner Admin"
             className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">
@@ -121,6 +154,7 @@ const Navigation: React.FC<NavigationProps> = ({
       {/* Bottom Actions */}
       <div className="flex flex-col items-center gap-2 shrink-0">
         <button 
+          onMouseEnter={() => prefetchRoute('settings')}
           onClick={() => { setShowSettingsModal(true); setIsMobileMenuOpen(false); }} 
           title={t('settings', language)}
           className="p-3 hover:bg-slate-800 hover:text-white rounded-xl transition-all">

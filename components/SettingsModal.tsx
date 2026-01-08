@@ -275,16 +275,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     if (isOpen && whatsappMethod === 'web') {
       checkStatus();
       
-      // Also poll status periodically as a fallback (every 1 second for faster updates)
-      const statusInterval = setInterval(async () => {
-        if (whatsappMethod === 'web' && window.electronAPI?.whatsappWebGetStatus) {
+      // Use WebSocket for real-time status updates instead of polling
+      let statusSubscriptionId: string | null = null;
+      let statusInterval: NodeJS.Timeout | null = null;
+      
+      try {
+        const { websocketClient } = require('../services/websocketClient');
+        
+        if (websocketClient.isConnected()) {
+          // Subscribe to system status updates via WebSocket
+          statusSubscriptionId = websocketClient.subscribe(
+            'system-status',
+            {},
+            (data) => {
+              // Update WhatsApp status when WebSocket message received
+              if (data.whatsappStatus) {
+                const status = data.whatsappStatus;
+                if (status.ready) {
+                  setWhatsappWebStatus('connected');
+                  setWhatsappWebQRCode(null);
+                  setWhatsappWebPairingCode(null);
+                  setWhatsappWebError(undefined);
+                } else if (status.qrCode) {
+                  setWhatsappWebQRCode(status.qrCode);
+                  setWhatsappWebPairingCode(null);
+                  setWhatsappWebStatus('scanning');
+                } else if (status.pairingCode) {
+                  setWhatsappWebPairingCode(status.pairingCode);
+                  setWhatsappWebQRCode(null);
+                  setWhatsappWebStatus('scanning');
+                }
+              }
+            }
+          );
+        }
+      } catch (error) {
+        console.warn('[SettingsModal] WebSocket not available, using polling fallback');
+      }
+      
+      // Fallback to polling if WebSocket not available (for Electron)
+      if (!statusSubscriptionId && window.electronAPI?.whatsappWebGetStatus) {
+        statusInterval = setInterval(async () => {
           try {
             const status = await window.electronAPI.whatsappWebGetStatus();
-            console.log('[SettingsModal] Status poll result:', { ready: status?.ready, initialized: status?.initialized, hasQR: !!status?.qrCode, hasPairingCode: !!status?.pairingCode });
-            
             if (status?.ready) {
               if (whatsappWebStatus !== 'connected') {
-                console.log('[SettingsModal] Status changed to connected via polling');
                 setWhatsappWebStatus('connected');
                 setWhatsappWebQRCode(null);
                 setWhatsappWebPairingCode(null);
@@ -298,18 +333,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               setWhatsappWebPairingCode(status.pairingCode);
               setWhatsappWebQRCode(null);
               setWhatsappWebStatus('scanning');
-            } else if (status?.initialized && !status?.ready && !status?.qrCode && !status?.pairingCode && whatsappWebStatus === 'waiting') {
-              // Still waiting for connection
-              console.log('[SettingsModal] Still waiting for connection...');
             }
           } catch (error) {
             console.error('[SettingsModal] Status poll error:', error);
           }
-        }
-      }, 1000); // Poll every 1 second for faster updates
+        }, 1000);
+      }
 
       return () => {
-        clearInterval(statusInterval);
+        if (statusSubscriptionId) {
+          try {
+            const { websocketClient } = require('../services/websocketClient');
+            websocketClient.unsubscribe(statusSubscriptionId);
+          } catch (error) {
+            // Ignore errors
+          }
+        }
+        if (statusInterval) {
+          clearInterval(statusInterval);
+        }
         if (window.electronAPI?.removeWhatsAppWebListeners) {
           window.electronAPI.removeWhatsAppWebListeners();
         }

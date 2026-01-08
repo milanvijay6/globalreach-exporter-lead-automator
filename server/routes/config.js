@@ -38,8 +38,8 @@ router.post('/:key', async (req, res) => {
   }
 });
 
-// Get all config
-router.get('/', async (req, res) => {
+// Get all config (cached for 1 hour)
+router.get('/', cacheMiddleware(3600), async (req, res) => {
   try {
     const userId = req.userId || null;
     

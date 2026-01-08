@@ -252,7 +252,8 @@ export const generateIntroMessage = async (
   myProduct: string | null = null,
   template: string,
   targetChannel: Channel,
-  useResearch: boolean = true
+  useResearch: boolean = true,
+  options: { timeout?: number } = {}
 ): Promise<string> => {
   
   if (!checkRateLimit()) {
@@ -338,15 +339,46 @@ export const generateIntroMessage = async (
     const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
     const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
     
-    const response = await client.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
+    // Set up timeout (default: 10s for real-time operations)
+    const timeout = options.timeout ?? parseInt(process.env.AI_REALTIME_TIMEOUT || '10000', 10);
+    let timeoutId: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
     
-    const responseTime = Date.now() - startTime;
-    await recordApiUsage(keyId, true, responseTime);
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, timeout);
+    }
     
-    return response.text || "Error generating message.";
+    try {
+      const response = await client.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+      });
+      
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      const responseTime = Date.now() - startTime;
+      await recordApiUsage(keyId, true, responseTime);
+      
+      const result = response.text || "Error generating message.";
+      
+      // Cache the response
+      await aiResponseCache.cacheResponse(prompt, result, {
+        function: 'generateIntroMessage',
+        targetChannel,
+        importerId: importer.id,
+      });
+      
+      return result;
+    } catch (requestError: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      if (abortController.signal.aborted) {
+        throw new Error(`Request timed out after ${timeout}ms`);
+      }
+      throw requestError;
+    }
   } catch (error: any) {
     console.error("Gemini API Error:", error);
     
@@ -381,7 +413,8 @@ export const generateAgentReply = async (
   history: Message[], 
   myCompany: string | null = null, 
   systemInstructionTemplate: string,
-  targetChannel: Channel
+  targetChannel: Channel,
+  options: { timeout?: number } = {}
 ): Promise<string> => {
   
   if (!checkRateLimit()) {
@@ -444,15 +477,46 @@ export const generateAgentReply = async (
     const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
     const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
     
-    const response = await client.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-    });
+    // Set up timeout (default: 10s for real-time operations)
+    const timeout = options.timeout ?? parseInt(process.env.AI_REALTIME_TIMEOUT || '10000', 10);
+    let timeoutId: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
     
-    const responseTime = Date.now() - startTime;
-    await recordApiUsage(keyId, true, responseTime);
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, timeout);
+    }
     
-    return response.text || "Error generating reply.";
+    try {
+      const response = await client.models.generateContent({
+        model: MODEL_NAME,
+        contents: prompt,
+      });
+      
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      const responseTime = Date.now() - startTime;
+      await recordApiUsage(keyId, true, responseTime);
+      
+      const result = response.text || "Error generating reply.";
+      
+      // Cache the response (use compressed prompt for cache key)
+      await aiResponseCache.cacheResponse(compressedPrompt, result, {
+        function: 'generateAgentReply',
+        targetChannel,
+        importerId: importer.id,
+      });
+      
+      return result;
+    } catch (requestError: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      if (abortController.signal.aborted) {
+        throw new Error(`Request timed out after ${timeout}ms`);
+      }
+      throw requestError;
+    }
   } catch (error: any) {
     console.error("Gemini API Reply Error:", error);
     
@@ -691,7 +755,7 @@ export const generateEmailReply = async (
 /**
  * Analyzes the conversation to determine lead status, extract details, detect escalation needs, and score the lead.
  */
-export const analyzeLeadQuality = async (history: Message[]): Promise<AnalysisResult> => {
+export const analyzeLeadQuality = async (history: Message[], options: { timeout?: number } = {}): Promise<AnalysisResult> => {
   
   if (!checkRateLimit()) {
      console.warn("Rate limit hit skipping analysis");
@@ -777,26 +841,70 @@ export const analyzeLeadQuality = async (history: Message[]): Promise<AnalysisRe
   `;
 
   try {
+    // Compress prompt and history
+    const { compressPrompt, compressHistory } = await import('../server/utils/promptCompression');
+    const compressedHistory = compressHistory(history);
+    const compressedConversation = compressedHistory.map(m => `[${m.channel}] ${m.sender.toUpperCase()}: ${m.content}`).join('\n');
+    const compressedPrompt = compressPrompt(prompt.replace(conversation, compressedConversation));
+
+    // Check cache first
+    const aiResponseCache = await import('../server/services/aiResponseCache');
+    const cached = await aiResponseCache.getCachedResponse(compressedPrompt);
+    if (cached && cached.response) {
+      console.log('[GeminiService] Using cached response for analyzeLeadQuality');
+      return cached.response as AnalysisResult;
+    }
+
     const client = await getAiClient();
     const startTime = Date.now();
     
     const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
     const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
     
-    const response = await client.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
+    // Set up timeout (default: 30s for background operations)
+    const timeout = options.timeout ?? parseInt(process.env.AI_BACKGROUND_TIMEOUT || '30000', 10);
+    let timeoutId: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
+    
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, timeout);
+    }
+    
+    try {
+      const response = await client.models.generateContent({
+        model: MODEL_NAME,
+        contents: compressedPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: responseSchema,
+        }
+      });
+      
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      const responseTime = Date.now() - startTime;
+      await recordApiUsage(keyId, true, responseTime);
+      
+      const jsonText = response.text || "{}";
+      const result = JSON.parse(jsonText) as AnalysisResult;
+      
+      // Cache the response (use compressed prompt for cache key)
+      await aiResponseCache.cacheResponse(compressedPrompt, result, {
+        function: 'analyzeLeadQuality',
+        historyLength: compressedHistory.length,
+      });
+      
+      return result;
+    } catch (requestError: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      if (abortController.signal.aborted) {
+        throw new Error(`Request timed out after ${timeout}ms`);
       }
-    });
-
-    const responseTime = Date.now() - startTime;
-    await recordApiUsage(keyId, true, responseTime);
-
-    const jsonText = response.text || "{}";
-    return JSON.parse(jsonText) as AnalysisResult;
+      throw requestError;
+    }
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
     
@@ -1210,6 +1318,279 @@ export const generateSalesForecast = async (importers: Importer[]): Promise<Sale
 /**
  * Generates targeted training modules based on strategic insights from lead data.
  */
+/**
+ * Streaming version of generateAgentReply - returns async generator for incremental text chunks
+ */
+export async function* generateAgentReplyStream(
+  importer: Importer,
+  history: Message[],
+  myCompany: string | null = null,
+  systemInstructionTemplate: string,
+  targetChannel: Channel,
+  options: { timeout?: number } = {}
+): AsyncGenerator<string, void, unknown> {
+  if (!checkRateLimit()) {
+    yield "Error: Rate limit exceeded. Please wait a moment.";
+    return;
+  }
+
+  // Load company details if not provided
+  let companyName = myCompany;
+  if (!companyName) {
+    const company = await (await import('./companyConfigService')).CompanyConfigService.getCompanyDetails();
+    companyName = company?.companyName || 'Our Company';
+  }
+
+  // Get relevant products for context
+  const relevantProducts = await getRelevantProducts(importer.productsImported || '');
+  const productContext = await buildProductContext(importer, relevantProducts);
+
+  // Include Channel in history for context awareness
+  const conversation = history.map(m => `[${m.channel}] ${m.sender.toUpperCase()}: ${m.content}`).join('\n');
+  
+  // Context Retention: Explicitly feed back the AI's own previous understanding
+  const contextBlock = `
+    Context Summary: ${importer.conversationSummary || 'Starting conversation.'}
+    Identified Interest: ${importer.interestShownIn || 'Not yet identified.'}
+    Next Goal: ${importer.nextStep || 'Qualify lead.'}
+    ${productContext}
+  `;
+
+  const filledInstruction = replacePlaceholders(systemInstructionTemplate, {
+    myCompany: companyName
+  });
+
+  const prompt = `
+    ${filledInstruction}
+
+    Target Channel: ${targetChannel}
+    Instruction: Adapt your response format for ${targetChannel}.
+    ${targetChannel !== Channel.EMAIL 
+        ? 'Keep it concise (under 60 words if possible) as this is a chat app. No formal subject lines.' 
+        : 'Use standard business email formatting.'}
+
+    Importer Details:
+    Name: ${importer.name} (${importer.companyName}, ${importer.country})
+    Imports: ${importer.productsImported}
+
+    ${contextBlock}
+    
+    Conversation History (Note the channels used):
+    ${conversation}
+
+    Output ONLY the reply text.
+  `;
+
+  try {
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    // Set up timeout (default: 10s for real-time operations)
+    const timeout = options.timeout ?? parseInt(process.env.AI_REALTIME_TIMEOUT || '10000', 10);
+    let timeoutId: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
+    
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, timeout);
+    }
+
+    try {
+      // Use streaming API
+      const stream = await client.models.generateContentStream({
+        model: MODEL_NAME,
+        contents: prompt,
+      });
+
+      if (timeoutId) clearTimeout(timeoutId);
+
+      // Stream chunks as they arrive
+      for await (const chunk of stream) {
+        const text = chunk.text || '';
+        if (text) {
+          yield text;
+        }
+      }
+
+      const responseTime = Date.now() - startTime;
+      await recordApiUsage(keyId, true, responseTime);
+    } catch (requestError: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      if (abortController.signal.aborted) {
+        throw new Error(`Request timed out after ${timeout}ms`);
+      }
+      throw requestError;
+    }
+  } catch (error: any) {
+    console.error("Gemini API Streaming Error:", error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
+    yield `Error: ${error?.message || error?.error || 'Failed to generate reply'}`;
+  }
+}
+
+/**
+ * Streaming version of generateIntroMessage - returns async generator for incremental text chunks
+ */
+export async function* generateIntroMessageStream(
+  importer: Importer,
+  myCompany: string | null = null,
+  myProduct: string | null = null,
+  template: string,
+  targetChannel: Channel,
+  useResearch: boolean = true,
+  options: { timeout?: number } = {}
+): AsyncGenerator<string, void, unknown> {
+  if (!checkRateLimit()) {
+    yield "Error: Rate limit exceeded. Please wait a moment.";
+    return;
+  }
+
+  // Load company details if not provided
+  let companyName = myCompany;
+  let companyContext = '';
+  if (!companyName) {
+    companyContext = await getCompanyContext();
+    const company = await (await import('./companyConfigService')).CompanyConfigService.getCompanyDetails();
+    companyName = company?.companyName || 'Our Company';
+  } else {
+    companyContext = await getCompanyContext();
+  }
+
+  // Get relevant products
+  const relevantProducts = await getRelevantProducts(importer.productsImported);
+  const productList = relevantProducts.length > 0
+    ? relevantProducts.map(p => `- ${p.name} (${p.category}): ${p.shortDescription}`).join('\n')
+    : myProduct || 'Our products';
+
+  // Get lead research if enabled
+  let researchContext = '';
+  if (useResearch) {
+    try {
+      const { LeadResearchService } = await import('./leadResearchService');
+      const research = await LeadResearchService.researchLead(importer);
+      researchContext = `
+        Lead Research Insights:
+        - Industry: ${research.industry}
+        - Pain Points: ${research.painPoints.join(', ') || 'Not identified'}
+        - Opportunities: ${research.opportunities.join(', ') || 'Not identified'}
+        - Recommended Approach: ${research.recommendedApproach}
+        - Personalization Tips: ${research.personalizationTips.join('; ') || 'None'}
+      `;
+    } catch (error) {
+      console.warn('[GeminiService] Failed to get lead research, continuing without it:', error);
+    }
+  }
+
+  const filledTemplate = replacePlaceholders(template, {
+    importerName: importer.name,
+    companyName: importer.companyName,
+    country: importer.country,
+    productCategory: importer.productsImported,
+    myProduct: productList,
+    myCompany: companyName
+  });
+
+  const prompt = `
+    You are a professional export sales representative.
+    
+    Target Channel: ${targetChannel}
+    
+    ${researchContext ? `\n${researchContext}\n` : ''}
+    
+    Task: Create a highly personalized introductory message based on the template below.
+    ${researchContext ? 'Use the lead research insights to craft a message that addresses their specific needs and pain points.' : ''}
+    Ensure it is polite, professional, and formatted for the specific target channel.
+    
+    Channel Constraints:
+    ${targetChannel === Channel.EMAIL 
+        ? '- Include a professional Subject line at the very top (Format: "Subject: ...").\n- Use standard email signing.' 
+        : '- Do NOT include a Subject line.\n- Keep it concise and chat-friendly.\n- Break into small paragraphs.'}
+
+    Base Template:
+    """
+    ${filledTemplate}
+    """
+    
+    ${researchContext ? 'IMPORTANT: Customize the message to be highly relevant to this specific lead based on the research insights. Avoid generic messaging.' : ''}
+    
+    Output ONLY the final message text.
+  `;
+
+  try {
+    const client = await getAiClient();
+    const startTime = Date.now();
+    
+    const bestKey = await selectBestKey(ApiKeyProvider.GEMINI, { priority: 'reliability' });
+    const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+    
+    // Set up timeout (default: 10s for real-time operations)
+    const timeout = options.timeout ?? parseInt(process.env.AI_REALTIME_TIMEOUT || '10000', 10);
+    let timeoutId: NodeJS.Timeout | null = null;
+    const abortController = new AbortController();
+    
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, timeout);
+    }
+
+    try {
+      // Use streaming API
+      const stream = await client.models.generateContentStream({
+        model: MODEL_NAME,
+        contents: prompt,
+      });
+
+      if (timeoutId) clearTimeout(timeoutId);
+
+      // Stream chunks as they arrive
+      for await (const chunk of stream) {
+        const text = chunk.text || '';
+        if (text) {
+          yield text;
+        }
+      }
+
+      const responseTime = Date.now() - startTime;
+      await recordApiUsage(keyId, true, responseTime);
+    } catch (requestError: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      if (abortController.signal.aborted) {
+        throw new Error(`Request timed out after ${timeout}ms`);
+      }
+      throw requestError;
+    }
+  } catch (error: any) {
+    console.error("Gemini API Streaming Error:", error);
+    
+    try {
+      const bestKey = await selectBestKey(ApiKeyProvider.GEMINI);
+      const keyId = bestKey?.id || (await getPrimaryKey(ApiKeyProvider.GEMINI))?.id || 'unknown';
+      const errorMessage = error?.error || error?.message || error?.details?.detail || String(error);
+      await recordApiUsage(keyId, false, undefined, errorMessage);
+    } catch (trackError) {
+      // Ignore tracking errors
+    }
+    
+    yield `Error: ${error?.message || error?.error || 'Failed to generate intro message'}`;
+  }
+}
+
 export const generateTrainingProgram = async (insights: StrategicInsight[]): Promise<TrainingModule[]> => {
   if (!checkRateLimit()) throw new Error("Rate Limit Exceeded");
 

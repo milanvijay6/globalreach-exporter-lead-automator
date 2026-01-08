@@ -7,6 +7,7 @@ import { User } from '../types';
 import { Logger } from '../services/loggerService';
 import ProductFormModal from './ProductFormModal';
 import { OptimizedButton } from './OptimizedButton';
+import LazyImage from './LazyImage';
 
 interface ProductsCatalogPanelProps {
   user?: User;
@@ -242,16 +243,19 @@ const ProductsCatalogPanel: React.FC<ProductsCatalogPanelProps> = ({ user }) => 
               {/* Product Image */}
               {primaryPhoto ? (
                 <div className="w-full h-48 bg-slate-100 relative overflow-hidden">
-                  <img
+                  <LazyImage
                     src={primaryPhoto.url}
                     alt={product.name}
+                    blurhash={primaryPhoto.blurhash}
                     className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%" y="50%" text-anchor="middle" dy=".3em"%3ENo Image%3C/text%3E%3C/svg%3E';
+                    width={undefined}
+                    height={192}
+                    onError={() => {
+                      // Error handled by LazyImage component
                     }}
                   />
                   {product.photos && product.photos.length > 1 && (
-                    <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                    <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded flex items-center gap-1 z-10">
                       <ImageIcon className="w-3 h-3" />
                       {product.photos.length}
                     </div>

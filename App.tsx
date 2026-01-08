@@ -24,12 +24,25 @@ const CalendarView = lazy(() => import('./components/CalendarView'));
 const AdminMonitoringDashboard = lazy(() => import('./components/AdminMonitoringDashboard'));
 const ProductsCatalogPanel = lazy(() => import('./components/ProductsCatalogPanel'));
 
-// Loading fallback component
-const ComponentLoader: React.FC = () => (
-  <div className="flex items-center justify-center p-8">
-    <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-  </div>
-);
+// Loading fallback component with skeleton screens
+import { ImporterListSkeleton, ChatInterfaceSkeleton, AnalyticsDashboardSkeleton } from './components/skeletons';
+
+const ComponentLoader: React.FC<{ type?: 'list' | 'chat' | 'analytics' | 'default' }> = ({ type = 'default' }) => {
+  switch (type) {
+    case 'list':
+      return <ImporterListSkeleton />;
+    case 'chat':
+      return <ChatInterfaceSkeleton />;
+    case 'analytics':
+      return <AnalyticsDashboardSkeleton />;
+    default:
+      return (
+        <div className="flex items-center justify-center p-8">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+        </div>
+      );
+  }
+};
 
 import { Importer, LeadStatus, Message, Channel, AppTemplates, DEFAULT_TEMPLATES, ReportConfig, SalesForecast, User, Language, PlatformConnection, MessageStatus, NotificationConfig, DEFAULT_NOTIFICATIONS, Campaign, CalendarEvent } from './types';
 import { canExportData, canSendMessages } from './services/permissionService';
@@ -261,10 +274,39 @@ const App: React.FC = () => {
                     
                     LoadingService.updateProgress(initTaskId, 50);
                     
+                    // Initialize SQLite for mobile (if available)
+                    try {
+                      const { initializeSQLite } = await import('./services/sqliteService');
+                      await initializeSQLite();
+                      console.log('[App] SQLite initialized');
+                    } catch (error) {
+                      console.warn('[App] SQLite initialization failed (non-critical):', error);
+                    }
+                    
+                    LoadingService.updateProgress(initTaskId, 60);
+                    
                     // Load all user-specific data
                     await loadInitialAppData(savedUser);
                     
                     LoadingService.updateProgress(initTaskId, 80);
+                    
+                    // Perform incremental sync on app start
+                    try {
+                      const { performIncrementalSync } = await import('./services/incrementalSyncService');
+                      await performIncrementalSync();
+                      console.log('[App] Initial sync completed');
+                    } catch (error) {
+                      console.warn('[App] Initial sync failed (non-critical):', error);
+                    }
+                    
+                    // Initialize push notifications (mobile only)
+                    try {
+                      const { initializePushNotifications } = await import('./services/pushNotificationService');
+                      await initializePushNotifications();
+                      console.log('[App] Push notifications initialized');
+                    } catch (error) {
+                      console.warn('[App] Push notifications initialization failed (non-critical):', error);
+                    }
                     
                     // Load panel size preferences
                     const panelSizes = await loadPanelSizes(savedUser.id);
@@ -1217,7 +1259,7 @@ const App: React.FC = () => {
       });
   };
 
-  const updateImporter = (id: string, updates: Partial<Importer>, logDescription?: string) => {
+  const updateImporter = useCallback((id: string, updates: Partial<Importer>, logDescription?: string) => {
     setImporters(prev => prev.map(imp => {
         if (imp.id === id) {
             const updatedImp = { ...imp, ...updates };
@@ -1228,9 +1270,9 @@ const App: React.FC = () => {
         }
         return imp;
     }));
-  };
+  }, []);
 
-  const handleMessageFeedback = (messageId: string, isHelpful: boolean) => {
+  const handleMessageFeedback = useCallback((messageId: string, isHelpful: boolean) => {
       setImporters(prev => prev.map(imp => {
           if (!imp.chatHistory.some(m => m.id === messageId)) return imp;
           return {
@@ -1240,15 +1282,15 @@ const App: React.FC = () => {
               )
           };
       }));
-  };
+  }, []);
 
-  const handleDataRestore = (restoredImporters: Importer[]) => {
+  const handleDataRestore = useCallback((restoredImporters: Importer[]) => {
       setImporters(restoredImporters);
       if (restoredImporters.length > 0) setSelectedId(restoredImporters[0].id);
       logSecurityEvent('DATA_RESTORE', user?.id || 'system', `Restored ${restoredImporters.length} records`);
-  };
+  }, [user?.id]);
 
-  const addMessage = (importerId: string, content: string, sender: 'agent' | 'importer' | 'system', channelOverride?: Channel, initialStatus?: MessageStatus) => {
+  const addMessage = useCallback((importerId: string, content: string, sender: 'agent' | 'importer' | 'system', channelOverride?: Channel, initialStatus?: MessageStatus) => {
     const newMessage: Message = {
       id: Date.now().toString(), content, sender, timestamp: Date.now(), channel: channelOverride || Channel.WHATSAPP, status: initialStatus
     };
@@ -1260,7 +1302,7 @@ const App: React.FC = () => {
       return { ...imp, chatHistory: [...imp.chatHistory, newMessage], activityLog: logs, lastContacted: Date.now() };
     }));
     return newMessage;
-  };
+  }, []);
 
   const sendMessage = async (importer: Importer, content: string, channel: Channel) => {
       const msg = addMessage(importer.id, content, 'agent', channel, MessageStatus.SENDING);
@@ -1303,17 +1345,79 @@ const App: React.FC = () => {
     setIsProcessing(false);
   };
 
-  const handleAgentReply = async () => {
+  const handleAgentReply = async (useStreaming: boolean = false) => {
     if (!user || !canSendMessages(user) || !selectedId) return;
     setIsProcessing(true);
     const importer = importers.find(i => i.id === selectedId);
     if (importer) {
         let channel = importer.preferredChannel;
         if (importer.channelSelectionMode !== 'manual') channel = getOptimalChannel(importer.validation);
-        // generateAgentReply now automatically loads company/product data from services
-        const reply = await generateAgentReply(importer, importer.chatHistory, null, templates.agentSystemInstruction, channel);
-        if (reply.startsWith("Error:")) alert(reply);
-        else await sendMessage(importer, reply, channel);
+        
+        if (useStreaming) {
+          // Use streaming API for real-time message generation
+          try {
+            const params = new URLSearchParams({
+              importer: encodeURIComponent(JSON.stringify(importer)),
+              history: encodeURIComponent(JSON.stringify(importer.chatHistory || [])),
+              systemInstructionTemplate: templates.agentSystemInstruction,
+              targetChannel: channel,
+            });
+            
+            const response = await fetch(`/api/ai/stream/generate-message?${params}`);
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
+            let partialMessage = '';
+            
+            if (reader) {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    try {
+                      const data = JSON.parse(line.substring(6));
+                      if (data.type === 'chunk') {
+                        fullText = data.fullText || '';
+                        partialMessage = data.text || '';
+                        // TODO: Update UI with partial message (would require state management for streaming messages)
+                        // For now, we'll just accumulate the full text
+                      } else if (data.type === 'complete') {
+                        fullText = data.fullText || '';
+                        break;
+                      } else if (data.type === 'error') {
+                        throw new Error(data.error || 'Streaming error');
+                      }
+                    } catch (parseError) {
+                      // Ignore parse errors for incomplete JSON
+                    }
+                  }
+                }
+              }
+            }
+            
+            if (fullText && !fullText.startsWith("Error:")) {
+              await sendMessage(importer, fullText, channel);
+            } else if (fullText.startsWith("Error:")) {
+              alert(fullText);
+            }
+          } catch (streamError: any) {
+            console.error('[App] Streaming error, falling back to non-streaming:', streamError);
+            // Fallback to non-streaming
+            const reply = await generateAgentReply(importer, importer.chatHistory, null, templates.agentSystemInstruction, channel);
+            if (reply.startsWith("Error:")) alert(reply);
+            else await sendMessage(importer, reply, channel);
+          }
+        } else {
+          // Non-streaming (default)
+          const reply = await generateAgentReply(importer, importer.chatHistory, null, templates.agentSystemInstruction, channel);
+          if (reply.startsWith("Error:")) alert(reply);
+          else await sendMessage(importer, reply, channel);
+        }
     }
     setIsProcessing(false);
   };
@@ -1668,7 +1772,7 @@ const App: React.FC = () => {
       />
       <ErrorBoundary>
         <div className={`fixed md:absolute top-0 bottom-16 md:bottom-0 left-0 md:left-20 w-full md:w-96 bg-white border-r border-slate-200 shadow-2xl z-40 transition-transform duration-300 ${showAnalytics ? 'translate-x-0' : '-translate-x-[120%] md:-translate-x-full'}`}>
-          <Suspense fallback={<ComponentLoader />}>
+          <Suspense fallback={<ComponentLoader type="analytics" />}>
             <AnalyticsDashboard importers={importers} forecastData={forecastData} reportConfig={reportConfig} onDrillDown={setStatusFilter} onGenerateForecast={async () => { setIsForecasting(true); setForecastData(await generateSalesForecast(importers)); setIsForecasting(false); }} onConfigure={() => setShowReportConfig(true)} onClose={() => setShowAnalytics(false)} isForecasting={isForecasting} />
           </Suspense>
         </div>

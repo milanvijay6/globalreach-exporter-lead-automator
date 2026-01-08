@@ -3,6 +3,7 @@ import { Importer } from '../types';
 import { loadUserSession } from './securityService';
 import { IndexedDBService } from './indexedDBService';
 import { LoadingService } from './loadingService';
+import { MobileStorageService } from './mobileStorageService';
 
 // Helper to get storage key for user-specific importers
 const getStorageKey = (userId: string): string => `globalreach_data_encrypted_${userId}`;
@@ -134,19 +135,31 @@ export const StorageService = {
       LoadingService.updateProgress(saveTaskId, 40);
 
       try {
-        // Try IndexedDB first
-        await IndexedDBService.init();
-        const importersWithUserId = importers.map(imp => ({
-          ...imp,
-          userId: currentUserId
-        }));
-        await IndexedDBService.put('importers', importersWithUserId);
-        console.log(`[StorageService] Saved ${importers.length} records to IndexedDB for user ${currentUserId}.`);
+        // Try MobileStorageService (Capacitor Preferences) first
+        const storageKey = getStorageKey(currentUserId);
+        const json = JSON.stringify(importers);
+        const encrypted = encrypt(json);
+        await MobileStorageService.set(storageKey, encrypted);
+        console.log(`[StorageService] Saved ${importers.length} records to MobileStorage for user ${currentUserId}.`);
+        
+        // Also save to IndexedDB as backup
+        try {
+          await IndexedDBService.init();
+          const importersWithUserId = importers.map(imp => ({
+            ...imp,
+            userId: currentUserId
+          }));
+          await IndexedDBService.put('importers', importersWithUserId);
+        } catch (indexedDBError) {
+          // IndexedDB is optional backup, don't fail if it errors
+          console.debug('[StorageService] IndexedDB backup save failed (non-critical):', indexedDBError);
+        }
+        
         LoadingService.updateProgress(saveTaskId, 100);
         LoadingService.complete(saveTaskId);
-      } catch (indexedDBError) {
+      } catch (mobileStorageError) {
         // Fallback to localStorage
-        console.warn('[StorageService] IndexedDB save failed, falling back to localStorage:', indexedDBError);
+        console.warn('[StorageService] MobileStorage save failed, falling back to localStorage:', mobileStorageError);
         const storageKey = getStorageKey(currentUserId);
         const json = JSON.stringify(importers);
         const encrypted = encrypt(json);
@@ -175,27 +188,32 @@ export const StorageService = {
         
         LoadingService.updateProgress(loadTaskId, 50);
 
-        try {
-          // Try IndexedDB first
-          await IndexedDBService.init();
-          const importers = await IndexedDBService.getAll<Importer>('importers', 'userId', currentUserId);
-          if (importers && importers.length > 0) {
-            // Remove userId from importer objects before returning
-            const cleaned = importers.map(({ userId, ...imp }) => imp);
-            console.log(`[StorageService] Loaded ${cleaned.length} records from IndexedDB for user ${currentUserId}.`);
-            LoadingService.updateProgress(loadTaskId, 100);
-            LoadingService.complete(loadTaskId);
-            return cleaned;
-          }
-        } catch (indexedDBError) {
-          console.warn('[StorageService] IndexedDB load failed, falling back to localStorage:', indexedDBError);
-        }
-
-        LoadingService.updateProgress(loadTaskId, 70);
-
-        // Fallback to localStorage
+        // Try MobileStorageService (Capacitor Preferences) first
         const storageKey = getStorageKey(currentUserId);
-        const encrypted = localStorage.getItem(storageKey);
+        let encrypted = await MobileStorageService.get(storageKey);
+        
+        if (!encrypted) {
+          // Try IndexedDB as backup
+          try {
+            await IndexedDBService.init();
+            const importers = await IndexedDBService.getAll<Importer>('importers', 'userId', currentUserId);
+            if (importers && importers.length > 0) {
+              // Remove userId from importer objects before returning
+              const cleaned = importers.map(({ userId, ...imp }) => imp);
+              console.log(`[StorageService] Loaded ${cleaned.length} records from IndexedDB for user ${currentUserId}.`);
+              LoadingService.updateProgress(loadTaskId, 100);
+              LoadingService.complete(loadTaskId);
+              return cleaned;
+            }
+          } catch (indexedDBError) {
+            console.debug('[StorageService] IndexedDB load failed (non-critical):', indexedDBError);
+          }
+
+          // Fallback to localStorage
+          LoadingService.updateProgress(loadTaskId, 70);
+          encrypted = localStorage.getItem(storageKey);
+        }
+        
         if (!encrypted) {
           LoadingService.complete(loadTaskId);
           return null;
@@ -204,13 +222,13 @@ export const StorageService = {
         try {
           const json = decrypt(encrypted);
           const importers = JSON.parse(json);
-          console.log(`[StorageService] Loaded ${importers.length} records from localStorage for user ${currentUserId}.`);
+          console.log(`[StorageService] Loaded ${importers.length} records from storage for user ${currentUserId}.`);
           LoadingService.updateProgress(loadTaskId, 100);
           LoadingService.complete(loadTaskId);
           return importers;
         } catch (e) {
           LoadingService.stop(loadTaskId);
-          console.error("Failed to load importers from localStorage", e);
+          console.error("Failed to load importers from storage", e);
           return null;
         }
       } else {

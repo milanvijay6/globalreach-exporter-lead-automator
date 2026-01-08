@@ -76,8 +76,10 @@ export const PlatformService = {
     if (window.electronAPI) {
       await window.electronAPI.secureSave(key, value);
     } else {
-      // Web Fallback
-      localStorage.setItem(`web_secure_${key}`, btoa(value));
+      // Use MobileStorageService (Capacitor Preferences) on mobile, localStorage on web
+      const { MobileStorageService } = await import('./mobileStorageService');
+      const storageKey = `web_secure_${key}`;
+      await MobileStorageService.set(storageKey, btoa(value));
     }
   },
 
@@ -85,8 +87,10 @@ export const PlatformService = {
     if (window.electronAPI) {
       return await window.electronAPI.secureLoad(key);
     } else {
-      // Web Fallback
-      const val = localStorage.getItem(`web_secure_${key}`);
+      // Use MobileStorageService (Capacitor Preferences) on mobile, localStorage on web
+      const { MobileStorageService } = await import('./mobileStorageService');
+      const storageKey = `web_secure_${key}`;
+      const val = await MobileStorageService.get(storageKey);
       return val ? atob(val) : null;
     }
   },

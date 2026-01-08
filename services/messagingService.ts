@@ -63,11 +63,43 @@ export const MessagingService = {
     to: string, 
     content: string, 
     channel: Channel,
-    importer?: Importer
-  ): Promise<{ success: boolean; error?: string }> => {
+    importer?: Importer,
+    useQueue: boolean = true // Enable queue by default
+  ): Promise<{ success: boolean; error?: string; queued?: boolean }> => {
     
     console.log(`[MessagingService] Outgoing via ${channel} to ${to}:`, content.substring(0, 20) + '...');
 
+    // Use queue system if enabled and available
+    if (useQueue && process.env.ENABLE_MESSAGE_QUEUE !== 'false') {
+      try {
+        // Dynamic import to avoid circular dependencies
+        const queueWrapper = await import('../server/utils/queueWrapper');
+        const queueType = channel === Channel.WHATSAPP ? 'whatsapp' : 
+                         channel === Channel.EMAIL ? 'email' : 'whatsapp';
+        
+        const queueResult = await queueWrapper.queueMessage(queueType, {
+          messageId,
+          to,
+          content,
+          channel,
+          importer,
+        }, {
+          priority: 'normal',
+        });
+
+        if (queueResult.success && queueResult.queued) {
+          // Notify SENT status immediately (message is queued)
+          if (statusListener) statusListener(messageId, MessageStatus.SENT);
+          return { success: true, queued: true };
+        }
+        // If queue failed, fall through to direct send
+      } catch (error) {
+        console.warn('[MessagingService] Queue system not available, using direct send:', error);
+        // Fall through to direct send
+      }
+    }
+
+    // Direct send (fallback or if queue disabled)
     // Use real WhatsApp API if connected
     if (channel === Channel.WHATSAPP) {
       const whatsappConn = await getWhatsAppConnection();
@@ -101,6 +133,25 @@ export const MessagingService = {
         
         // Update status to FAILED on error
         if (statusListener) statusListener(messageId, MessageStatus.FAILED);
+        
+        // Queue message for background sync if network error
+        if (result.error && (result.error.includes('network') || result.error.includes('fetch'))) {
+          try {
+            const { queueMessage } = await import('./backgroundSyncService');
+            await queueMessage({
+              messageId,
+              to,
+              content,
+              channel: channel.toString(),
+              importerId: importer?.id,
+            });
+            console.log('[MessagingService] Message queued for background sync');
+            return { success: false, error: result.error, queued: true };
+          } catch (queueError) {
+            console.warn('[MessagingService] Failed to queue message:', queueError);
+          }
+        }
+        
         return result;
       } else {
         // No Cloud API connection, check if WhatsApp Web is enabled

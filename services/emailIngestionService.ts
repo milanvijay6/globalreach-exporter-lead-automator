@@ -26,6 +26,7 @@ export interface EmailIngestionConfig {
 export const EmailIngestionService = {
   /**
    * Starts polling inbox for new emails
+   * Now uses WebSocket for notifications, falls back to polling if WebSocket unavailable
    */
   startPolling: async (config?: EmailIngestionConfig): Promise<void> => {
     if (pollingInterval) {
@@ -45,7 +46,7 @@ export const EmailIngestionService = {
       return;
     }
 
-    Logger.info('[EmailIngestion] Starting inbox polling', {
+    Logger.info('[EmailIngestion] Starting email ingestion', {
       interval: ingestionConfig.pollInterval,
       autoReply: ingestionConfig.autoReply,
     });
@@ -53,20 +54,86 @@ export const EmailIngestionService = {
     // Initial poll
     await EmailIngestionService.pollInbox(ingestionConfig);
 
-    // Set up interval
-    pollingInterval = setInterval(async () => {
-      await EmailIngestionService.pollInbox(ingestionConfig);
-    }, ingestionConfig.pollInterval || POLL_INTERVAL_MS);
+    // Try to use WebSocket for notifications
+    try {
+      const { websocketClient } = await import('./websocketClient');
+      
+      // Try push notifications first (mobile)
+      try {
+        const { areNotificationsEnabled } = await import('./pushNotificationService');
+        const pushEnabled = await areNotificationsEnabled();
+        
+        if (pushEnabled) {
+          Logger.info('[EmailIngestion] Using push notifications for email alerts');
+          // Push notifications will trigger pollInbox when new email arrives
+          // Store config for use in push handler
+          (EmailIngestionService as any).ingestionConfig = ingestionConfig;
+        } else {
+          // Fall back to WebSocket or polling
+          const { websocketClient } = await import('./websocketClient');
+          
+          if (websocketClient.isConnected()) {
+            // Subscribe to email ingestion updates via WebSocket
+            const subscriptionId = websocketClient.subscribe(
+              'email-ingestion',
+              {},
+              async (data) => {
+                // When WebSocket notifies of new email, poll inbox
+                if (data.newEmail) {
+                  Logger.info('[EmailIngestion] New email notification received via WebSocket');
+                  await EmailIngestionService.pollInbox(ingestionConfig);
+                }
+              }
+            );
+            
+            Logger.info('[EmailIngestion] Using WebSocket for email notifications');
+            // Store subscription ID for cleanup
+            (EmailIngestionService as any).wsSubscriptionId = subscriptionId;
+          } else {
+            // WebSocket not connected, fall back to polling
+            Logger.info('[EmailIngestion] WebSocket not available, using polling');
+            pollingInterval = setInterval(async () => {
+              await EmailIngestionService.pollInbox(ingestionConfig);
+            }, ingestionConfig.pollInterval || POLL_INTERVAL_MS);
+          }
+        }
+      } catch (error) {
+        // Fall back to polling on error
+        Logger.info('[EmailIngestion] Push/WebSocket not available, using polling');
+        pollingInterval = setInterval(async () => {
+          await EmailIngestionService.pollInbox(ingestionConfig);
+        }, ingestionConfig.pollInterval || POLL_INTERVAL_MS);
+      }
+    } catch (error) {
+      // WebSocket not available, use polling
+      Logger.info('[EmailIngestion] WebSocket not available, using polling');
+      pollingInterval = setInterval(async () => {
+        await EmailIngestionService.pollInbox(ingestionConfig);
+      }, ingestionConfig.pollInterval || POLL_INTERVAL_MS);
+    }
   },
 
   /**
-   * Stops polling inbox
+   * Stops polling inbox and WebSocket subscriptions
    */
-  stopPolling: (): void => {
+  stopPolling: async (): Promise<void> => {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       pollingInterval = null;
       Logger.info('[EmailIngestion] Polling stopped');
+    }
+    
+    // Unsubscribe from WebSocket if subscribed
+    try {
+      const wsSubscriptionId = (EmailIngestionService as any).wsSubscriptionId;
+      if (wsSubscriptionId) {
+        const { websocketClient } = await import('./websocketClient');
+        websocketClient.unsubscribe(wsSubscriptionId);
+        (EmailIngestionService as any).wsSubscriptionId = null;
+        Logger.info('[EmailIngestion] WebSocket subscription stopped');
+      }
+    } catch (error) {
+      // Ignore errors
     }
   },
 

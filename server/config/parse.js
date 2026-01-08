@@ -41,6 +41,19 @@ function initializeParse() {
       Parse.masterKey = masterKey;
     }
 
+    // Configure LiveQuery (if available)
+    // LiveQuery requires Parse Server with LiveQuery enabled
+    // For Back4App, enable LiveQuery in Dashboard → App Settings → Features
+    const liveQueryServerURL = process.env.PARSE_LIVEQUERY_SERVER_URL || 
+                               serverURL.replace('parseapi', 'livequery');
+    
+    if (Parse.LiveQuery) {
+      Parse.LiveQuery.serverURL = liveQueryServerURL;
+      console.log(`[Parse Config] LiveQuery server URL: ${liveQueryServerURL}`);
+    } else {
+      console.warn('[Parse Config] LiveQuery not available - real-time updates will use polling');
+    }
+
     // Verify initialization succeeded
     if (Parse.applicationId && Parse.applicationId.trim() !== '') {
       console.log('[Parse Config] ✅ Parse initialized successfully');

@@ -80,23 +80,62 @@ const AdminMonitoringDashboard: React.FC<AdminMonitoringDashboardProps> = ({
   const [quickKeyLoading, setQuickKeyLoading] = useState(false);
   const [quickKeySuccess, setQuickKeySuccess] = useState(false);
 
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const dashboardSubscriptionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!hasAdminAccess(user)) return;
 
     loadDashboardData();
 
-    // Set up auto-refresh every 5 seconds
+    // Use push notifications or WebSocket for real-time updates instead of polling
     if (autoRefresh) {
-      refreshIntervalRef.current = setInterval(() => {
-        loadDashboardData();
-      }, 5000);
+      // Try push notifications first (mobile)
+      const initPush = async () => {
+        try {
+          const { areNotificationsEnabled, initializePushNotifications } = await import('../services/pushNotificationService');
+          const pushEnabled = await areNotificationsEnabled();
+          
+          if (!pushEnabled) {
+            await initializePushNotifications();
+          }
+          
+          // Push notifications will trigger data refresh when received
+          // For now, fall back to WebSocket if push not available
+          const { websocketClient } = require('../services/websocketClient');
+          
+          if (websocketClient.isConnected()) {
+            // Subscribe to dashboard updates via WebSocket
+            const subscriptionId = websocketClient.subscribe(
+              'dashboard',
+              {},
+              (data) => {
+                // Update dashboard data when WebSocket message received
+                if (data.totalLeads !== undefined) {
+                  setSystemHealth(prev => ({
+                    ...prev,
+                    totalLeads: data.totalLeads,
+                  }));
+                }
+                setLastUpdated(Date.now());
+              }
+            );
+            
+            dashboardSubscriptionRef.current = subscriptionId;
+          }
+        } catch (error) {
+          console.warn('[AdminDashboard] Push/WebSocket not available, using manual refresh only');
+        }
+      };
+      
+      initPush();
     }
 
     return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
+      // Unsubscribe from WebSocket on cleanup
+      if (dashboardSubscriptionRef.current) {
+        const { websocketClient } = require('../services/websocketClient');
+        websocketClient.unsubscribe(dashboardSubscriptionRef.current);
+        dashboardSubscriptionRef.current = null;
       }
     };
   }, [user, importers, timeframe, autoRefresh]);

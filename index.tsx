@@ -1,7 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import { queryClient } from './services/reactQueryService';
+import { trpc, getTrpcClient } from './services/trpcClient';
 
 // List of third-party domains that are commonly blocked by browser extensions
 // These errors are expected and harmless
@@ -219,12 +222,17 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !(window as
 }
 
 try {
+  const trpcClient = getTrpcClient();
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </QueryClientProvider>
+      </trpc.Provider>
     </React.StrictMode>
   );
 } catch (error) {

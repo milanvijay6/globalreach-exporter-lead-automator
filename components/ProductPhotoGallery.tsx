@@ -210,14 +210,15 @@ const ProductPhotoGallery: React.FC<ProductPhotoGalleryProps> = ({
               key={photo.id}
               className="relative group border border-slate-200 rounded-lg overflow-hidden bg-slate-50"
             >
-              <img
+              <LazyImage
                 src={photo.url}
                 alt={photo.fileName}
+                blurhash={photo.blurhash}
                 className="w-full h-32 object-cover cursor-pointer"
-                onClick={() => setPreviewPhoto(photo)}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" x="50%" y="50%" text-anchor="middle" dy=".3em"%3EImage%3C/text%3E%3C/svg%3E';
-                }}
+                width={undefined}
+                height={128}
+                onLoad={() => {}}
+                onError={() => {}}
               />
               
               {/* Primary Badge */}

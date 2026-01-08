@@ -1,7 +1,7 @@
 
-import React, { useMemo, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, AreaChart, Area, CartesianGrid, PieChart, Pie, Legend, LineChart, Line } from 'recharts';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Importer, LeadStatus, ReportConfig, SalesForecast, StrategicInsight, TrainingModule, CoachingTip } from '../types';
+import { useRecharts } from './RechartsWrapper';
 import { TrendingUp, Users, DollarSign, Sparkles, Settings, X, Heart, Activity, Zap, Download, FileText, ChevronDown, Brain, ArrowUpRight, AlertTriangle, Quote, GraduationCap, Lightbulb, UserCheck, ChevronRight } from 'lucide-react';
 import { AnalyticsService } from '../services/analyticsService';
 import { generateTrainingProgram } from '../services/geminiService';
@@ -27,11 +27,19 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     onClose,
     isForecasting 
 }) => {
+  // Dynamically load Recharts
+  const { recharts, loading: rechartsLoading } = useRecharts();
   const [activeTab, setActiveTab] = useState<'overview' | 'sentiment' | 'insights' | 'training'>('overview');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [trainingModules, setTrainingModules] = useState<TrainingModule[]>([]);
   const [isGeneratingTraining, setIsGeneratingTraining] = useState(false);
   const [showManagerView, setShowManagerView] = useState(false); // Toggle for Team View
+
+  // Extract Recharts components
+  const {
+    BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+    AreaChart, Area, CartesianGrid, PieChart, Pie, Legend, LineChart, Line
+  } = recharts || {} as any;
   
   // --- OVERVIEW DATA ---
   const funnelOrder = [

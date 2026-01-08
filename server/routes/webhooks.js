@@ -3,6 +3,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const Config = require('../models/Config');
 const WebhookLog = require('../models/WebhookLog');
+const { queueWebhook } = require('../queues/webhookQueue');
 const winston = require('winston');
 
 const logger = winston.createLogger({
@@ -39,8 +40,6 @@ router.get('/whatsapp', async (req, res) => {
 // WhatsApp Webhook Handler (POST)
 router.post('/whatsapp', async (req, res) => {
   try {
-    logger.info('WhatsApp webhook received', { body: JSON.stringify(req.body).substring(0, 200) });
-    
     const payload = req.body;
     
     // Verify it's a WhatsApp webhook
@@ -49,17 +48,31 @@ router.post('/whatsapp', async (req, res) => {
       return res.sendStatus(400);
     }
 
-    // Log webhook
-    const webhookLog = new WebhookLog();
-    webhookLog.set('channel', 'WhatsApp');
-    webhookLog.set('payload', payload);
-    webhookLog.set('timestamp', new Date());
-    await webhookLog.save(null, { useMasterKey: true });
-    
+    // Acknowledge immediately (200 OK)
     res.sendStatus(200);
+    
+    // Queue webhook for async processing
+    try {
+      await queueWebhook('WhatsApp', payload);
+      logger.info('WhatsApp webhook queued for processing');
+    } catch (queueError) {
+      // If queue fails, process synchronously as fallback
+      logger.warn('Webhook queue failed, processing synchronously:', queueError.message);
+      
+      // Process synchronously (fallback)
+      const webhookLog = new WebhookLog();
+      webhookLog.set('channel', 'WhatsApp');
+      webhookLog.set('payload', payload);
+      webhookLog.set('timestamp', new Date());
+      await webhookLog.save(null, { useMasterKey: true });
+      
+      // TODO: Process webhook payload (update leads, messages, etc.)
+      logger.info('WhatsApp webhook processed synchronously');
+    }
   } catch (err) {
-    logger.error('Error processing WhatsApp webhook', err);
-    res.sendStatus(500);
+    logger.error('Error handling WhatsApp webhook', err);
+    // Already sent 200, so we can't change status
+    // Log error for monitoring
   }
 });
 
@@ -101,8 +114,6 @@ router.get('/wechat', async (req, res) => {
 // WeChat Webhook Handler (POST)
 router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }), async (req, res) => {
   try {
-    logger.info('WeChat webhook received', { body: req.body?.substring(0, 200) });
-    
     const xmlPayload = req.body;
     
     if (!xmlPayload) {
@@ -126,19 +137,32 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
       }
     }
 
-    // Log webhook
-    const webhookLog = new WebhookLog();
-    webhookLog.set('channel', 'WeChat');
-    webhookLog.set('payload', xmlPayload);
-    webhookLog.set('timestamp', new Date());
-    await webhookLog.save(null, { useMasterKey: true });
-    
-    // WeChat expects a response (can be empty or echo)
+    // Acknowledge immediately (WeChat expects XML response)
     res.type('application/xml');
     res.send('<xml><return_code><![CDATA[SUCCESS]]></return_code></xml>');
+    
+    // Queue webhook for async processing
+    try {
+      await queueWebhook('WeChat', xmlPayload);
+      logger.info('WeChat webhook queued for processing');
+    } catch (queueError) {
+      // If queue fails, process synchronously as fallback
+      logger.warn('Webhook queue failed, processing synchronously:', queueError.message);
+      
+      // Process synchronously (fallback)
+      const webhookLog = new WebhookLog();
+      webhookLog.set('channel', 'WeChat');
+      webhookLog.set('payload', xmlPayload);
+      webhookLog.set('timestamp', new Date());
+      await webhookLog.save(null, { useMasterKey: true });
+      
+      // TODO: Process webhook payload (update leads, messages, etc.)
+      logger.info('WeChat webhook processed synchronously');
+    }
   } catch (err) {
-    logger.error('Error processing WeChat webhook', err);
-    res.sendStatus(500);
+    logger.error('Error handling WeChat webhook', err);
+    // Already sent response, so we can't change status
+    // Log error for monitoring
   }
 });
 

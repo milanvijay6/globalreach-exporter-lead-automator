@@ -2,8 +2,11 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const compression = require('compression');
+const brotliCompression = require('./middleware/brotli');
+const etagMiddleware = require('./middleware/etag');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { paginationMiddleware } = require('./middleware/pagination');
 const crypto = require('crypto');
 const winston = require('winston');
 const Parse = require('parse/node');
@@ -77,8 +80,33 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// Compression
-app.use(compression());
+// Compression - Brotli with gzip fallback
+app.use(brotliCompression);
+app.use(compression({
+  filter: (req, res) => {
+    // Only use gzip if Brotli is not accepted
+    const accepts = req.headers['accept-encoding'] || '';
+    if (accepts.includes('br')) {
+      return false; // Let Brotli handle it
+    }
+    return compression.filter(req, res);
+  },
+  threshold: 1024, // Only compress > 1KB
+}));
+
+// ETag middleware for conditional requests (before routes)
+app.use(etagMiddleware);
+
+// Pagination validation middleware (before routes)
+app.use(paginationMiddleware);
+
+// MessagePack compression middleware (before routes, after body parsing)
+const { msgpackMiddleware } = require('./middleware/msgpack');
+app.use(msgpackMiddleware);
+
+// HTTP/2 Server Push middleware (before static file serving)
+const { http2PushMiddleware } = require('./middleware/http2Push');
+app.use(http2PushMiddleware);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -96,17 +124,25 @@ app.use((req, res, next) => {
 });
 
 // Import routes with error handling
-let webhookRoutes, productRoutes, integrationRoutes, leadRoutes, oauthRoutes, configRoutes, cloudflareWorkerRoutes, cloudflarePagesRoutes;
+let webhookRoutes, productRoutes, integrationRoutes, leadRoutes, messageRoutes, livequeryRoutes, oauthRoutes, configRoutes, cloudflareWorkerRoutes, cloudflarePagesRoutes, aiJobsRoutes, aiRoutes, trpcRoutes, bundleRoutes, syncRoutes, pushNotificationRoutes;
 
 try {
   webhookRoutes = require('./routes/webhooks');
   productRoutes = require('./routes/products');
   integrationRoutes = require('./routes/integrations');
   leadRoutes = require('./routes/leads');
+  messageRoutes = require('./routes/messages');
+  livequeryRoutes = require('./routes/livequery');
   oauthRoutes = require('./routes/oauth');
   configRoutes = require('./routes/config');
   cloudflareWorkerRoutes = require('./routes/cloudflare-worker');
   cloudflarePagesRoutes = require('./routes/cloudflare-pages');
+  aiJobsRoutes = require('./routes/aiJobs');
+  aiRoutes = require('./routes/ai');
+  trpcRoutes = require('./routes/trpc');
+  bundleRoutes = require('./routes/bundle');
+  syncRoutes = require('./routes/sync');
+  pushNotificationRoutes = require('./routes/pushNotifications');
   logger.info('[Server] All routes loaded successfully');
 } catch (error) {
   logger.error('[Server] Failed to load routes:', error);
@@ -117,10 +153,18 @@ try {
   productRoutes = productRoutes || emptyRouter;
   integrationRoutes = integrationRoutes || emptyRouter;
   leadRoutes = leadRoutes || emptyRouter;
+  messageRoutes = messageRoutes || emptyRouter;
+  livequeryRoutes = livequeryRoutes || emptyRouter;
   oauthRoutes = oauthRoutes || emptyRouter;
   configRoutes = configRoutes || emptyRouter;
   cloudflareWorkerRoutes = cloudflareWorkerRoutes || emptyRouter;
   cloudflarePagesRoutes = cloudflarePagesRoutes || emptyRouter;
+  aiJobsRoutes = aiJobsRoutes || emptyRouter;
+  aiRoutes = aiRoutes || emptyRouter;
+  trpcRoutes = trpcRoutes || emptyRouter;
+  bundleRoutes = bundleRoutes || emptyRouter;
+  syncRoutes = syncRoutes || emptyRouter;
+  pushNotificationRoutes = pushNotificationRoutes || emptyRouter;
 }
 
 // Health check endpoint (for Back4App and load balancers)
@@ -137,10 +181,18 @@ app.use('/webhooks', webhookRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/livequery', livequeryRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/cloudflare-worker', cloudflareWorkerRoutes);
 app.use('/api/cloudflare-pages', cloudflarePagesRoutes);
+app.use('/api/ai/jobs', aiJobsRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/trpc', trpcRoutes);
+app.use('/api/bundle', bundleRoutes);
+app.use('/api/sync', syncRoutes);
+app.use('/api/push-notifications', pushNotificationRoutes);
 
 // Serve static files from build directory
 const buildPath = path.resolve(__dirname, '..', 'build');
@@ -236,6 +288,33 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit - let the server continue running
 });
 
+// Initialize scheduled jobs
+if (process.env.ENABLE_SCHEDULED_JOBS !== 'false') {
+  try {
+    const { startScheduler } = require('./jobs/scheduler');
+    startScheduler();
+    logger.info('[Server] ✅ Scheduled jobs started');
+  } catch (error) {
+    logger.warn('[Server] ⚠️  Scheduled jobs not available:', error.message);
+    logger.warn('[Server] Set ENABLE_SCHEDULED_JOBS=false to disable scheduled jobs');
+  }
+} else {
+  logger.info('[Server] Scheduled jobs disabled (ENABLE_SCHEDULED_JOBS=false)');
+}
+
+// Initialize AI processing workers
+if (process.env.ENABLE_AI_WORKERS !== 'false') {
+  try {
+    require('./workers/aiProcessingWorker');
+    logger.info('[Server] ✅ AI processing workers started');
+  } catch (error) {
+    logger.warn('[Server] ⚠️  AI processing workers not available:', error.message);
+    logger.warn('[Server] Set ENABLE_AI_WORKERS=false to disable AI workers');
+  }
+} else {
+  logger.info('[Server] AI processing workers disabled (ENABLE_AI_WORKERS=false)');
+}
+
 // Start server
 let server;
 try {
@@ -247,6 +326,19 @@ try {
     logger.info(`[Server] ✓ Server successfully started on port ${PORT}`);
     logger.info(`[Server] ✓ Health check available at: http://0.0.0.0:${PORT}/health`);
     logger.info(`[Server] ✓ Root endpoint available at: http://0.0.0.0:${PORT}/`);
+    
+    // Initialize WebSocket server
+    if (process.env.ENABLE_WEBSOCKET !== 'false') {
+      try {
+        const { initializeWebSocketServer } = require('./websocket/server');
+        initializeWebSocketServer(server);
+        logger.info('[Server] ✅ WebSocket server initialized');
+      } catch (error) {
+        logger.warn('[Server] ⚠️  WebSocket server not available:', error.message);
+      }
+    } else {
+      logger.info('[Server] WebSocket server disabled (ENABLE_WEBSOCKET=false)');
+    }
     
     // Signal that server is ready
     if (process.send) {
