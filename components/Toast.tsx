@@ -45,6 +45,10 @@ const ToastComponent: React.FC<ToastProps> = ({ toast, onRemove }) => {
     }
   };
 
+  const getRole = () => {
+    return (toast.type === 'error' || toast.type === 'warning') ? 'alert' : 'status';
+  };
+
   const getBgColor = () => {
     switch (toast.type) {
       case 'success':
@@ -73,6 +77,8 @@ const ToastComponent: React.FC<ToastProps> = ({ toast, onRemove }) => {
 
   return (
     <div
+      role={getRole()}
+      aria-atomic="true"
       className={`
         ${getBgColor()} ${getTextColor()}
         border rounded-lg shadow-lg p-4 min-w-[300px] max-w-[500px]
@@ -81,13 +87,18 @@ const ToastComponent: React.FC<ToastProps> = ({ toast, onRemove }) => {
         ${isVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'}
       `}
     >
-      <div className="flex-shrink-0 mt-0.5">
+      <div className="flex-shrink-0 mt-0.5" aria-hidden="true">
         {getIcon()}
       </div>
       <div className="flex-1">
-        <p className="text-sm font-medium">{toast.message}</p>
+        <p className="text-sm font-medium">
+          <span className="sr-only">{toast.type}: </span>
+          {toast.message}
+        </p>
       </div>
       <button
+        type="button"
+        aria-label="Close notification"
         onClick={() => {
           setIsVisible(false);
           setTimeout(() => onRemove(toast.id), 300);
