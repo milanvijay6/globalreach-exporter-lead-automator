@@ -10,7 +10,7 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   build: {
-    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'electron/build'),
+    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'build'),
     emptyOutDir: true,
     sourcemap: true,
     rollupOptions: {
