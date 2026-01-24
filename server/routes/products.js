@@ -3,9 +3,13 @@ const router = express.Router();
 const Product = require('../models/Product');
 const Parse = require('parse/node');
 const { cacheMiddleware, invalidateCache, invalidateByTag } = require('../middleware/cache');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 const { findWithCache } = require('../utils/parseQueryCache');
 const { productCatalogCache } = require('../services/productCatalogCache');
+
+// Apply authentication middleware to identify user
+router.use(authenticateUser);
 
 // GET /api/products - List products (cached for 5 minutes, cursor-based pagination)
 // Uses L3 (Redis), L4 (Parse cache), and in-memory product catalog cache
@@ -124,7 +128,7 @@ router.get('/:id', cacheMiddleware(300), async (req, res) => {
 });
 
 // POST /api/products - Create product
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const { name, description, price, category, tags, photos, status } = req.body;
     
@@ -161,7 +165,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/products/:id - Update product
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const query = new Parse.Query(Product);
@@ -206,7 +210,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/products/:id - Delete product
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const query = new Parse.Query(Product);
