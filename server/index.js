@@ -205,10 +205,9 @@ app.use(express.static(buildPath));
 app.get('/api/product-photos/:productId/:fileName', async (req, res) => {
   try {
     const { productId, fileName } = req.params;
-    const Product = Parse.Object.extend('Product');
-    const query = new Parse.Query(Product);
-    query.equalTo('objectId', productId);
-    const product = await query.first({ useMasterKey: true });
+    const Product = require('./models/Product');
+    
+    const product = await Product.get(productId);
     
     if (!product) {
       return res.status(404).send('Product not found');
@@ -221,7 +220,7 @@ app.get('/api/product-photos/:productId/:fileName', async (req, res) => {
       return res.status(404).send('Photo not found');
     }
     
-    // Redirect to Parse file URL
+    // Redirect to file URL
     res.redirect(photo.url);
   } catch (error) {
     logger.error('[ProductPhoto] Serve photo error:', error);
