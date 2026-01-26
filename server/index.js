@@ -154,12 +154,16 @@ try {
   pushNotificationRoutes = pushNotificationRoutes || emptyRouter;
 }
 
-// Health check endpoint (for Back4App and load balancers)
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
+// Health check endpoint (for Azure Load Balancer and monitoring)
+app.get('/health', async (req, res) => {
+  const dbHealth = await healthCheck();
+  
+  res.status(dbHealth.status === 'ok' ? 200 : 503).json({ 
+    status: dbHealth.status === 'ok' ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    database: dbHealth,
+    version: process.env.npm_package_version || '1.0.0'
   });
 });
 
