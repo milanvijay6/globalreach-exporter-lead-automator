@@ -9,9 +9,8 @@ const rateLimit = require('express-rate-limit');
 const { paginationMiddleware } = require('./middleware/pagination');
 const crypto = require('crypto');
 const winston = require('winston');
-const Parse = require('parse/node');
 
-// Logger setup (must be before Parse initialization to log errors)
+// Logger setup
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -27,38 +26,26 @@ const logger = winston.createLogger({
   ]
 });
 
-// Initialize Parse with error handling
-let parseInitialized = false;
-try {
-  const parseConfig = require('./config/parse');
-  parseInitialized = parseConfig.isInitialized || false;
-  
-  // Verify Parse is initialized (check for valid non-empty applicationId)
-  if (parseInitialized && Parse.applicationId && Parse.applicationId.trim() !== '') {
-    logger.info('[Server] ✅ Parse initialized successfully');
-    logger.info(`[Server] Parse Application ID: ${Parse.applicationId.substring(0, 8)}...`);
-  logger.info(`[Server] Parse Server URL: ${Parse.serverURL}`);
-    logger.info(`[Server] Parse Master Key: ${Parse.masterKey ? 'Set' : 'Not set (optional)'}`);
-  } else {
-    logger.warn('[Server] ⚠️  Parse not initialized');
-    logger.warn('[Server] Parse-dependent features (Config API, etc.) will return default values');
-    logger.warn('[Server]');
-    logger.warn('[Server] To enable Parse features:');
-    logger.warn('[Server]   1. Go to Back4App Dashboard → Your App → App Settings → Environment Variables');
-    logger.warn('[Server]   2. Add the following environment variables:');
-    logger.warn('[Server]      - PARSE_APPLICATION_ID (required)');
-    logger.warn('[Server]      - PARSE_MASTER_KEY (recommended for server-side operations)');
-    logger.warn('[Server]      - PARSE_JAVASCRIPT_KEY (optional)');
-    logger.warn('[Server]      - PARSE_SERVER_URL (optional, defaults to https://parseapi.back4app.com/)');
-    logger.warn('[Server]   3. Restart your Back4App server');
-    logger.warn('[Server]');
+// Initialize Azure Application Insights (for monitoring in production)
+const { initializeApplicationInsights } = require('./config/applicationInsights');
+initializeApplicationInsights();
+
+// Initialize MongoDB Database Connection
+const { connectDatabase, healthCheck } = require('./config/database');
+let databaseInitialized = false;
+
+// Connect to database on startup
+(async () => {
+  try {
+    await connectDatabase();
+    databaseInitialized = true;
+    logger.info('[Server] ✅ Database connection established');
+  } catch (error) {
+    logger.error('[Server] ❌ Failed to connect to database:', error.message);
+    logger.warn('[Server] Server will start but database features will not work');
+    logger.warn('[Server] Set MONGO_URI in Azure Web App Configuration');
   }
-} catch (error) {
-  logger.error('[Server] ❌ Failed to initialize Parse:', error);
-  logger.error('[Server] Stack:', error.stack);
-  logger.warn('[Server] Server will continue to start, but Parse-dependent features will not work');
-  // Continue anyway - some features may not work, but server should still start
-}
+})();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
