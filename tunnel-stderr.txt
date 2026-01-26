@@ -19,14 +19,14 @@
 2025-11-30T17:46:56Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T17:46:56Z INF ICMP proxy will use 2405:201:202c:82a:97d:7828:d69e:7240 in zone Wi-Fi 3 as source for IPv6
 2025-11-30T17:46:56Z INF Starting metrics server on 127.0.0.1:20243/metrics
-2025-11-30T17:46:56Z INF Registered tunnel connection connIndex=0 connection=cc8b9c8e-b017-4da5-8aa2-96a131e93206 event=0 ip=198.41.192.57 location=nag01 protocol=quic
+2025-11-30T17:46:56Z INF Registered tunnel connection connIndex=0 connection=azure-hosting-pro event=0 ip=198.41.192.57 location=nag01 protocol=quic
 2025-11-30T18:16:51Z ERR failed to accept incoming stream requests error="failed to accept QUIC stream: write udp [::]:60970->198.41.192.57:7844: wsasendto: A socket operation was attempted to an unreachable network." connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T18:16:51Z ERR failed to run the datagram handler error="context canceled" connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T18:16:51Z ERR failed to serve tunnel connection error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T18:16:51Z ERR Serve tunnel error error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T18:16:51Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T18:16:52Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.57
-2025-11-30T18:16:54Z INF Registered tunnel connection connIndex=0 connection=dcad6c4d-a4f3-401a-93be-aba968b814ba event=0 ip=198.41.192.57 location=nag01 protocol=quic
+2025-11-30T18:16:54Z INF Registered tunnel connection connIndex=0 connection=azure-hosting-pro event=0 ip=198.41.192.57 location=nag01 protocol=quic
 2025-11-30T19:09:32Z INF Initiating graceful shutdown due to signal terminated ...
 2025-11-30T19:09:33Z ERR failed to run the datagram handler error="Application error 0x0 (remote)" connIndex=0 event=0 ip=198.41.192.57
 2025-11-30T19:09:33Z ERR failed to serve tunnel connection error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.57
