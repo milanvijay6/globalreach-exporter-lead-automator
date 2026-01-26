@@ -4,6 +4,11 @@ const Lead = require('../models/Lead');
 const Parse = require('parse/node');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
