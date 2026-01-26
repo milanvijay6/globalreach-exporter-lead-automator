@@ -1,0 +1,107 @@
+# Azure Web App Environment Variables Configuration
+# Copy these settings to your Azure Web App Configuration
+
+# ===================================
+# REQUIRED - Application Settings
+# ===================================
+
+# Node.js Environment
+NODE_ENV=production
+PORT=8080
+WEBSITES_PORT=8080
+
+# Database Connection (Azure Cosmos DB with MongoDB API)
+MONGO_URI=<your-cosmos-db-connection-string>
+MONGO_DB_NAME=globalreach
+
+# Application Insights (for monitoring)
+APPLICATIONINSIGHTS_CONNECTION_STRING=<your-app-insights-connection-string>
+
+# ===================================
+# OPTIONAL - Feature Flags
+# ===================================
+
+# Enable/disable features
+ENABLE_WEBSOCKET=true
+ENABLE_SCHEDULED_JOBS=true
+ENABLE_AI_WORKERS=true
+ENABLE_AUTO_WORKER_DEPLOY=false
+
+# Logging
+LOG_LEVEL=info
+
+# ===================================
+# OPTIONAL - Third-Party Integrations
+# ===================================
+
+# Google OAuth (for Gmail integration)
+GMAIL_CLIENT_ID=<your-gmail-client-id>
+GMAIL_CLIENT_SECRET=<your-gmail-client-secret>
+GOOGLE_OAUTH_CLIENT_ID=<your-google-oauth-client-id>
+GOOGLE_OAUTH_CLIENT_SECRET=<your-google-oauth-client-secret>
+
+# Microsoft/Azure AD OAuth
+AZURE_AD_CLIENT_ID=<your-azure-ad-client-id>
+AZURE_AD_CLIENT_SECRET=<your-azure-ad-client-secret>
+AZURE_AD_TENANT_ID=<your-azure-ad-tenant-id>
+
+# Gemini AI (for AI features)
+GEMINI_API_KEY=<your-gemini-api-key>
+
+# WhatsApp Business API
+WHATSAPP_API_TOKEN=<your-whatsapp-api-token>
+WHATSAPP_PHONE_NUMBER_ID=<your-phone-number-id>
+WHATSAPP_BUSINESS_ACCOUNT_ID=<your-business-account-id>
+WHATSAPP_VERIFY_TOKEN=<your-webhook-verify-token>
+
+# Cloudflare (if using Cloudflare Workers/Pages)
+CLOUDFLARE_API_TOKEN=<your-cloudflare-api-token>
+CLOUDFLARE_ACCOUNT_ID=<your-cloudflare-account-id>
+CLOUDFLARE_ZONE_ID=<your-cloudflare-zone-id>
+
+# Redis (if using external Redis for caching)
+REDIS_URL=<your-redis-connection-string>
+
+# Upstash Redis (alternative)
+UPSTASH_REDIS_REST_URL=<your-upstash-url>
+UPSTASH_REDIS_REST_TOKEN=<your-upstash-token>
+
+# ===================================
+# HOW TO SET THESE IN AZURE
+# ===================================
+
+# Using Azure CLI:
+# az webapp config appsettings set \
+#   --name <your-app-name> \
+#   --resource-group <your-resource-group> \
+#   --settings \
+#     NODE_ENV="production" \
+#     PORT="8080" \
+#     MONGO_URI="<your-connection-string>"
+
+# Using Azure Portal:
+# 1. Go to Azure Portal
+# 2. Navigate to your Web App
+# 3. Click "Configuration" in the left menu
+# 4. Click "New application setting"
+# 5. Add each variable name and value
+# 6. Click "Save" at the top
+
+# ===================================
+# GETTING CONNECTION STRINGS
+# ===================================
+
+# Cosmos DB Connection String:
+# az cosmosdb keys list \
+#   --name <cosmos-db-name> \
+#   --resource-group <resource-group> \
+#   --type connection-strings \
+#   --query "connectionStrings[0].connectionString" \
+#   --output tsv
+
+# Application Insights Connection String:
+# az monitor app-insights component show \
+#   --app <app-insights-name> \
+#   --resource-group <resource-group> \
+#   --query "connectionString" \
+#   --output tsv
