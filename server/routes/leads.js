@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Lead = require('../models/Lead');
-const Parse = require('parse/node');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
-const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
+const { formatPaginatedResponse } = require('../utils/pagination');
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
@@ -12,35 +11,54 @@ router.get('/', cacheMiddleware(60), async (req, res) => {
   try {
     const { status, country, limit = 50, cursor, sortBy = 'createdAt', sortOrder = 'desc', getArchived = false } = req.query;
     
-    const query = new Parse.Query(Lead);
+    const query = {};
     
-    // Exclude archived leads by default (if archived field exists)
-    // Note: Archive implementation may add an 'archived' boolean field
+    // Exclude archived leads by default
     if (!getArchived) {
-      query.notEqualTo('archived', true);
+      query.archived = { $ne: true };
     }
     
     if (status) {
-      query.equalTo('status', status);
+      query.status = status;
     }
     
     if (country) {
-      query.equalTo('country', country);
+      query.country = country;
     }
     
     // Apply cursor-based pagination
-    // Use compound index: status_country_createdAt or status_leadScore based on sortBy
-    applyCursor(query, cursor, sortBy, sortOrder);
-    query.limit(parseInt(limit) + 1); // Fetch one extra to check if there's more
+    if (cursor) {
+      try {
+        const cursorData = JSON.parse(Buffer.from(cursor, 'base64').toString());
+        if (sortOrder === 'desc') {
+          query[sortBy] = { $lt: new Date(cursorData[sortBy]) };
+        } else {
+          query[sortBy] = { $gt: new Date(cursorData[sortBy]) };
+        }
+      } catch (e) {
+        // Invalid cursor, ignore
+      }
+    }
     
-    const leads = await query.find({ useMasterKey: true });
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    
+    const leads = await Lead.find(query, { 
+      sort, 
+      limit: parseInt(limit) + 1 
+    });
     
     // Check if there's a next page
     const hasMore = leads.length > parseInt(limit);
     const results = hasMore ? leads.slice(0, parseInt(limit)) : leads;
     
     // Get next cursor
-    const nextCursor = hasMore ? getNextCursor(results, sortBy, sortOrder) : null;
+    let nextCursor = null;
+    if (hasMore && results.length > 0) {
+      const lastItem = results[results.length - 1];
+      const cursorData = { [sortBy]: lastItem.get(sortBy) };
+      nextCursor = Buffer.from(JSON.stringify(cursorData)).toString('base64');
+    }
     
     // Apply field projection if requested
     const { projectFields } = require('../utils/fieldProjection');
@@ -79,8 +97,7 @@ router.post('/:id/send', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
     
-    const query = new Parse.Query(Lead);
-    const lead = await query.get(id, { useMasterKey: true });
+    const lead = await Lead.get(id);
     
     // Invalidate lead cache
     await invalidateCache(`cache:/api/leads:*`);
@@ -89,7 +106,7 @@ router.post('/:id/send', async (req, res) => {
     // For now, return success
     res.json({ success: true, data: { messageId: 'placeholder' } });
   } catch (error) {
-    if (error.code === Parse.Error.OBJECT_NOT_FOUND) {
+    if (error.code === 101) { // MongoDB Object not found
       res.status(404).json({ success: false, error: 'Lead not found' });
     } else {
       res.status(500).json({ success: false, error: error.message });
