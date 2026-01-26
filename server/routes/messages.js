@@ -10,6 +10,11 @@ const Parse = require('parse/node');
 const { parseFileService } = require('../utils/parseFileService');
 const { cacheMiddleware, invalidateByTag } = require('../middleware/cache');
 const { findWithCache } = require('../utils/parseQueryCache');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // GET /api/messages - List messages for an importer
 // Uses compound index: importerId_channel_timestamp

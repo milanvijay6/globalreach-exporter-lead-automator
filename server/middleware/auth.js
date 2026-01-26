@@ -54,6 +54,11 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticateUser };
+const requireAuth = (req, res, next) => {
+  if (!req.userId) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  next();
+};
 
-
+module.exports = { authenticateUser, requireAuth };
