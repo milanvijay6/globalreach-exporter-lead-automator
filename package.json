@@ -4,7 +4,8 @@
   "main": "server/index.js",
   "description": "GlobalReach Exporter Lead Automator - AI-powered CRM",
   "scripts": {
-    "start": "node server/index.js",
+  "build": "vite build", 
+ "start": "node server/index.js",
     "dev": "vite",
     "build:azure": "npm run build:react",
     "build:react": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build",
