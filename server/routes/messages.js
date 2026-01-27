@@ -7,9 +7,14 @@ const express = require('express');
 const router = express.Router();
 const Message = require('../models/Message');
 const Parse = require('parse/node');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { parseFileService } = require('../utils/parseFileService');
 const { cacheMiddleware, invalidateByTag } = require('../middleware/cache');
 const { findWithCache } = require('../utils/parseQueryCache');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // GET /api/messages - List messages for an importer
 // Uses compound index: importerId_channel_timestamp
