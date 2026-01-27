@@ -313,9 +313,10 @@ try {
   logger.info(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);  
   server = const PORT = process.env.PORT || 8080;
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Server running on port", PORT);
 });
+
 
     logger.info(`[Server] ✓ Server successfully started on port ${PORT}`);
     logger.info(`[Server] ✓ Health check available at: http://0.0.0.0:${PORT}/health`);
