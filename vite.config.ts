@@ -37,9 +37,8 @@ export default defineConfig({
       },
     }),
   ],
-  build: {
-    outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'dist'),
-    emptyOutDir: true,
+  build:outDir: path.resolve(__dirname, 'build'),
+ emptyOutDir: true,
     // Always enable source maps for better error debugging
     sourcemap: true,
     minify: process.env.NODE_ENV === 'production' ? 'esbuild' : false,

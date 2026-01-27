@@ -1,74 +1,10 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
 node_modules
-server/node_modules
-dist
-dist-ssr
-*.local
-
-# Build outputs
-electron/build
 build
 dist
-out
-*.app
-*.dmg
-*.exe
-*.deb
-*.rpm
-*.AppImage
-*.snap
-
-# Environment variables
 .env
-.env.local
-.env.*.local
-
-# Electron
-*.asar
-*.asar.unpacked
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+app.zip
+coverage
+.vscode
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+npm-debug.log*
 
-# OS
-Thumbs.db
-.DS_Store
-
-# Secrets and credentials (never commit these!)
-*.pem
-*.key
-config.json
-secrets.json
-*_CREDENTIALS.md
-*_CREDENTIALS.txt
-
-# Capacitor
-android/
-ios/
-.capacitor/
-*.keystore
-*.jks
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
