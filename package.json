@@ -3,23 +3,28 @@
   "version": "1.0.2",
   "main": "server/index.js",
   "description": "GlobalReach Exporter Lead Automator - AI-powered CRM",
+
   "scripts": {
     "build": "npm run build:web",
     "start": "node server/index.js",
     "dev": "vite",
+
     "build:azure": "npm run build:react",
     "build:react": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "build:web": "NODE_OPTIONS=--max-old-space-size=4096 BUILD_OUT_DIR=build vite build",
-    "build:pages": "set NODE_OPTIONS=--max-old-space-size=4096 && cross-env BUILD_OUT_DIR=cloudflare-pages/dist vite build && xcopy /E /I /Y cloudflare-pages\\_redirects cloudflare-pages\\dist\\_redirects && xcopy /E /I /Y cloudflare-pages\\functions cloudflare-pages\\dist\\functions",
+
     "preview": "vite preview",
     "build:electron": "electron-builder",
     "build:installer": "node scripts/build-installer.js",
+
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
     "version:major": "npm version major && git push && git push --tags",
+
     "deploy": "npm run build:react && git add . && git commit -m 'chore: build update' && git push",
-    "deploy:pages": "npm run build:pages && wrangler pages deploy cloudflare-pages/dist --project-name=shreenathji-app",
+
     "migrate:parse": "node scripts/migrate-to-parse.js",
+
     "cap:sync": "cap sync",
     "cap:copy": "cap copy",
     "cap:update": "cap update",
@@ -29,9 +34,11 @@
     "cap:open:ios": "cap open ios",
     "build:android": "npm run build:react && cap sync && cap copy android",
     "build:ios": "npm run build:react && cap sync && cap copy ios",
+
     "analyze": "npm run build:react && echo Bundle analysis available at dist/stats.html",
     "create-indexes": "node scripts/create-parse-indexes.js"
   },
+
   "dependencies": {
     "@capacitor-community/sqlite": "^7.0.3",
     "@capacitor/app": "^6.0.2",
@@ -83,9 +90,7 @@
     "postcss": "^8.5.6",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
-    "react-blurhash": "^0.3.0",
     "react-dom": "^18.3.1",
-    "react-is": "^19.2.3",
     "recharts": "^3.5.0",
     "systeminformation": "^5.21.20",
     "tailwindcss": "^4.1.17",
@@ -100,6 +105,7 @@
     "zod": "^4.3.5",
     "zustand": "^5.0.9"
   },
+
   "devDependencies": {
     "@capacitor/android": "^6.1.2",
     "@capacitor/cli": "^6.1.2",
@@ -116,6 +122,7 @@
     "electron-store": "^11.0.2",
     "rollup-plugin-visualizer": "^6.0.5"
   },
+
   "engines": {
     "node": ">=20.19.0"
   }
