@@ -310,14 +310,9 @@ let server;
 try {
   // Log startup attempt
   logger.info(`[Server] Starting server on port ${PORT}...`);
-  logger.info(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);  
-  server = const PORT = process.env.PORT || 8080;
+  logger.info(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Server running on port", PORT);
-});
-
-
+  server = app.listen(PORT, "0.0.0.0", () => {
     logger.info(`[Server] ✓ Server successfully started on port ${PORT}`);
     logger.info(`[Server] ✓ Health check available at: http://0.0.0.0:${PORT}/health`);
     logger.info(`[Server] ✓ Root endpoint available at: http://0.0.0.0:${PORT}/`);
