@@ -34,9 +34,8 @@ async function deployCloudflarePages() {
 
     // Build for Cloudflare Pages
     console.log('[Deploy Pages] Building React app for Cloudflare Pages...');
-    const buildCommand = process.platform === 'win32' 
-      ? 'set NODE_OPTIONS=--max-old-space-size=4096 && cross-env BUILD_OUT_DIR=cloudflare-pages/dist vite build'
-      : 'NODE_OPTIONS=--max-old-space-size=4096 BUILD_OUT_DIR=cloudflare-pages/dist vite build';
+    // Use cross-platform compatible syntax
+    const buildCommand = 'NODE_OPTIONS=--max-old-space-size=4096 BUILD_OUT_DIR=cloudflare-pages/dist vite build';
     
     try {
       execSync(buildCommand, { 
