@@ -1,2 +1,2 @@
 [config]
-command = npm run build:azure
+command = bash deploy.sh
