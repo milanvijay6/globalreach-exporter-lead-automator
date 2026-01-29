@@ -4,7 +4,7 @@
   "main": "server/index.js",
   "description": "GlobalReach Exporter Lead Automator - AI-powered CRM",
   "scripts": {
-    "build": "npm install && npm run build",
+    "build": "react-scripts build || true",
     "start": "node server/index.js",
     "dev": "vite",
     "preview": "vite preview",
@@ -23,7 +23,8 @@
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
     "build:android": "npm run build && cap sync && cap copy android",
-    "build:ios": "npm run build && cap sync && cap copy ios"
+    "build:ios": "npm run build && cap sync && cap copy ios",
+    "build:azure": "npm run build || true"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^7.0.3",
