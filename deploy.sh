@@ -1,4 +1,3 @@
 #!/bin/bash
-npm install
-npm run build
+npm ci --only=production --ignore-scripts
 npm start
