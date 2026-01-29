@@ -4,7 +4,7 @@
   "main": "server/index.js",
   "description": "GlobalReach Exporter Lead Automator - AI-powered CRM",
   "scripts": {
-    "build": "vite build",
+    "build": "npm install && npm run build",
     "start": "node server/index.js",
     "dev": "vite",
     "preview": "vite preview",
