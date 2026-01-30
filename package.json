@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "vite",
+    "build": "vite build",
+    "test": "jest",
     "preview": "vite preview",
     "build:electron": "electron-builder",
     "build:installer": "node scripts/build-installer.js",

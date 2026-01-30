@@ -24,7 +24,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -37,7 +37,7 @@ jobs:
         run: npm test || echo "No tests configured, skipping..."
 
       - name: Build check
-        run: npm run build:react
+        run: npx vite build
 
   security:
     name: Security Audit
@@ -50,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
