@@ -110,7 +110,8 @@
     "electron": "^29.4.6",
     "electron-builder": "^26.0.12",
     "electron-store": "^11.0.2",
-    "rollup-plugin-visualizer": "^6.0.5"
+    "rollup-plugin-visualizer": "^6.0.5",
+    "supertest": "^7.2.2"
   },
   "engines": {
     "node": ">=20.19.0"
