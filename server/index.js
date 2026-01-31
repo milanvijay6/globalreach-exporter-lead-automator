@@ -11,16 +11,21 @@ const { paginationMiddleware } = require('./middleware/pagination');
 const crypto = require('crypto');
 const winston = require('winston');
 
-// Logger setup
+// Logger setup - optimized for production
 const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: process.env.NODE_ENV === 'production' ? (process.env.LOG_LEVEL || 'warn') : (process.env.LOG_LEVEL || 'info'),
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
   transports: [
     new winston.transports.Console({
-      format: winston.format.simple(),
+      format: process.env.NODE_ENV === 'production' 
+        ? winston.format.simple() 
+        : winston.format.combine(
+            winston.format.colorize(),
+            winston.format.simple()
+          ),
       handleExceptions: true,
       handleRejections: true
     })
@@ -35,16 +40,20 @@ initializeApplicationInsights();
 const { connectDatabase, healthCheck } = require('./config/database');
 let databaseInitialized = false;
 
-// Connect to database on startup
+// Connect to database on startup (non-blocking)
 (async () => {
   try {
     await connectDatabase();
     databaseInitialized = true;
-    logger.info('[Server] ✅ Database connection established');
+    if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+      logger.info('[Server] ✅ Database connection established');
+    }
   } catch (error) {
     logger.error('[Server] ❌ Failed to connect to database:', error.message);
-    logger.warn('[Server] Server will start but database features will not work');
-    logger.warn('[Server] Set MONGO_URI in Azure Web App Configuration');
+    if (process.env.NODE_ENV !== 'production') {
+      logger.warn('[Server] Server will start but database features will not work');
+      logger.warn('[Server] Set MONGO_URI in Azure Web App Configuration');
+    }
   }
 })();
 
@@ -270,60 +279,80 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Initialize scheduled jobs
-if (process.env.ENABLE_SCHEDULED_JOBS !== 'false') {
-  try {
-    const { startScheduler } = require('./jobs/scheduler');
-    startScheduler();
-    logger.info('[Server] ✅ Scheduled jobs started');
-  } catch (error) {
-    logger.warn('[Server] ⚠️  Scheduled jobs not available:', error.message);
-    logger.warn('[Server] Set ENABLE_SCHEDULED_JOBS=false to disable scheduled jobs');
-  }
-} else {
-  logger.info('[Server] Scheduled jobs disabled (ENABLE_SCHEDULED_JOBS=false)');
+// Start server first for faster cold starts
+if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+  logger.info(`[Server] Starting server on port ${PORT}...`);
 }
-
-// Initialize AI processing workers
-if (process.env.ENABLE_AI_WORKERS !== 'false') {
-  try {
-    require('./workers/aiProcessingWorker');
-    logger.info('[Server] ✅ AI processing workers started');
-  } catch (error) {
-    logger.warn('[Server] ⚠️  AI processing workers not available:', error.message);
-    logger.warn('[Server] Set ENABLE_AI_WORKERS=false to disable AI workers');
-  }
-} else {
-  logger.info('[Server] AI processing workers disabled (ENABLE_AI_WORKERS=false)');
-}
-
-// Initialize WebSocket server
-if (process.env.ENABLE_WEBSOCKET !== 'false') {
-  try {
-    const { initializeWebSocketServer } = require('./websocket/server');
-    initializeWebSocketServer(server);
-    logger.info('[Server] ✅ WebSocket server initialized');
-  } catch (error) {
-    logger.warn('[Server] ⚠️  WebSocket server not available:', error.message);
-  }
-} else {
-  logger.info('[Server] WebSocket server disabled (ENABLE_WEBSOCKET=false)');
-}
-
-// Signal that server is ready
-if (process.send) {
-  process.send('ready');
-}
-
-// Start server
-logger.info(`[Server] Starting server on port ${PORT}...`);
-logger.info(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
 
 server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  logger.info(`[Server] ✓ Server successfully started on port ${PORT}`);
-  logger.info(`[Server] ✓ Health check available at: http://0.0.0.0:${PORT}/health`);
-  logger.info(`[Server] ✓ Root endpoint available at: http://0.0.0.0:${PORT}/`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`Server running on port ${PORT}`);
+  }
+  logger.info(`[Server] ✓ Server started on port ${PORT}`);
+  if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+    logger.info(`[Server] ✓ Health check: http://0.0.0.0:${PORT}/health`);
+    logger.info(`[Server] ✓ Root endpoint: http://0.0.0.0:${PORT}/`);
+  }
+  
+  // Signal that server is ready
+  if (process.send) {
+    process.send('ready');
+  }
+  
+  // Lazy load workers and jobs after server starts (non-blocking)
+  setImmediate(() => {
+    // Initialize scheduled jobs (lazy loaded)
+    if (process.env.ENABLE_SCHEDULED_JOBS !== 'false') {
+      try {
+        const { startScheduler } = require('./jobs/scheduler');
+        startScheduler();
+        if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+          logger.info('[Server] ✅ Scheduled jobs started');
+        }
+      } catch (error) {
+        logger.warn('[Server] ⚠️  Scheduled jobs not available:', error.message);
+        logger.warn('[Server] Set ENABLE_SCHEDULED_JOBS=false to disable scheduled jobs');
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+        logger.info('[Server] Scheduled jobs disabled (ENABLE_SCHEDULED_JOBS=false)');
+      }
+    }
+
+    // Initialize AI processing workers (lazy loaded)
+    if (process.env.ENABLE_AI_WORKERS !== 'false') {
+      try {
+        require('./workers/aiProcessingWorker');
+        if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+          logger.info('[Server] ✅ AI processing workers started');
+        }
+      } catch (error) {
+        logger.warn('[Server] ⚠️  AI processing workers not available:', error.message);
+        logger.warn('[Server] Set ENABLE_AI_WORKERS=false to disable AI workers');
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+        logger.info('[Server] AI processing workers disabled (ENABLE_AI_WORKERS=false)');
+      }
+    }
+
+    // Initialize WebSocket server (lazy loaded)
+    if (process.env.ENABLE_WEBSOCKET !== 'false') {
+      try {
+        const { initializeWebSocketServer } = require('./websocket/server');
+        initializeWebSocketServer(server);
+        if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+          logger.info('[Server] ✅ WebSocket server initialized');
+        }
+      } catch (error) {
+        logger.warn('[Server] ⚠️  WebSocket server not available:', error.message);
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
+        logger.info('[Server] WebSocket server disabled (ENABLE_WEBSOCKET=false)');
+      }
+    }
+  });
 });
 
 // Handle server errors

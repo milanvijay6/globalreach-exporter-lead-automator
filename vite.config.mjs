@@ -12,7 +12,7 @@ export default defineConfig({
   build: {
     outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'build'),
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: process.env.NODE_ENV !== 'production',
     rollupOptions: {
       external: [
         'imap',

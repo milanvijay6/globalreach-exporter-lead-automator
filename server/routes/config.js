@@ -40,11 +40,12 @@ router.post('/:key', async (req, res) => {
 
 // Get all config (cached for 1 hour)
 // app.use(cacheMiddleware); // Disabled temporarily
+router.get('/all', async (req, res) => {
   try {
     const userId = req.userId || null;
     
     // Get all configs (user-specific if userId available, otherwise global)
-// const config = await Config.getAll(userId, false);
+    const config = await Config.getAll(userId, false);
     res.json({ success: true, config, userId: userId || null });
   } catch (error) {
     console.error('[Config API] Error getting all config:', error);

@@ -169,16 +169,32 @@ async function processCampaignMessage(job) {
   }
 }
 
+// Detect if running on Azure Free Tier
+function isFreeTier() {
+  return process.env.AZURE_FREE_TIER === 'true' || 
+         process.env.WEBSITE_SKU === 'Free' ||
+         (process.env.WEBSITE_INSTANCE_ID && !process.env.WEBSITE_SKU);
+}
+
 // Create workers if Redis connection is available
 let whatsappWorker = null;
 let emailWorker = null;
 let campaignWorker = null;
 
 if (connection) {
+  const freeTier = isFreeTier();
+  const whatsappConcurrency = freeTier ? 2 : 5;
+  const emailConcurrency = freeTier ? 3 : 10;
+  const campaignConcurrency = freeTier ? 1 : 2;
+  
+  if (freeTier) {
+    logger.info('[MessageWorker] Free tier detected - reducing worker concurrency');
+  }
+  
   // WhatsApp Worker
   whatsappWorker = new Worker('whatsapp-messages', processWhatsAppMessage, {
     connection,
-    concurrency: 5, // Process 5 WhatsApp messages concurrently
+    concurrency: whatsappConcurrency, // Reduced on free tier
     limiter: {
       max: 20, // Max 20 jobs
       duration: 1000, // Per second (rate limit)
@@ -196,7 +212,7 @@ if (connection) {
   // Email Worker
   emailWorker = new Worker('email-messages', processEmailMessage, {
     connection,
-    concurrency: 10, // Process 10 emails concurrently
+    concurrency: emailConcurrency, // Reduced on free tier
     limiter: {
       max: 50, // Max 50 jobs
       duration: 1000, // Per second
@@ -214,7 +230,7 @@ if (connection) {
   // Campaign Worker
   campaignWorker = new Worker('bulk-campaigns', processCampaignMessage, {
     connection,
-    concurrency: 2, // Process 2 campaigns concurrently (lower to avoid overwhelming)
+    concurrency: campaignConcurrency, // Reduced on free tier
     limiter: {
       max: 1, // Max 1 campaign
       duration: 1000, // Per second

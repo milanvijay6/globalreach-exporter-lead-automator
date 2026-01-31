@@ -15,13 +15,27 @@ const logger = winston.createLogger({
 let jobs = [];
 
 /**
+ * Detect if running on Azure Free Tier
+ */
+function isFreeTier() {
+  return process.env.AZURE_FREE_TIER === 'true' || 
+         process.env.WEBSITE_SKU === 'Free' ||
+         (process.env.WEBSITE_INSTANCE_ID && !process.env.WEBSITE_SKU);
+}
+
+/**
  * Start all scheduled jobs
  */
 function startScheduler() {
+  const freeTier = isFreeTier();
+  if (freeTier) {
+    logger.info('[Scheduler] Free tier detected - reducing job frequency');
+  }
   logger.info('[Scheduler] Starting scheduled jobs...');
 
-  // Daily analytics aggregation at 2 AM
-  const analyticsJob = cron.schedule('0 2 * * *', async () => {
+  // Daily analytics aggregation at 2 AM (disabled on free tier)
+  const analyticsSchedule = freeTier ? '0 2 * * 0' : '0 2 * * *'; // Weekly on free tier
+  const analyticsJob = cron.schedule(analyticsSchedule, async () => {
     logger.info('[Scheduler] Running daily analytics aggregation...');
     try {
       const { aggregateAnalytics } = require('./aggregateAnalytics');
@@ -35,8 +49,9 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // Hourly AI lead scoring
-  const leadScoringJob = cron.schedule('0 * * * *', async () => {
+  // AI lead scoring - every 2 hours on free tier, hourly otherwise
+  const leadScoringSchedule = freeTier ? '0 */2 * * *' : '0 * * * *';
+  const leadScoringJob = cron.schedule(leadScoringSchedule, async () => {
     logger.info('[Scheduler] Running hourly lead scoring...');
     try {
       const { scoreLeads } = require('./scoreLeads');
@@ -50,8 +65,9 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // OAuth token refresh every 30 minutes
-  const tokenRefreshJob = cron.schedule('*/30 * * * *', async () => {
+  // OAuth token refresh - every 60 minutes on free tier, 30 minutes otherwise
+  const tokenRefreshSchedule = freeTier ? '0 * * * *' : '*/30 * * * *';
+  const tokenRefreshJob = cron.schedule(tokenRefreshSchedule, async () => {
     logger.info('[Scheduler] Running OAuth token refresh...');
     try {
       const { refreshTokens } = require('./refreshTokens');
@@ -65,8 +81,9 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // Cache warming every 15 minutes
-  const cacheWarmingJob = cron.schedule('*/15 * * * *', async () => {
+  // Cache warming - every 60 minutes on free tier, 15 minutes otherwise
+  const cacheWarmingSchedule = freeTier ? '0 * * * *' : '*/15 * * * *';
+  const cacheWarmingJob = cron.schedule(cacheWarmingSchedule, async () => {
     logger.info('[Scheduler] Running cache warming...');
     try {
       const { warmCache } = require('./warmCache');
@@ -80,8 +97,9 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // Archive old data nightly at 3 AM UTC (after analytics)
-  const archiveJob = cron.schedule('0 3 * * *', async () => {
+  // Archive old data - weekly on free tier, nightly otherwise
+  const archiveSchedule = freeTier ? '0 3 * * 0' : '0 3 * * *';
+  const archiveJob = cron.schedule(archiveSchedule, async () => {
     logger.info('[Scheduler] Running archive old data job...');
     try {
       const { archiveOldData } = require('./archiveOldData');

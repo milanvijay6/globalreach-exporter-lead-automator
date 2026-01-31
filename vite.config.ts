@@ -40,8 +40,8 @@ export default defineConfig({
   build: {
     outDir: process.env.BUILD_OUT_DIR || path.resolve(__dirname, 'build'),
     emptyOutDir: true,
-    // Always enable source maps for better error debugging
-    sourcemap: true,
+    // Disable source maps in production to reduce bundle size
+    sourcemap: process.env.NODE_ENV !== 'production',
     minify: process.env.NODE_ENV === 'production' ? 'esbuild' : false,
     target: 'es2015',
     chunkSizeWarningLimit: 100, // Warn if chunk exceeds 100KB
