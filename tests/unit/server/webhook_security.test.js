@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 const request = require('supertest');
 const express = require('express');
 const crypto = require('crypto');
@@ -56,6 +59,15 @@ describe('WhatsApp Webhook Security', () => {
   it('should reject POST request without signature (401)', async () => {
     const response = await request(app)
       .post('/webhooks/whatsapp')
+      .send(payload);
+
+    expect(response.status).toBe(401);
+  });
+
+  it('should reject POST request with malformed signature (401)', async () => {
+    const response = await request(app)
+      .post('/webhooks/whatsapp')
+      .set('X-Hub-Signature-256', 'malformed_signature')
       .send(payload);
 
     expect(response.status).toBe(401);

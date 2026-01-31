@@ -56,6 +56,10 @@ router.post('/whatsapp', async (req, res) => {
       }
 
       const elements = signature.split('=');
+      if (elements.length !== 2) {
+        logger.warn('WhatsApp webhook invalid signature format');
+        return res.sendStatus(401);
+      }
       const signatureHash = elements[1];
       const expectedHash = crypto
         .createHmac('sha256', appSecret)
