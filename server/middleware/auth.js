@@ -54,6 +54,22 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticateUser };
+const requireAuth = (req, res, next) => {
+  // Check if Parse is initialized
+  const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
+  if (!hasValidAppId) {
+    // Fail Closed: If Parse is not initialized, we cannot verify users.
+    // We must block access to protected routes to prevent data leaks due to misconfiguration.
+    console.error('[Auth Middleware] Critical: Parse not initialized. Blocking request to protected route.');
+    return res.status(500).json({ success: false, error: 'Internal Server Error: Security misconfiguration' });
+  }
+
+  if (!req.user && !req.userId) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+  }
+  next();
+};
+
+module.exports = { authenticateUser, requireAuth };
 
 
