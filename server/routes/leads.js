@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const Lead = require('../models/Lead');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser, requireAuth);
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
