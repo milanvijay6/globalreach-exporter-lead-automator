@@ -197,3 +197,4 @@ The app automatically detects the platform and adjusts UI accordingly:
 
 
 
+
