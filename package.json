@@ -116,6 +116,6 @@
     "rollup-plugin-visualizer": "^6.0.5"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=18.0.0"
   }
 }
