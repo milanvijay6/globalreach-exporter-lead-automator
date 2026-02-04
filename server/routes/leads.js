@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Lead = require('../models/Lead');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
 
@@ -88,7 +89,7 @@ router.get('/', cacheMiddleware(60), async (req, res) => {
 });
 
 // POST /api/leads/:id/send - Send message to lead
-router.post('/:id/send', async (req, res) => {
+router.post('/:id/send', authenticateUser, requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { message } = req.body;
