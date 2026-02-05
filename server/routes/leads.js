@@ -3,11 +3,12 @@ const router = express.Router();
 const Lead = require('../models/Lead');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
 // Excludes archived data by default
-router.get('/', cacheMiddleware(60), async (req, res) => {
+router.get('/', authenticateUser, requireAuth, cacheMiddleware(60), async (req, res) => {
   try {
     const { status, country, limit = 50, cursor, sortBy = 'createdAt', sortOrder = 'desc', getArchived = false } = req.query;
     
@@ -88,7 +89,7 @@ router.get('/', cacheMiddleware(60), async (req, res) => {
 });
 
 // POST /api/leads/:id/send - Send message to lead
-router.post('/:id/send', async (req, res) => {
+router.post('/:id/send', authenticateUser, requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { message } = req.body;
