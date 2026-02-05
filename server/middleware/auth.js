@@ -54,6 +54,20 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticateUser };
+const requireAuth = (req, res, next) => {
+  // Fail-closed: If Parse is not configured, deny access
+  const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
+  if (!hasValidAppId) {
+    console.error('[Auth Middleware] Parse Application ID missing in requireAuth');
+    return res.status(500).json({ success: false, error: 'Authentication configuration missing' });
+  }
+
+  if (!req.user && !req.userId) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+  }
+  next();
+};
+
+module.exports = { authenticateUser, requireAuth };
 
 
