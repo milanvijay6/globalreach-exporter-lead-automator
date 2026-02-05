@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Config = require('../models/Config');
 const { authenticateUser } = require('../middleware/auth');
+const { cacheMiddleware } = require('../middleware/cache');
 
 // Apply authentication middleware to all routes
 router.use(authenticateUser);
