@@ -1,15 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const Lead = require('../models/Lead');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
 // Excludes archived data by default
 router.get('/', cacheMiddleware(60), async (req, res) => {
   try {
-    const { status, country, limit = 50, cursor, sortBy = 'createdAt', sortOrder = 'desc', getArchived = false } = req.query;
+    const { limit = 50, cursor, sortBy = 'createdAt', sortOrder = 'desc', getArchived = false } = req.query;
+
+    // Sanitize inputs to prevent NoSQL injection
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const country = typeof req.query.country === 'string' ? req.query.country : undefined;
     
     const query = {};
     
