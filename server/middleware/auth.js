@@ -54,6 +54,20 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticateUser };
+const requireAuth = (req, res, next) => {
+  // Check if Parse is initialized
+  const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
+  if (!hasValidAppId) {
+    // If Parse is not initialized, we can't authenticate, so fail securely
+    return res.status(500).json({ success: false, error: 'Authentication service not configured' });
+  }
+
+  if (!req.user && !req.userId) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+  }
+  next();
+};
+
+module.exports = { authenticateUser, requireAuth };
 
 
