@@ -12,13 +12,9 @@ const { cacheMiddleware, invalidateByTag } = require('../middleware/cache');
 const { findWithCache } = require('../utils/parseQueryCache');
 const { authenticateUser, requireAuth } = require('../middleware/auth');
 
-// Apply authentication middleware to all routes
-router.use(authenticateUser);
-router.use(requireAuth);
-
 // GET /api/messages - List messages for an importer
 // Uses compound index: importerId_channel_timestamp
-router.get('/', cacheMiddleware(60, ['messages']), async (req, res) => {
+router.get('/', authenticateUser, requireAuth, cacheMiddleware(60, ['messages']), async (req, res) => {
   try {
     const { importerId, channel, status, limit = 50, cursor, getArchived = false } = req.query;
     
@@ -102,7 +98,7 @@ router.get('/', cacheMiddleware(60, ['messages']), async (req, res) => {
 
 // POST /api/messages - Create a new message
 // Automatically uses Parse Files for large email bodies (>1KB)
-router.post('/', async (req, res) => {
+router.post('/', authenticateUser, requireAuth, async (req, res) => {
   try {
     const { importerId, channel, sender, content, timestamp, status } = req.body;
     
@@ -139,7 +135,7 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/messages/:id - Get a single message
-router.get('/:id', cacheMiddleware(300), async (req, res) => {
+router.get('/:id', authenticateUser, requireAuth, cacheMiddleware(300), async (req, res) => {
   try {
     const { id } = req.params;
     const query = new Parse.Query(Message);
