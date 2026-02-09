@@ -55,7 +55,7 @@ const authenticateUser = async (req, res, next) => {
 };
 
 const requireAuth = (req, res, next) => {
-  if (!req.user) {
+  if (!req.user && !req.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();

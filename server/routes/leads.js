@@ -5,7 +5,7 @@ const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
 const { authenticateUser, requireAuth } = require('../middleware/auth');
 
-// Apply authentication middleware to all lead routes
+// Apply authentication middleware to all routes
 router.use(authenticateUser);
 router.use(requireAuth);
 
