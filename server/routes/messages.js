@@ -8,9 +8,14 @@ const router = express.Router();
 const Message = require('../models/Message');
 const Parse = require('parse/node');
 const { parseFileService } = require('../utils/parseFileService');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateByTag } = require('../middleware/cache');
 const { findWithCache } = require('../utils/parseQueryCache');
 const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+// Apply authentication to all message routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // GET /api/messages - List messages for an importer
 // Uses compound index: importerId_channel_timestamp
@@ -18,8 +23,8 @@ router.get('/', authenticateUser, requireAuth, cacheMiddleware(60, ['messages'])
   try {
     const { importerId, channel, status, limit = 50, cursor, getArchived = false } = req.query;
     
-    if (!importerId) {
-      return res.status(400).json({ success: false, error: 'importerId is required' });
+    if (!importerId || typeof importerId !== 'string') {
+      return res.status(400).json({ success: false, error: 'Valid importerId is required' });
     }
 
     const query = new Parse.Query(Message);
