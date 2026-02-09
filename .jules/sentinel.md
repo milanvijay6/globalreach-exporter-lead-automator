@@ -1,4 +1,4 @@
-## 2024-05-23 - Broken Access Control in /api/leads
-**Vulnerability:** The `/api/leads` endpoint was exposing sensitive lead data to unauthenticated requests.
-**Learning:** The `authenticateUser` middleware populates `req.user` but does not enforce authentication (fail-open), allowing execution to proceed even if authentication fails or is missing.
-**Prevention:** Always pair `authenticateUser` with `requireAuth` to explicitly block unauthenticated requests. Use `router.use(authenticateUser, requireAuth)` at the router level for sensitive resource groups.
+## 2026-01-23 - Critical Auth Bypass in Product API
+**Vulnerability:** The product creation, update, and deletion endpoints (`POST`, `PUT`, `DELETE /api/products`) were completely unauthenticated, allowing any user (or unauthenticated attacker) to modify the product catalog. The code relied on `useMasterKey: true` inside the route handlers but lacked any middleware to verify the user's identity.
+**Learning:** Checking for authentication *inside* a function (like `authenticateUser` does) is not enough if the middleware is not actually applied to the routes. Also, the pattern of "optional authentication" (where `req.user` can be null) makes it easy to forget to strictly check `if (!req.user)` in sensitive routes.
+**Prevention:** Always use a blocking `requireAuth` middleware for sensitive routes. Do not rely on "authentication middleware that just populates user but allows null". Enforce security at the router level.

@@ -6,7 +6,7 @@ const { cacheMiddleware, invalidateCache, invalidateByTag } = require('../middle
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 const { findWithCache } = require('../utils/parseQueryCache');
 const { productCatalogCache } = require('../services/productCatalogCache');
-const { authenticateUser, requireAuth } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 
 // GET /api/products - List products (cached for 5 minutes, cursor-based pagination)
 // Uses L3 (Redis), L4 (Parse cache), and in-memory product catalog cache
@@ -125,7 +125,7 @@ router.get('/:id', cacheMiddleware(300), async (req, res) => {
 });
 
 // POST /api/products - Create product
-router.post('/', authenticateUser, requireAuth, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const { name, description, price, category, tags, photos, status } = req.body;
     
@@ -162,7 +162,7 @@ router.post('/', authenticateUser, requireAuth, async (req, res) => {
 });
 
 // PUT /api/products/:id - Update product
-router.put('/:id', authenticateUser, requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const query = new Parse.Query(Product);
@@ -207,7 +207,7 @@ router.put('/:id', authenticateUser, requireAuth, async (req, res) => {
 });
 
 // DELETE /api/products/:id - Delete product
-router.delete('/:id', authenticateUser, requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const query = new Parse.Query(Product);

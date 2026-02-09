@@ -55,12 +55,18 @@ const authenticateUser = async (req, res, next) => {
 };
 
 const requireAuth = (req, res, next) => {
-  if (!req.user && !req.userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  const checkAuth = () => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Valid session required' });
+    }
+    next();
+  };
+
+  if (req.user === undefined) {
+    return authenticateUser(req, res, checkAuth);
   }
-  next();
+
+  checkAuth();
 };
 
 module.exports = { authenticateUser, requireAuth };
-
-
