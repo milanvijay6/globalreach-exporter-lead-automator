@@ -40,6 +40,43 @@ router.get('/whatsapp', async (req, res) => {
 // WhatsApp Webhook Handler (POST)
 router.post('/whatsapp', async (req, res) => {
   try {
+    // SECURITY: Verify WhatsApp signature
+    const signature = req.get('X-Hub-Signature-256');
+    const appSecret = (await Config.get('whatsappAppSecret')) || process.env.WHATSAPP_APP_SECRET;
+
+    if (appSecret) {
+      if (!signature) {
+        logger.warn('WhatsApp webhook missing X-Hub-Signature-256 header');
+        return res.sendStatus(401);
+      }
+
+      if (!req.rawBody) {
+        logger.error('WhatsApp webhook missing raw body for signature verification');
+        return res.sendStatus(500);
+      }
+
+      const elements = signature.split('=');
+      if (elements.length !== 2) {
+        logger.warn('WhatsApp webhook invalid signature format');
+        return res.sendStatus(401);
+      }
+      const signatureHash = elements[1];
+      const expectedHash = crypto
+        .createHmac('sha256', appSecret)
+        .update(req.rawBody)
+        .digest('hex');
+
+      const signatureBuffer = Buffer.from(signatureHash, 'utf8');
+      const expectedBuffer = Buffer.from(expectedHash, 'utf8');
+
+      if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+        logger.warn('WhatsApp webhook signature verification failed');
+        return res.sendStatus(403);
+      }
+    } else {
+      logger.warn('WARNING: WhatsApp App Secret not configured. Webhook signature verification skipped.');
+    }
+
     const payload = req.body;
 
     // 🛡️ Sentinel: Verify WhatsApp Signature
