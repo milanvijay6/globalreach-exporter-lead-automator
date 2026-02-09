@@ -11,6 +11,8 @@
     "build:react": "npm run build",
     "build:azure": "npm run build",
     "build:electron": "electron-builder",
+    "lint": "echo 'No linting configured'",
+    "test": "node --test server/tests/auth_verify.test.js",
     "build:installer": "node scripts/build-installer.js",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
