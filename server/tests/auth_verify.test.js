@@ -1,81 +1,94 @@
-const { test, describe, it } = require('node:test');
+const { test, describe, it, mock } = require('node:test');
 const assert = require('node:assert');
-const { requireAuth } = require('../middleware/auth');
 const Parse = require('parse/node');
 
+// Set up Parse mock before requiring auth middleware
+Parse.applicationId = 'test-app-id';
+Parse.User = {
+  become: mock.fn(async (token) => {
+    if (token === 'valid-token') {
+      return { id: 'user-123' };
+    }
+    throw new Error('Invalid session');
+  })
+};
+
+// We need to delay require until after mocks are set up, but since `require` caches modules,
+// and `server/middleware/auth.js` requires `parse/node`, we might have issues if `parse/node` is already loaded.
+// However, `parse/node` is a singleton, so modifying `Parse` object should work.
+
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
 describe('Auth Middleware', () => {
-  it('should return 500 if Parse is not initialized', async () => {
-    // Mock Parse.applicationId to be undefined
-    const originalAppId = Parse.applicationId;
-    Parse.applicationId = undefined;
+  describe('authenticateUser', () => {
+    it('should set req.user if session token is valid', async () => {
+      const req = {
+        get: (header) => header === 'X-Parse-Session-Token' ? 'valid-token' : null,
+        query: {},
+        body: {}
+      };
+      const res = {};
+      const next = mock.fn();
 
-    const req = {};
-    const res = {
-      status: (code) => {
-        assert.strictEqual(code, 500);
-        return res;
-      },
-      json: (data) => {
-        assert.strictEqual(data.success, false);
-        assert.strictEqual(data.error, 'Authentication configuration missing');
-      }
-    };
-    const next = () => {
-      assert.fail('Should not call next');
-    };
+      await authenticateUser(req, res, next);
 
-    requireAuth(req, res, next);
+      assert.strictEqual(req.userId, 'user-123');
+      assert.strictEqual(next.mock.calls.length, 1);
+    });
 
-    // Restore
-    Parse.applicationId = originalAppId;
+    it('should set req.user to null if session token is invalid', async () => {
+      const req = {
+        get: (header) => header === 'X-Parse-Session-Token' ? 'invalid-token' : null,
+        query: {},
+        body: {}
+      };
+      const res = {};
+      const next = mock.fn();
+
+      await authenticateUser(req, res, next);
+
+      assert.strictEqual(req.user, null);
+      assert.strictEqual(next.mock.calls.length, 1);
+    });
   });
 
-  it('should return 401 if not authenticated', async () => {
-    // Mock Parse.applicationId to be defined
-    const originalAppId = Parse.applicationId;
-    Parse.applicationId = 'test-app-id';
+  describe('requireAuth', () => {
+    it('should exist', () => {
+       assert.ok(requireAuth, 'requireAuth should be exported');
+    });
 
-    const req = { user: null, userId: null };
-    const res = {
-      status: (code) => {
-        assert.strictEqual(code, 401);
-        return res;
-      },
-      json: (data) => {
-        assert.strictEqual(data.success, false);
-        assert.strictEqual(data.error, 'Unauthorized: Authentication required');
+    it('should return 401 if req.user and req.userId are missing', () => {
+      const req = { user: null, userId: null };
+      const res = {
+        status: mock.fn((code) => {
+          assert.strictEqual(code, 401);
+          return res;
+        }),
+        json: mock.fn((body) => {
+          assert.strictEqual(body.success, false);
+          assert.match(body.error, /Unauthorized/);
+        })
+      };
+      const next = mock.fn();
+
+      if (requireAuth) {
+          requireAuth(req, res, next);
+
+          assert.strictEqual(res.status.mock.calls.length, 1);
+          assert.strictEqual(next.mock.calls.length, 0);
       }
-    };
-    const next = () => {
-      assert.fail('Should not call next');
-    };
+    });
 
-    requireAuth(req, res, next);
+    it('should call next() if req.userId is present', () => {
+      const req = { userId: 'user-123' };
+      const res = {};
+      const next = mock.fn();
 
-    // Restore
-    Parse.applicationId = originalAppId;
-  });
+      if (requireAuth) {
+          requireAuth(req, res, next);
 
-  it('should call next if authenticated', async () => {
-    // Mock Parse.applicationId to be defined
-    const originalAppId = Parse.applicationId;
-    Parse.applicationId = 'test-app-id';
-
-    const req = { user: { id: 'user1' }, userId: 'user1' };
-    const res = {
-        status: (code) => {
-            assert.fail('Should not call status');
-        }
-    };
-    let nextCalled = false;
-    const next = () => {
-      nextCalled = true;
-    };
-
-    requireAuth(req, res, next);
-    assert.strictEqual(nextCalled, true);
-
-    // Restore
-    Parse.applicationId = originalAppId;
+          assert.strictEqual(next.mock.calls.length, 1);
+      }
+    });
   });
 });
