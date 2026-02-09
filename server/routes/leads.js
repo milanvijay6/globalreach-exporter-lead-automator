@@ -1,11 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const Lead = require('../models/Lead');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
 const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 // Protect all lead routes
+router.use(authenticateUser);
+router.use(requireAuth);
+
+// Apply authentication middleware to all routes in this file
 router.use(authenticateUser);
 router.use(requireAuth);
 

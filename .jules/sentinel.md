@@ -1,4 +1,7 @@
-## 2025-05-24 - Unprotected Parse Queries with Master Key
-**Vulnerability:** Critical authorization bypass in `server/routes/messages.js`. The route handlers used `useMasterKey: true` to bypass Parse ACLs/CLPs but lacked any Express-level authentication middleware (`authenticateUser` or `requireAuth`). This allowed unauthenticated attackers to read and write messages with full administrative privileges.
-**Learning:** The codebase mixes Express routes with Parse Server logic. While Parse Server handles auth internally for its routes, custom Express routes wrapping Parse logic (using the JS SDK) must manually enforce authentication. The presence of `authenticateUser` in other files gave a false sense of security, but it was not applied globally or consistently.
-**Prevention:** Ensure all Express routes that access sensitive data or use `useMasterKey: true` are protected by `authenticateUser` AND `requireAuth` middleware. Prefer applying these middlewares at the router level (`router.use`) to prevent accidental omission in individual handlers.
+## 2026-02-03 - Missing Authentication on Leads Endpoint
+**Vulnerability:** The `/api/leads` endpoint was publicly accessible without any authentication. This Critical vulnerability exposed sensitive lead data (names, companies, contact details) to unauthenticated requests.
+**Learning:** The existing `authenticateUser` middleware was designed to be non-blocking (populating `req.user` if present, but allowing the request if not). There was no `requireAuth` middleware exported to enforce authentication. Developers likely assumed `authenticateUser` was sufficient or forgot to add a blocking check.
+**Prevention:**
+1. Implemented a strict `requireAuth` middleware in `server/middleware/auth.js` that returns 401 if no user is present.
+2. Applied `authenticateUser` and `requireAuth` to the entire `server/routes/leads.js` router.
+3. Future prevention: Use a "Fail Closed" approach where routes are protected by default, or use a linter rule to ensure sensitive routes have auth middleware.
