@@ -6,8 +6,7 @@ const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
 const { formatPaginatedResponse } = require('../utils/pagination');
 
 // Apply authentication middleware to all routes
-router.use(authenticateUser);
-router.use(requireAuth);
+router.use(authenticateUser, requireAuth);
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
@@ -93,7 +92,7 @@ router.get('/', cacheMiddleware(60), async (req, res) => {
 });
 
 // POST /api/leads/:id/send - Send message to lead
-router.post('/:id/send', authenticateUser, requireAuth, async (req, res) => {
+router.post('/:id/send', async (req, res) => {
   try {
     const { id } = req.params;
     const { message } = req.body;

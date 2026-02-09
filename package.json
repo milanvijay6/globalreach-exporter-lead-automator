@@ -9,8 +9,6 @@
     "preview": "vite preview",
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 BUILD_OUT_DIR=build vite build",
     "build:react": "npm run build",
-    "test": "echo \"No tests specified\" && exit 0",
-    "lint": "echo \"No linting specified\" && exit 0",
     "build:azure": "npm run build",
     "build:electron": "electron-builder",
     "build:installer": "node scripts/build-installer.js",
