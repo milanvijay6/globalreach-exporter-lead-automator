@@ -1,4 +1,4 @@
-## 2025-05-15 - Broken Auth Middleware & Server Syntax
-**Vulnerability:** The backend had `authenticateUser` middleware which was non-blocking, and mutation routes (POST/PUT/DELETE) in `products.js` were using `useMasterKey: true` without any blocking authentication check. This allowed unauthenticated users to modify product data. Additionally, the server main file had a syntax error preventing startup, masking this issue.
-**Learning:** Always verify that authentication middleware is BLOCKING for sensitive routes. Non-blocking auth middleware (which just populates context) is dangerous if not paired with a guard. Also, ensure the application can actually start before assuming tests will catch security issues.
-**Prevention:** Implement `requireAuth` that checks `req.user` and returns 401. Apply this middleware explicitly to all state-changing routes. Use automated tests to verify that unauthenticated requests are rejected with 401.
+## 2025-01-25 - Unprotected Master Key Usage
+**Vulnerability:** Multiple API endpoints (`/api/products`, `/api/leads`) were performing mutation operations using `useMasterKey: true` without any authentication or authorization checks.
+**Learning:** The codebase relies on `useMasterKey: true` to bypass ACLs for convenience but failed to implement application-level checks (middleware) to restrict access. This indicates a pattern of prioritizing functionality over security in the backend.
+**Prevention:** Enforce `requireAuth` middleware on all routes that perform mutations or access sensitive data, especially those using `useMasterKey: true`.

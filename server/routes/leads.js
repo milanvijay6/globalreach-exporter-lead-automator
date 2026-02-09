@@ -1,13 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const Lead = require('../models/Lead');
+const Parse = require('parse/node');
+const { requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
-const { formatPaginatedResponse } = require('../utils/pagination');
-const { authenticateUser, requireAuth } = require('../middleware/auth');
-
-// Apply authentication middleware to all routes
-router.use(authenticateUser);
-router.use(requireAuth);
+const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 
 // GET /api/leads - List leads (cursor-based pagination)
 // Uses compound indexes: status_country_createdAt, status_leadScore
@@ -16,54 +13,35 @@ router.get('/', cacheMiddleware(60), async (req, res) => {
   try {
     const { status, country, limit = 50, cursor, sortBy = 'createdAt', sortOrder = 'desc', getArchived = false } = req.query;
     
-    const query = {};
+    const query = new Parse.Query(Lead);
     
-    // Exclude archived leads by default
+    // Exclude archived leads by default (if archived field exists)
+    // Note: Archive implementation may add an 'archived' boolean field
     if (!getArchived) {
-      query.archived = { $ne: true };
+      query.notEqualTo('archived', true);
     }
     
     if (status) {
-      query.status = status;
+      query.equalTo('status', status);
     }
     
     if (country) {
-      query.country = country;
+      query.equalTo('country', country);
     }
     
     // Apply cursor-based pagination
-    if (cursor) {
-      try {
-        const cursorData = JSON.parse(Buffer.from(cursor, 'base64').toString());
-        if (sortOrder === 'desc') {
-          query[sortBy] = { $lt: new Date(cursorData[sortBy]) };
-        } else {
-          query[sortBy] = { $gt: new Date(cursorData[sortBy]) };
-        }
-      } catch (e) {
-        // Invalid cursor, ignore
-      }
-    }
+    // Use compound index: status_country_createdAt or status_leadScore based on sortBy
+    applyCursor(query, cursor, sortBy, sortOrder);
+    query.limit(parseInt(limit) + 1); // Fetch one extra to check if there's more
     
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-    
-    const leads = await Lead.find(query, { 
-      sort, 
-      limit: parseInt(limit) + 1 
-    });
+    const leads = await query.find({ useMasterKey: true });
     
     // Check if there's a next page
     const hasMore = leads.length > parseInt(limit);
     const results = hasMore ? leads.slice(0, parseInt(limit)) : leads;
     
     // Get next cursor
-    let nextCursor = null;
-    if (hasMore && results.length > 0) {
-      const lastItem = results[results.length - 1];
-      const cursorData = { [sortBy]: lastItem.get(sortBy) };
-      nextCursor = Buffer.from(JSON.stringify(cursorData)).toString('base64');
-    }
+    const nextCursor = hasMore ? getNextCursor(results, sortBy, sortOrder) : null;
     
     // Apply field projection if requested
     const { projectFields } = require('../utils/fieldProjection');
@@ -93,7 +71,7 @@ router.get('/', cacheMiddleware(60), async (req, res) => {
 });
 
 // POST /api/leads/:id/send - Send message to lead
-router.post('/:id/send', async (req, res) => {
+router.post('/:id/send', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { message } = req.body;
@@ -102,7 +80,8 @@ router.post('/:id/send', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
     
-    const lead = await Lead.get(id);
+    const query = new Parse.Query(Lead);
+    const lead = await query.get(id, { useMasterKey: true });
     
     // Invalidate lead cache
     await invalidateCache(`cache:/api/leads:*`);
@@ -111,7 +90,7 @@ router.post('/:id/send', async (req, res) => {
     // For now, return success
     res.json({ success: true, data: { messageId: 'placeholder' } });
   } catch (error) {
-    if (error.code === 101) { // MongoDB Object not found
+    if (error.code === Parse.Error.OBJECT_NOT_FOUND) {
       res.status(404).json({ success: false, error: 'Lead not found' });
     } else {
       res.status(500).json({ success: false, error: error.message });

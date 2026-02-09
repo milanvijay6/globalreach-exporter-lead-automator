@@ -54,10 +54,20 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-const requireAuth = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+const requireAuth = async (req, res, next) => {
+  // Run authentication if not already run
+  if (!req.user && !req.userId) {
+    await authenticateUser(req, res, () => {});
   }
+
+  // Check if user is authenticated
+  if (!req.user && !req.userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Authentication required'
+    });
+  }
+
   next();
 };
 

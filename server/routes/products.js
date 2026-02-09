@@ -2,14 +2,11 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Parse = require('parse/node');
-const { authenticateUser, requireAuth } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 const { cacheMiddleware, invalidateCache, invalidateByTag } = require('../middleware/cache');
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 const { findWithCache } = require('../utils/parseQueryCache');
 const { productCatalogCache } = require('../services/productCatalogCache');
-
-// Apply authentication middleware to populate req.user / req.userId
-router.use(authenticateUser);
 
 // GET /api/products - List products (cached for 5 minutes, cursor-based pagination)
 // Uses L3 (Redis), L4 (Parse cache), and in-memory product catalog cache
