@@ -1,6 +1,4 @@
-# Sentinel Journal
-
-## 2025-05-20 - Missing Authentication on Critical Endpoints
-**Vulnerability:** Products API endpoints (POST/PUT/DELETE) were completely public and used `useMasterKey: true`, allowing any user to modify product data.
-**Learning:** `useMasterKey: true` bypasses all Parse security, so explicit authentication checks are mandatory in the route handler.
-**Prevention:** Always apply authentication middleware and verify `req.user` existence before performing sensitive operations, especially when using master key.
+## 2025-05-15 - Broken Auth Middleware & Server Syntax
+**Vulnerability:** The backend had `authenticateUser` middleware which was non-blocking, and mutation routes (POST/PUT/DELETE) in `products.js` were using `useMasterKey: true` without any blocking authentication check. This allowed unauthenticated users to modify product data. Additionally, the server main file had a syntax error preventing startup, masking this issue.
+**Learning:** Always verify that authentication middleware is BLOCKING for sensitive routes. Non-blocking auth middleware (which just populates context) is dangerous if not paired with a guard. Also, ensure the application can actually start before assuming tests will catch security issues.
+**Prevention:** Implement `requireAuth` that checks `req.user` and returns 401. Apply this middleware explicitly to all state-changing routes. Use automated tests to verify that unauthenticated requests are rejected with 401.

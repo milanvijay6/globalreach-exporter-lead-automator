@@ -1,5 +1,4 @@
 const express = require('express');
-require("dotenv").config();
 const path = require('path');
 const fs = require('fs');
 const compression = require('compression');
@@ -11,21 +10,16 @@ const { paginationMiddleware } = require('./middleware/pagination');
 const crypto = require('crypto');
 const winston = require('winston');
 
-// Logger setup - optimized for production
+// Logger setup
 const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? (process.env.LOG_LEVEL || 'warn') : (process.env.LOG_LEVEL || 'info'),
+  level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
   transports: [
     new winston.transports.Console({
-      format: process.env.NODE_ENV === 'production' 
-        ? winston.format.simple() 
-        : winston.format.combine(
-            winston.format.colorize(),
-            winston.format.simple()
-          ),
+      format: winston.format.simple(),
       handleExceptions: true,
       handleRejections: true
     })
@@ -40,26 +34,21 @@ initializeApplicationInsights();
 const { connectDatabase, healthCheck } = require('./config/database');
 let databaseInitialized = false;
 
-// Connect to database on startup (non-blocking)
+// Connect to database on startup
 (async () => {
   try {
     await connectDatabase();
     databaseInitialized = true;
-    if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-      logger.info('[Server] ✅ Database connection established');
-    }
+    logger.info('[Server] ✅ Database connection established');
   } catch (error) {
     logger.error('[Server] ❌ Failed to connect to database:', error.message);
-    if (process.env.NODE_ENV !== 'production') {
-      logger.warn('[Server] Server will start but database features will not work');
-      logger.warn('[Server] Set MONGO_URI in Azure Web App Configuration');
-    }
+    logger.warn('[Server] Server will start but database features will not work');
+    logger.warn('[Server] Set MONGO_URI in Azure Web App Configuration');
   }
 })();
 
 const app = express();
-let server;  // Declare server variable globally
-const PORT = process.env.PORT || 8080;  // PORT defined BEFORE server startup
+const PORT = process.env.PORT || 8080;
 
 // Security middleware
 app.use(helmet({
@@ -67,14 +56,13 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-// Rate limiting (skip health checks used by Azure load balancer)
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per windowMs
+  max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/health',
 });
 
 app.use(limiter);
@@ -83,13 +71,14 @@ app.use(limiter);
 app.use(brotliCompression);
 app.use(compression({
   filter: (req, res) => {
+    // Only use gzip if Brotli is not accepted
     const accepts = req.headers['accept-encoding'] || '';
     if (accepts.includes('br')) {
       return false; // Let Brotli handle it
     }
     return compression.filter(req, res);
   },
-  threshold: 1024,
+  threshold: 1024, // Only compress > 1KB
 }));
 
 // ETag middleware for conditional requests (before routes)
@@ -144,6 +133,7 @@ try {
   logger.info('[Server] All routes loaded successfully');
 } catch (error) {
   logger.error('[Server] Failed to load routes:', error);
+  // Create empty router as fallback
   const express = require('express');
   const emptyRouter = express.Router();
   webhookRoutes = webhookRoutes || emptyRouter;
@@ -167,6 +157,7 @@ try {
 // Health check endpoint (for Azure Load Balancer and monitoring)
 app.get('/health', async (req, res) => {
   const dbHealth = await healthCheck();
+  
   res.status(dbHealth.status === 'ok' ? 200 : 503).json({ 
     status: dbHealth.status === 'ok' ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
@@ -229,6 +220,7 @@ app.get('/api/product-photos/:productId/:fileName', async (req, res) => {
       return res.status(404).send('Photo not found');
     }
     
+    // Redirect to file URL
     res.redirect(photo.url);
   } catch (error) {
     logger.error('[ProductPhoto] Serve photo error:', error);
@@ -238,10 +230,12 @@ app.get('/api/product-photos/:productId/:fileName', async (req, res) => {
 
 // React Router fallback - serve index.html for all non-API routes
 app.get('*', (req, res, next) => {
+  // Don't serve index.html for API routes
   if (req.path.startsWith('/api/') || req.path.startsWith('/webhooks/')) {
     return res.sendStatus(404);
   }
   
+  // Check if file exists before serving
   if (!fs.existsSync(indexPath)) {
     logger.error(`[Server] Cannot serve index.html: File not found at ${indexPath}`);
     return res.status(500).json({ 
@@ -250,6 +244,7 @@ app.get('*', (req, res, next) => {
     });
   }
   
+  // Use absolute path with error handling
   res.sendFile(indexPath, (err) => {
     if (err) {
       logger.error(`[Server] Error serving index.html:`, err);
@@ -267,145 +262,142 @@ app.get('*', (req, res, next) => {
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);
   if (!res.headersSent) {
-    res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+  res.status(500).json({ success: false, error: err.message || 'Internal server error' });
   }
 });
 
 // Global error handlers to prevent crashes
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
+  // Don't exit - let the server continue running
+  // In production, you might want to exit and let a process manager restart it
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - let the server continue running
 });
 
-// Start server first for faster cold starts
-if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-  logger.info(`[Server] Starting server on port ${PORT}...`);
+// Initialize scheduled jobs
+if (process.env.ENABLE_SCHEDULED_JOBS !== 'false') {
+  try {
+    const { startScheduler } = require('./jobs/scheduler');
+    startScheduler();
+    logger.info('[Server] ✅ Scheduled jobs started');
+  } catch (error) {
+    logger.warn('[Server] ⚠️  Scheduled jobs not available:', error.message);
+    logger.warn('[Server] Set ENABLE_SCHEDULED_JOBS=false to disable scheduled jobs');
+  }
+} else {
+  logger.info('[Server] Scheduled jobs disabled (ENABLE_SCHEDULED_JOBS=false)');
 }
 
-server = app.listen(PORT, '0.0.0.0', () => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`Server running on port ${PORT}`);
+// Initialize AI processing workers
+if (process.env.ENABLE_AI_WORKERS !== 'false') {
+  try {
+    require('./workers/aiProcessingWorker');
+    logger.info('[Server] ✅ AI processing workers started');
+  } catch (error) {
+    logger.warn('[Server] ⚠️  AI processing workers not available:', error.message);
+    logger.warn('[Server] Set ENABLE_AI_WORKERS=false to disable AI workers');
   }
-  logger.info(`[Server] ✓ Server started on port ${PORT}`);
-  if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-    logger.info(`[Server] ✓ Health check: http://0.0.0.0:${PORT}/health`);
-    logger.info(`[Server] ✓ Root endpoint: http://0.0.0.0:${PORT}/`);
-  }
-  
-  // Signal that server is ready
-  if (process.send) {
-    process.send('ready');
-  }
-  
-  // Lazy load workers and jobs after server starts (non-blocking)
-  setImmediate(() => {
-    // Initialize scheduled jobs (lazy loaded)
-    if (process.env.ENABLE_SCHEDULED_JOBS !== 'false') {
-      try {
-        const { startScheduler } = require('./jobs/scheduler');
-        startScheduler();
-        if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-          logger.info('[Server] ✅ Scheduled jobs started');
-        }
-      } catch (error) {
-        logger.warn('[Server] ⚠️  Scheduled jobs not available:', error.message);
-        logger.warn('[Server] Set ENABLE_SCHEDULED_JOBS=false to disable scheduled jobs');
-      }
-    } else {
-      if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-        logger.info('[Server] Scheduled jobs disabled (ENABLE_SCHEDULED_JOBS=false)');
-      }
-    }
+} else {
+  logger.info('[Server] AI processing workers disabled (ENABLE_AI_WORKERS=false)');
+}
 
-    // Initialize AI processing workers (lazy loaded)
-    if (process.env.ENABLE_AI_WORKERS !== 'false') {
-      try {
-        require('./workers/aiProcessingWorker');
-        if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-          logger.info('[Server] ✅ AI processing workers started');
-        }
-      } catch (error) {
-        logger.warn('[Server] ⚠️  AI processing workers not available:', error.message);
-        logger.warn('[Server] Set ENABLE_AI_WORKERS=false to disable AI workers');
-      }
-    } else {
-      if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-        logger.info('[Server] AI processing workers disabled (ENABLE_AI_WORKERS=false)');
-      }
-    }
+// Start server
+let server;
+try {
+  // Log startup attempt
+  logger.info(`[Server] Starting server on port ${PORT}...`);
+  logger.info(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
 
-    // Initialize WebSocket server (lazy loaded)
+  server = app.listen(PORT, "0.0.0.0", () => {
+    logger.info(`[Server] ✓ Server successfully started on port ${PORT}`);
+    logger.info(`[Server] ✓ Health check available at: http://0.0.0.0:${PORT}/health`);
+    logger.info(`[Server] ✓ Root endpoint available at: http://0.0.0.0:${PORT}/`);
+    
+    // Initialize WebSocket server
     if (process.env.ENABLE_WEBSOCKET !== 'false') {
       try {
         const { initializeWebSocketServer } = require('./websocket/server');
         initializeWebSocketServer(server);
-        if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-          logger.info('[Server] ✅ WebSocket server initialized');
-        }
+        logger.info('[Server] ✅ WebSocket server initialized');
       } catch (error) {
         logger.warn('[Server] ⚠️  WebSocket server not available:', error.message);
       }
     } else {
-      if (process.env.NODE_ENV !== 'production' || process.env.LOG_LEVEL === 'debug') {
-        logger.info('[Server] WebSocket server disabled (ENABLE_WEBSOCKET=false)');
-      }
+      logger.info('[Server] WebSocket server disabled (ENABLE_WEBSOCKET=false)');
     }
-  });
-});
-
-// Handle server errors
-server.on('error', (error) => {
-  if (error.syscall !== 'listen') {
-    throw error;
-  }
-  
-  switch (error.code) {
-    case 'EACCES':
-      logger.error(`Port ${PORT} requires elevated privileges`);
-      process.exit(1);
-      break;
-    case 'EADDRINUSE':
-      logger.error(`Port ${PORT} is already in use`);
-      process.exit(1);
-      break;
-    default:
-      throw error;
-  }
-});
-
-// Cloudflare Worker auto-deployment (only in production with proper credentials)
-if (process.env.NODE_ENV === 'production' && 
-    process.env.CLOUDFLARE_API_TOKEN && 
-    process.env.ENABLE_AUTO_WORKER_DEPLOY === 'true') {
-  
-  setImmediate(async () => {
-    try {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      const Config = require('./models/Config');
-      const existingWorkerUrl = await Config.get('cloudflareWorkerUrl', null);
-
-      if (!existingWorkerUrl) {
-        logger.info('[Server] Cloudflare Worker URL not found. Attempting auto-deployment...');
-        const { deployWorker } = require('../scripts/deploy-cloudflare-worker');
-        const workerUrl = await deployWorker();
-        if (workerUrl) {
-          logger.info(`[Server] Cloudflare Worker auto-deployed: ${workerUrl}`);
-        } else {
-          logger.warn('[Server] Cloudflare Worker auto-deployment skipped (no credentials or deployment failed)');
+    
+    // Signal that server is ready
+    if (process.send) {
+      process.send('ready');
+    }
+    
+    // Note: Cloudflare Worker auto-deployment is disabled on startup to prevent deployment failures
+    // Use the API endpoint POST /api/cloudflare-worker/deploy to deploy manually
+    // Auto-deployment can be enabled by setting ENABLE_AUTO_WORKER_DEPLOY=true
+    if (process.env.NODE_ENV === 'production' && 
+        process.env.CLOUDFLARE_API_TOKEN && 
+        process.env.ENABLE_AUTO_WORKER_DEPLOY === 'true') {
+      // Use setImmediate to ensure server is fully started before attempting deployment
+      setImmediate(async () => {
+        try {
+          // Add a small delay to ensure Parse is fully initialized
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          const Config = require('./models/Config');
+          const existingWorkerUrl = await Config.get('cloudflareWorkerUrl', null);
+          
+          if (!existingWorkerUrl) {
+            logger.info('[Server] Cloudflare Worker URL not found. Attempting auto-deployment...');
+            const { deployWorker } = require('../scripts/deploy-cloudflare-worker');
+            const workerUrl = await deployWorker();
+            if (workerUrl) {
+              logger.info(`[Server] Cloudflare Worker auto-deployed: ${workerUrl}`);
+            } else {
+              logger.warn('[Server] Cloudflare Worker auto-deployment skipped (no credentials or deployment failed)');
+            }
+          } else {
+            logger.info(`[Server] Cloudflare Worker URL found: ${existingWorkerUrl}`);
+          }
+        } catch (error) {
+          // Log error but don't crash the server
+          logger.error('[Server] Cloudflare Worker auto-deployment error:', error.message);
+          if (error.stack) {
+            logger.error('[Server] Stack:', error.stack);
+          }
+          // Continue server operation even if worker deployment fails
         }
-      } else {
-        logger.info(`[Server] Cloudflare Worker URL found: ${existingWorkerUrl}`);
-      }
-    } catch (error) {
-      logger.error('[Server] Cloudflare Worker auto-deployment error:', error.message);
-      if (error.stack) {
-        logger.error('[Server] Stack:', error.stack);
-      }
+      });
     }
   });
+
+  // Handle server errors
+  server.on('error', (error) => {
+    if (error.syscall !== 'listen') {
+      throw error;
+    }
+    
+    switch (error.code) {
+      case 'EACCES':
+        logger.error(`Port ${PORT} requires elevated privileges`);
+        process.exit(1);
+        break;
+      case 'EADDRINUSE':
+        logger.error(`Port ${PORT} is already in use`);
+        process.exit(1);
+        break;
+      default:
+        throw error;
+    }
+  });
+} catch (error) {
+  logger.error('Failed to start server:', error);
+  process.exit(1);
 }
+
+
+
 
