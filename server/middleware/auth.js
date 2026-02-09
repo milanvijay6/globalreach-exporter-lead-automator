@@ -56,7 +56,7 @@ const authenticateUser = async (req, res, next) => {
 
 const requireAuth = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
   }
   next();
 };
