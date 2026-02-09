@@ -1,4 +1,4 @@
-## 2026-01-23 - Critical Auth Bypass in Product API
-**Vulnerability:** The product creation, update, and deletion endpoints (`POST`, `PUT`, `DELETE /api/products`) were completely unauthenticated, allowing any user (or unauthenticated attacker) to modify the product catalog. The code relied on `useMasterKey: true` inside the route handlers but lacked any middleware to verify the user's identity.
-**Learning:** Checking for authentication *inside* a function (like `authenticateUser` does) is not enough if the middleware is not actually applied to the routes. Also, the pattern of "optional authentication" (where `req.user` can be null) makes it easy to forget to strictly check `if (!req.user)` in sensitive routes.
-**Prevention:** Always use a blocking `requireAuth` middleware for sensitive routes. Do not rely on "authentication middleware that just populates user but allows null". Enforce security at the router level.
+## 2024-05-22 - [CRITICAL] Unauthenticated Product Mutation
+**Vulnerability:** Product creation, update, and deletion endpoints (`POST`, `PUT`, `DELETE` /api/products) were completely unprotected, allowing any user (authenticated or not) to modify the product catalog.
+**Learning:** `useMasterKey: true` in Parse queries bypasses all ACLs/CLPs. When used in custom Express routes, it MUST be paired with strict application-level authentication checks (`requireAuth`), otherwise the endpoint acts as a "sudo" command for anyone.
+**Prevention:** Always apply `requireAuth` middleware to any route that performs mutation operations, especially when `useMasterKey: true` is used internally.
