@@ -1,7 +1,6 @@
-## 2026-02-03 - Missing Authentication on Leads Endpoint
-**Vulnerability:** The `/api/leads` endpoint was publicly accessible without any authentication. This Critical vulnerability exposed sensitive lead data (names, companies, contact details) to unauthenticated requests.
-**Learning:** The existing `authenticateUser` middleware was designed to be non-blocking (populating `req.user` if present, but allowing the request if not). There was no `requireAuth` middleware exported to enforce authentication. Developers likely assumed `authenticateUser` was sufficient or forgot to add a blocking check.
-**Prevention:**
-1. Implemented a strict `requireAuth` middleware in `server/middleware/auth.js` that returns 401 if no user is present.
-2. Applied `authenticateUser` and `requireAuth` to the entire `server/routes/leads.js` router.
-3. Future prevention: Use a "Fail Closed" approach where routes are protected by default, or use a linter rule to ensure sensitive routes have auth middleware.
+# Sentinel Security Journal
+
+## 2026-01-29 - Missing Authentication on Leads Endpoint
+**Vulnerability:** The `/api/leads` endpoints (GET list, POST send message) were completely unprotected. Any user could list all leads and send messages without authentication.
+**Learning:** The `authenticateUser` middleware was implemented but not blocking (it called `next()` even if no user was found). A `requireAuth` middleware was referenced in documentation/memory but not implemented in code. Developers might have assumed `authenticateUser` was enough or that `requireAuth` existed.
+**Prevention:** Always verify middleware behavior. Implement explicit `requireAuth` that returns 401. Apply auth middleware globally or systematically verify each route file.
