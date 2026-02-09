@@ -55,11 +55,13 @@ const authenticateUser = async (req, res, next) => {
 };
 
 const requireAuth = (req, res, next) => {
-  // Fail-closed: If Parse is not configured, deny access
+  // Check if Parse is initialized
   const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
   if (!hasValidAppId) {
-    console.error('[Auth Middleware] Parse Application ID missing in requireAuth');
-    return res.status(500).json({ success: false, error: 'Authentication configuration missing' });
+    // Fail Closed: If Parse is not initialized, we cannot verify users.
+    // We must block access to protected routes to prevent data leaks due to misconfiguration.
+    console.error('[Auth Middleware] Critical: Parse not initialized. Blocking request to protected route.');
+    return res.status(500).json({ success: false, error: 'Internal Server Error: Security misconfiguration' });
   }
 
   if (!req.user && !req.userId) {
