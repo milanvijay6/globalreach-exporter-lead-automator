@@ -20,20 +20,32 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build frontend
-        run: npm run build:react
+        run: npm run build
+
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
 
       - name: Archive build
         run: |
-          mkdir artifact
-          zip -r artifact/app.zip server build package.json package-lock.json
+          zip -r app.zip \
+            server \
+            build \
+            package.json \
+            package-lock.json \
+            .npmrc \
+            .deployment \
+            deploy.sh \
+            startup.sh \
+            web.config \
+            node_modules \
+            -x "node_modules/.cache/*"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: artifact/app.zip
-
+          package: app.zip

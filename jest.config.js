@@ -13,6 +13,6 @@ module.exports = {
     }]
   },
   testMatch: [
-    "**/tests/unit/**/*.test.(ts|tsx)"
+    "**/tests/unit/**/*.test.(ts|tsx|js)"
   ]
 };
