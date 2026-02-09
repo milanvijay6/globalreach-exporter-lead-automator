@@ -55,15 +55,8 @@ const authenticateUser = async (req, res, next) => {
 };
 
 const requireAuth = (req, res, next) => {
-  // Fail-closed: if Parse is not initialized, deny access
-  const hasValidAppId = Parse.applicationId && Parse.applicationId.trim() !== '';
-  if (!hasValidAppId) {
-    console.error('[Auth Middleware] Critical: Parse Application ID missing in requireAuth');
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-
   if (!req.user && !req.userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
   }
   next();
 };
