@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "vite",
+    "build": "vite build",
+    "test": "jest",
     "preview": "vite preview",
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 BUILD_OUT_DIR=build vite build",
     "build:react": "npm run build",
