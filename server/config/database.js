@@ -60,9 +60,11 @@ async function connectDatabase() {
     
     isConnected = true;
     logger.info(`[Database] ✅ Connected to MongoDB database: ${dbName}`);
-    
-    // Create indexes for optimal performance
-    await createIndexes(db);
+
+    // Create indexes in the background (don't block startup)
+    setImmediate(() => createIndexes(db).catch(e =>
+      logger.warn('[Database] Background index creation failed:', e.message)
+    ));
     
     return db;
   } catch (error) {
