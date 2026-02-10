@@ -1,21 +1,20 @@
 
 import React, { useState, useEffect, useRef, useCallback, startTransition, Suspense, lazy } from 'react';
 import { Download, Upload, Play, Zap, LayoutDashboard, Lock, Loader2 } from 'lucide-react';
-import ImporterList from './components/ImporterList';
-import ChatInterface from './components/ChatInterface';
-import LeadImportWizard from './components/LeadImportWizard';
-import ReportConfigModal from './components/ReportConfigModal';
-import LoginScreen from './components/LoginScreen';
-import PinLockScreen from './components/PinLockScreen';
-import { PinService } from './services/pinService';
-import { OwnerAuthService } from './services/ownerAuthService';
-import Navigation from './components/Navigation';
-import HelpModal from './components/HelpModal';
 import ErrorBoundary from './components/ErrorBoundary';
-import SourceCodeViewer from './components/SourceCodeViewer';
 import LoadingBar from './components/LoadingBar';
+import { OwnerAuthService } from './services/ownerAuthService';
 
-// Lazy load heavy components for code splitting
+// Lazy load ALL heavy components for code splitting (fast initial load)
+const ImporterList = lazy(() => import('./components/ImporterList'));
+const ChatInterface = lazy(() => import('./components/ChatInterface'));
+const LeadImportWizard = lazy(() => import('./components/LeadImportWizard'));
+const ReportConfigModal = lazy(() => import('./components/ReportConfigModal'));
+const LoginScreen = lazy(() => import('./components/LoginScreen'));
+const PinLockScreen = lazy(() => import('./components/PinLockScreen'));
+const Navigation = lazy(() => import('./components/Navigation'));
+const HelpModal = lazy(() => import('./components/HelpModal'));
+const SourceCodeViewer = lazy(() => import('./components/SourceCodeViewer'));
 const SettingsModal = lazy(() => import('./components/SettingsModal'));
 const AnalyticsDashboard = lazy(() => import('./components/AnalyticsDashboard'));
 const OwnerAdminPanel = lazy(() => import('./components/OwnerAdminPanel'));

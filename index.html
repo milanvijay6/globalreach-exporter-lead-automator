@@ -11,23 +11,39 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>GlobalReach - AI Exporter Agent</title>
     
-    <!-- Preconnect to external domains -->
+    <!-- DNS prefetch + preconnect to external domains -->
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    
-    <!-- Preload critical resources -->
-    <link rel="preload" href="/index.css" as="style">
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" as="style">
-    
-    <!-- Load fonts with display swap for performance -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
-    
-    <!-- Critical CSS inline would go here, but keeping external for now -->
-    <link rel="stylesheet" href="/index.css">
+
+    <!-- Critical CSS inline for instant first paint -->
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;color:#0f172a}
+      #root{width:100%;height:100vh;display:flex;align-items:center;justify-content:center}
+      .app-loader{text-align:center}
+      .app-spinner{width:40px;height:40px;border:4px solid #e2e8f0;border-top-color:#6366f1;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+      @keyframes spin{to{transform:rotate(360deg)}}
+      .app-loader-text{color:#64748b;font-size:14px}
+    </style>
+
+    <!-- Load main CSS (non-blocking) -->
+    <link rel="stylesheet" href="/index.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="/index.css"></noscript>
+
+    <!-- Load fonts (non-blocking, reduced weights) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
   </head>
   <body class="bg-slate-100 text-slate-900 h-full overflow-hidden" style="margin: 0; padding: 0; width: 100%; height: 100%;">
-    <div id="root" class="h-full w-full" style="margin: 0; padding: 0; width: 100%; height: 100%;"></div>
+    <div id="root" class="h-full w-full" style="margin: 0; padding: 0; width: 100%; height: 100%;">
+      <!-- Instant loading skeleton (replaced by React) -->
+      <div class="app-loader">
+        <div class="app-spinner"></div>
+        <p class="app-loader-text">Loading GlobalReach...</p>
+      </div>
+    </div>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>
