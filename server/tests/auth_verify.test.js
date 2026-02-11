@@ -26,7 +26,7 @@ test('requireAuth blocks request without user', () => {
 
   assert.strictEqual(statusCalledWith, 401);
   assert.strictEqual(jsonCalledWith.success, false);
-  assert.strictEqual(jsonCalledWith.error, 'Unauthorized');
+  assert.strictEqual(jsonCalledWith.error, 'Unauthorized: Authentication required');
   assert.strictEqual(nextCalled, false);
 });
 
