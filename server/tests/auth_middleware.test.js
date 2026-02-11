@@ -26,7 +26,7 @@ describe('Auth Middleware', () => {
       }),
       json: t.mock.fn((data) => {
         assert.strictEqual(data.success, false);
-        assert.strictEqual(data.error, 'Unauthorized');
+        assert.strictEqual(data.error, 'Unauthorized: Authentication required');
       })
     };
     const next = t.mock.fn();
