@@ -1,0 +1,818 @@
+================================================================================
+        OPTIMIZATION REQUIREMENTS CHECKLIST
+        Required Details to Improve Optimization Solution
+================================================================================
+
+
+================================================================================
+SECTION 1: APPLICATION BASICS
+================================================================================
+
+1.1 Application Type
+--------------------
+[ ] E-commerce website
+[ ] Blog/Content website
+[ ] Business/Corporate website
+[ ] Web API/REST API
+[ ] SaaS application
+[ ] Portfolio/Personal website
+[ ] Dashboard/Admin panel
+[ ] Other: _______________
+
+1.2 Primary Purpose
+-------------------
+What does your application do? (Describe in 1-2 sentences)
+
+[Your answer here]
+
+1.3 Critical Features
+---------------------
+List the 3-5 most important features that MUST work:
+1.
+2.
+3.
+4.
+5.
+
+
+================================================================================
+SECTION 2: TECHNICAL STACK
+================================================================================
+
+2.1 Backend Technology
+----------------------
+[ ] ASP.NET Core MVC
+[ ] ASP.NET Core Web API
+[ ] ASP.NET Core Razor Pages
+[ ] ASP.NET Framework (.NET 4.x)
+[ ] Node.js
+[ ] PHP
+[ ] Python (Django/Flask)
+[ ] Other: _______________
+
+Framework Version: .NET _____ (e.g., .NET 6, .NET 7, .NET 8)
+
+2.2 Frontend Technology
+-----------------------
+[ ] Razor Views (server-side rendering)
+[ ] React
+[ ] Angular
+[ ] Vue.js
+[ ] Blazor
+[ ] Plain HTML/CSS/JavaScript
+[ ] jQuery
+[ ] Other: _______________
+
+2.3 Database
+------------
+[ ] SQL Server (on-premise)
+[ ] Azure SQL Database
+[ ] MySQL
+[ ] PostgreSQL
+[ ] SQLite
+[ ] MongoDB
+[ ] No database (static site)
+[ ] Other: _______________
+
+Database Size:
+[ ] Less than 100 MB
+[ ] 100 MB - 1 GB
+[ ] 1 GB - 10 GB
+[ ] More than 10 GB
+
+Number of Tables: _____ tables
+Largest Table: _____ rows
+
+2.4 ORM/Data Access
+-------------------
+[ ] Entity Framework Core
+[ ] Entity Framework 6
+[ ] Dapper
+[ ] ADO.NET
+[ ] Other: _______________
+
+2.5 CSS Framework
+-----------------
+[ ] Bootstrap 3
+[ ] Bootstrap 4
+[ ] Bootstrap 5
+[ ] Tailwind CSS
+[ ] Material UI
+[ ] Custom CSS only
+[ ] Other: _______________
+
+2.6 Third-Party Libraries
+-------------------------
+List any important libraries you're using:
+
+Examples:
+- AutoMapper
+- Newtonsoft.Json
+- Serilog
+- SignalR
+- etc.
+
+[Your list here]
+
+
+================================================================================
+SECTION 3: CURRENT AZURE SETUP
+================================================================================
+
+3.1 Azure App Service Details
+------------------------------
+App Service Name: _____________________
+Region/Location: _____________________
+
+Current Tier:
+[ ] Free (F1)
+[ ] Shared (D1)
+[ ] Basic (B1, B2, B3)
+[ ] Standard (S1, S2, S3)
+[ ] Don't know
+
+Operating System:
+[ ] Windows
+[ ] Linux
+[ ] Don't know
+
+Platform Version:
+[ ] 32-bit
+[ ] 64-bit
+[ ] Don't know
+
+3.2 Database Hosting
+--------------------
+Where is your database hosted?
+[ ] Same Azure subscription
+[ ] Different Azure subscription
+[ ] External hosting (e.g., on-premise)
+[ ] Embedded (SQLite)
+[ ] No database
+
+Connection String (remove sensitive info):
+Example: Server=myserver.database.windows.net;Database=mydb;User Id=...
+
+[Your connection string pattern here]
+
+3.3 Current Configuration
+-------------------------
+Do you have these files? (Check all that apply)
+[ ] web.config
+[ ] appsettings.json
+[ ] appsettings.Production.json
+[ ] Program.cs or Startup.cs
+[ ] Don't know
+
+
+================================================================================
+SECTION 4: PERFORMANCE METRICS
+================================================================================
+
+4.1 Current Performance Problems
+---------------------------------
+Check all issues you're experiencing:
+[ ] Very slow initial page load (20+ seconds)
+[ ] Slow subsequent page loads (5+ seconds)
+[ ] App becomes unresponsive/freezes
+[ ] Timeout errors
+[ ] 503 Service Unavailable errors
+[ ] Database connection errors
+[ ] High memory usage warnings
+[ ] App restarts frequently
+[ ] Images load very slowly
+[ ] Search functionality is slow
+[ ] Forms take long to submit
+[ ] Other: _______________
+
+4.2 Measured Performance (if known)
+------------------------------------
+Homepage Load Time:
+[ ] 0-5 seconds
+[ ] 5-10 seconds
+[ ] 10-20 seconds
+[ ] 20-30 seconds
+[ ] 30+ seconds
+[ ] Haven't measured
+
+Other Pages Load Time:
+[ ] 0-3 seconds
+[ ] 3-5 seconds
+[ ] 5-10 seconds
+[ ] 10+ seconds
+[ ] Haven't measured
+
+Database Query Time (average):
+[ ] Under 100ms
+[ ] 100-500ms
+[ ] 500ms-1s
+[ ] 1-3 seconds
+[ ] 3+ seconds
+[ ] Haven't measured
+
+4.3 Error Frequency
+-------------------
+How often do users encounter errors?
+[ ] Constantly (multiple times per session)
+[ ] Frequently (once per session)
+[ ] Occasionally (few times per week)
+[ ] Rarely (once a month or less)
+[ ] Never
+
+
+================================================================================
+SECTION 5: TRAFFIC & USAGE
+================================================================================
+
+5.1 User Traffic
+----------------
+Average daily visitors:
+[ ] Less than 50
+[ ] 50-200
+[ ] 200-500
+[ ] 500-1,000
+[ ] 1,000-5,000
+[ ] 5,000+
+
+Peak traffic times:
+Example: Weekdays 9am-5pm, especially lunch time (12-1pm)
+
+[Your answer here]
+
+Concurrent users (at peak):
+[ ] Less than 10
+[ ] 10-50
+[ ] 50-100
+[ ] 100-500
+[ ] 500+
+
+5.2 Geographic Distribution
+----------------------------
+Where are your users located?
+[ ] Single country: _______________
+[ ] Multiple countries in same region (e.g., Europe, Asia)
+[ ] Global/worldwide
+[ ] Don't know
+
+5.3 Device Usage
+----------------
+Primary devices your users use:
+[ ] Desktop/Laptop only
+[ ] Mobile only
+[ ] 50/50 Desktop and Mobile
+[ ] Mostly mobile (70%+)
+[ ] Mostly desktop (70%+)
+[ ] Don't know
+
+
+================================================================================
+SECTION 6: CONTENT & DATA
+================================================================================
+
+6.1 Pages/Endpoints
+-------------------
+Total number of pages/views: _____ pages
+
+Most visited pages (list top 3-5):
+1.
+2.
+3.
+4.
+5.
+
+6.2 Data Volume
+---------------
+Average items displayed per page:
+[ ] Less than 10
+[ ] 10-50
+[ ] 50-100
+[ ] 100+
+
+Do you have pagination?
+[ ] Yes, on all lists
+[ ] Yes, on some lists
+[ ] No pagination anywhere
+[ ] Don't know
+
+6.3 Images & Media
+------------------
+Number of images on typical page: _____ images
+
+Average image file size:
+[ ] Less than 50 KB
+[ ] 50-200 KB
+[ ] 200-500 KB
+[ ] 500 KB - 1 MB
+[ ] 1 MB+
+[ ] Don't know
+
+Image format used:
+[ ] JPG/JPEG
+[ ] PNG
+[ ] WebP
+[ ] GIF
+[ ] SVG
+[ ] Mix of above
+[ ] Don't know
+
+Do you have videos?
+[ ] No videos
+[ ] YouTube/Vimeo embeds only
+[ ] Self-hosted videos
+[ ] Both embeds and self-hosted
+
+6.4 File Storage
+----------------
+Where are files/images stored?
+[ ] In the web app folder
+[ ] Azure Blob Storage
+[ ] Database (as BLOB)
+[ ] External CDN
+[ ] Other: _______________
+
+
+================================================================================
+SECTION 7: FEATURES & FUNCTIONALITY
+================================================================================
+
+7.1 User Authentication
+-----------------------
+[ ] No login/authentication
+[ ] ASP.NET Core Identity
+[ ] Azure AD / Microsoft Identity
+[ ] Social login (Google, Facebook, etc.)
+[ ] Custom authentication
+[ ] Other: _______________
+
+7.2 Search Functionality
+------------------------
+[ ] No search feature
+[ ] Simple keyword search
+[ ] Full-text search
+[ ] Advanced search with filters
+[ ] Search with autocomplete
+
+Where do you search?
+[ ] Database tables
+[ ] Files/documents
+[ ] Both
+
+7.3 Real-time Features
+----------------------
+Do you use any of these?
+[ ] SignalR (real-time updates)
+[ ] WebSockets
+[ ] Server-Sent Events
+[ ] Long polling
+[ ] None
+
+7.4 Background Jobs
+-------------------
+[ ] No background jobs
+[ ] Hangfire
+[ ] Azure Functions
+[ ] Windows Services
+[ ] Custom scheduled tasks
+[ ] Other: _______________
+
+7.5 External API Calls
+----------------------
+Do you call external APIs?
+[ ] No external APIs
+[ ] Payment gateways (Stripe, PayPal, etc.)
+[ ] Email services (SendGrid, Mailgun, etc.)
+[ ] SMS services (Twilio, etc.)
+[ ] Social media APIs
+[ ] Maps/Location services
+[ ] Other: _______________
+
+How often?
+[ ] Every page load
+[ ] Occasionally (user-triggered)
+[ ] Background only
+[ ] Rarely
+
+7.6 Caching
+-----------
+What caching do you currently use?
+[ ] No caching at all
+[ ] Output/Response caching
+[ ] In-memory caching (IMemoryCache)
+[ ] Distributed caching (Redis)
+[ ] Browser caching
+[ ] Don't know
+
+
+================================================================================
+SECTION 8: CODE PATTERNS
+================================================================================
+
+8.1 Database Queries
+--------------------
+How do you typically fetch data?
+
+Example of a typical query (code snippet):
+// Example:
+// var products = await _context.Products.ToListAsync();
+
+[Paste a typical query from your code here]
+
+Do you use these?
+[ ] .AsNoTracking()
+[ ] .Include() / .ThenInclude()
+[ ] Projection (.Select())
+[ ] Stored procedures
+[ ] Raw SQL queries
+[ ] Don't know / Don't use any of these
+
+8.2 Repository Pattern
+----------------------
+[ ] Use repository pattern
+[ ] Direct DbContext usage in controllers
+[ ] Service layer with repositories
+[ ] CQRS pattern
+[ ] Other: _______________
+
+8.3 Dependency Injection
+------------------------
+How are services registered?
+[ ] Transient
+[ ] Scoped
+[ ] Singleton
+[ ] Mix of above
+[ ] Don't know
+
+
+================================================================================
+SECTION 9: DEPLOYMENT & CI/CD
+================================================================================
+
+9.1 Deployment Method
+---------------------
+How do you deploy to Azure?
+[ ] Visual Studio (right-click publish)
+[ ] VS Code with Azure extension
+[ ] Azure Portal (upload ZIP)
+[ ] Git deployment
+[ ] GitHub Actions
+[ ] Azure DevOps
+[ ] FTP
+[ ] Other: _______________
+
+9.2 Build Configuration
+-----------------------
+What build configuration do you use?
+[ ] Debug
+[ ] Release
+[ ] Don't know
+
+9.3 Deployment Frequency
+------------------------
+How often do you deploy?
+[ ] Multiple times per day
+[ ] Daily
+[ ] Weekly
+[ ] Monthly
+[ ] Rarely (only when needed)
+
+
+================================================================================
+SECTION 10: EXISTING OPTIMIZATIONS
+================================================================================
+
+10.1 What Have You Already Tried?
+----------------------------------
+Check all that apply:
+[ ] Enabled compression
+[ ] Added caching
+[ ] Optimized images
+[ ] Minified CSS/JS
+[ ] Added database indexes
+[ ] Used async/await
+[ ] Disabled Application Insights
+[ ] Upgraded to paid tier (then downgraded)
+[ ] Nothing yet
+[ ] Other: _______________
+
+10.2 What Worked?
+
+[Describe any optimizations that helped]
+
+10.3 What Didn't Work?
+
+[Describe what you tried but didn't help]
+
+
+================================================================================
+SECTION 11: MONITORING & DIAGNOSTICS
+================================================================================
+
+11.1 Application Insights
+--------------------------
+[ ] Enabled and actively using
+[ ] Enabled but not checking
+[ ] Disabled
+[ ] Don't know what this is
+
+11.2 Error Logging
+------------------
+How do you track errors?
+[ ] Application Insights
+[ ] Custom logging to file
+[ ] Database logging
+[ ] Third-party service (Sentry, etc.)
+[ ] Console logs only
+[ ] No error logging
+
+11.3 Performance Monitoring
+---------------------------
+Do you monitor any of these?
+[ ] CPU usage
+[ ] Memory usage
+[ ] Response times
+[ ] Database query times
+[ ] Bandwidth usage
+[ ] None of the above
+
+
+================================================================================
+SECTION 12: CONSTRAINTS & REQUIREMENTS
+================================================================================
+
+12.1 Budget
+-----------
+Can you upgrade from Free tier?
+[ ] No, must stay on Free tier
+[ ] Can upgrade to Basic ($13/month) if necessary
+[ ] Can upgrade to Standard ($75/month) if necessary
+[ ] Budget is flexible
+[ ] Need to justify cost with metrics
+
+12.2 Downtime Tolerance
+-----------------------
+Can the app be down during deployment?
+[ ] Yes, can be down for 5-10 minutes
+[ ] Can be down during off-peak hours only
+[ ] Must have zero downtime
+[ ] Don't know
+
+12.3 Feature Priorities
+-----------------------
+If you had to choose, what's most important?
+Rank from 1 (most important) to 5 (least important):
+
+___ Fast initial page load
+___ Fast subsequent page loads
+___ Low memory usage
+___ No errors/crashes
+___ Support high traffic
+
+12.4 Compliance/Security
+------------------------
+Do you need to comply with:
+[ ] GDPR (data privacy)
+[ ] HIPAA (healthcare)
+[ ] PCI DSS (payment cards)
+[ ] SOC 2
+[ ] No specific compliance
+[ ] Other: _______________
+
+
+================================================================================
+SECTION 13: FILES & ACCESS
+================================================================================
+
+13.1 Can You Provide?
+---------------------
+Check what you can share:
+[ ] Current Program.cs or Startup.cs
+[ ] Current appsettings.json (with secrets removed)
+[ ] Sample controller code
+[ ] Database schema/migrations
+[ ] Current web.config
+[ ] Package.json or .csproj file
+[ ] Sample HTML/Razor views
+[ ] Azure Portal screenshots
+[ ] Performance metrics/logs
+
+13.2 Access Level
+-----------------
+[ ] I have full access to Azure Portal
+[ ] I have limited access
+[ ] Someone else manages Azure
+[ ] I can get access if needed
+
+13.3 Code Access
+----------------
+[ ] I have full source code access
+[ ] I have partial access
+[ ] Someone else has the code
+[ ] Code is in version control (Git)
+
+
+================================================================================
+SECTION 14: TIMELINE & URGENCY
+================================================================================
+
+14.1 How Urgent?
+----------------
+[ ] Emergency - app is down/unusable
+[ ] Very urgent - users complaining daily
+[ ] Somewhat urgent - noticeable problems
+[ ] Not urgent - want to improve proactively
+
+14.2 Implementation Timeline
+----------------------------
+When do you need this working?
+[ ] Within 24 hours
+[ ] Within 1 week
+[ ] Within 1 month
+[ ] No specific deadline
+
+14.3 Available Time
+-------------------
+How much time can you dedicate?
+[ ] A few hours total
+[ ] 1-2 days
+[ ] 1 week
+[ ] As long as it takes
+
+
+================================================================================
+SECTION 15: SPECIFIC PROBLEM AREAS
+================================================================================
+
+15.1 Slowest Pages/Features
+----------------------------
+List the specific pages or features that are slowest:
+1.
+2.
+3.
+4.
+5.
+
+15.2 Error Messages
+-------------------
+What error messages do you see? (paste exact messages)
+
+[Paste error messages here]
+
+15.3 Browser Console Errors
+----------------------------
+Any JavaScript errors in browser console?
+
+[Paste console errors here]
+
+
+================================================================================
+SECTION 16: SUCCESS DEFINITION
+================================================================================
+
+16.1 Ideal Performance
+----------------------
+What would success look like for you?
+
+Homepage load time: _____ seconds
+Other pages load time: _____ seconds
+Maximum acceptable downtime: _____ minutes per month
+Can handle _____ concurrent users
+
+16.2 Deal Breakers
+------------------
+What absolutely cannot break?
+
+Example:
+- User login must work
+- Payment processing must work
+- Search must return results
+
+[Your list here]
+
+
+================================================================================
+SECTION 17: ADDITIONAL CONTEXT
+================================================================================
+
+17.1 Special Considerations
+---------------------------
+Anything else we should know?
+
+Examples:
+- Using custom authentication
+- Have scheduled maintenance windows
+- Planning to migrate to different platform
+- Have specific security requirements
+- Need to support old browsers (IE11, etc.)
+
+[Your additional context here]
+
+17.2 Future Plans
+-----------------
+What are your plans for this app?
+[ ] Keep as-is long-term
+[ ] Plan to add more features
+[ ] Plan to migrate to different platform
+[ ] Plan to upgrade Azure tier soon
+[ ] Temporary/short-term project
+[ ] Don't know
+
+17.3 Similar Apps
+-----------------
+Have you built similar apps before?
+[ ] Yes, and they work fine
+[ ] Yes, but had similar issues
+[ ] No, this is my first Azure deployment
+[ ] No, but have experience with other platforms
+
+
+================================================================================
+SECTION 18: CONTACT & FOLLOW-UP
+================================================================================
+
+18.1 Preferred Communication
+-----------------------------
+How should we follow up with questions?
+[ ] Email
+[ ] Chat/messaging
+[ ] Video call
+[ ] No follow-up needed - just use this info
+
+18.2 Technical Skill Level
+---------------------------
+Rate your comfort level (1-5, 5 being expert):
+
+Backend development:    ___/5
+Frontend development:   ___/5
+Database optimization:  ___/5
+Azure services:         ___/5
+DevOps/deployment:      ___/5
+
+18.3 Learning Preference
+-------------------------
+[ ] Give me code to copy-paste
+[ ] Explain each step in detail
+[ ] Show me how to do it (video/screenshots)
+[ ] Mix of explanation and ready-to-use code
+
+
+================================================================================
+SUMMARY CHECKLIST
+================================================================================
+
+Before submitting, make sure you've answered:
+
+[ ] Section 1:  Application Basics
+[ ] Section 2:  Technical Stack
+[ ] Section 3:  Current Azure Setup
+[ ] Section 4:  Performance Metrics
+[ ] Section 5:  Traffic & Usage
+[ ] Section 6:  Content & Data
+[ ] Section 7:  Features & Functionality
+[ ] Section 8:  Code Patterns
+[ ] Section 9:  Deployment & CI/CD
+[ ] Section 10: Existing Optimizations
+[ ] Section 11: Monitoring & Diagnostics
+[ ] Section 12: Constraints & Requirements
+[ ] Section 13: Files & Access
+[ ] Section 14: Timeline & Urgency
+[ ] Section 15: Specific Problem Areas
+[ ] Section 16: Success Definition
+[ ] Section 17: Additional Context
+[ ] Section 18: Contact & Follow-up
+
+
+================================================================================
+HOW TO USE THIS QUESTIONNAIRE
+================================================================================
+
+1. Fill out as much as you can - Don't worry if you don't know everything
+2. Be specific - The more details, the better the optimization solution
+3. Include examples - Code snippets, error messages, screenshots help a lot
+4. Prioritize sections - Sections 1-6 are most critical
+5. Don't guess - If you don't know, say "Don't know" rather than guessing
+
+Once complete, copy all your answers and include them with the comprehensive
+optimization prompt!
+
+
+================================================================================
+QUICK START (Minimum Required Info)
+================================================================================
+
+If you're in a hurry, at minimum provide:
+
+MUST HAVE:
+1.  Application type (Section 1.1)
+2.  Backend framework and version (Section 2.1)
+3.  Database type (Section 2.3)
+4.  Current performance issues (Section 4.1)
+5.  Average load times (Section 4.2)
+6.  Daily visitors (Section 5.1)
+
+NICE TO HAVE:
+7.  Technical stack details (Section 2)
+8.  Current Azure setup (Section 3)
+9.  Sample code (Section 8.1)
+10. What you've already tried (Section 10)
+
+================================================================================
