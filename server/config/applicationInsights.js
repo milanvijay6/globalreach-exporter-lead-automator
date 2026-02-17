@@ -1,5 +1,6 @@
 const appInsights = require('applicationinsights');
 const winston = require('winston');
+const freeTierConfig = require('./freeTier');
 
 // Logger
 const logger = winston.createLogger({
@@ -39,12 +40,12 @@ function initializeApplicationInsights() {
     appInsights.setup(connectionString)
       .setAutoDependencyCorrelation(true)
       .setAutoCollectRequests(true)
-      .setAutoCollectPerformance(true, true)
+      .setAutoCollectPerformance(true, !freeTierConfig.isFreeTier)
       .setAutoCollectExceptions(true)
       .setAutoCollectDependencies(true)
-      .setAutoCollectConsole(true, true)
+      .setAutoCollectConsole(true, false)
       .setUseDiskRetryCaching(true)
-      .setSendLiveMetrics(true)
+      .setSendLiveMetrics(!freeTierConfig.isFreeTier)
       .setDistributedTracingMode(appInsights.DistributedTracingModes.AI_AND_W3C)
       .start();
     

@@ -1,6 +1,7 @@
 const { Worker } = require('bullmq');
 const { getRedis } = require('../config/redis');
 const winston = require('winston');
+const freeTierConfig = require('../config/freeTier');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -169,24 +170,17 @@ async function processCampaignMessage(job) {
   }
 }
 
-// Detect if running on Azure Free Tier
-function isFreeTier() {
-  return process.env.AZURE_FREE_TIER === 'true' || 
-         process.env.WEBSITE_SKU === 'Free' ||
-         (process.env.WEBSITE_INSTANCE_ID && !process.env.WEBSITE_SKU);
-}
-
 // Create workers if Redis connection is available
 let whatsappWorker = null;
 let emailWorker = null;
 let campaignWorker = null;
 
 if (connection) {
-  const freeTier = isFreeTier();
-  const whatsappConcurrency = freeTier ? 2 : 5;
-  const emailConcurrency = freeTier ? 3 : 10;
-  const campaignConcurrency = freeTier ? 1 : 2;
-  
+  const freeTier = freeTierConfig.isFreeTier;
+  const whatsappConcurrency = freeTierConfig.workerConcurrency.whatsapp;
+  const emailConcurrency = freeTierConfig.workerConcurrency.email;
+  const campaignConcurrency = freeTierConfig.workerConcurrency.campaign;
+
   if (freeTier) {
     logger.info('[MessageWorker] Free tier detected - reducing worker concurrency');
   }

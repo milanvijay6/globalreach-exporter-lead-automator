@@ -1,3 +1,9 @@
+// Process-level optimizations for Azure F1 Free Tier
+process.title = 'globalreach-crm';
+if (!process.env.UV_THREADPOOL_SIZE) {
+  process.env.UV_THREADPOOL_SIZE = '2';
+}
+
 const express = require('express');
 require("dotenv").config();
 const path = require('path');
@@ -5,6 +11,7 @@ const fs = require('fs');
 const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const freeTierConfig = require('./config/freeTier');
 
 // Lightweight logger for startup (winston loaded lazily)
 let logger = {
@@ -22,12 +29,19 @@ const PORT = process.env.PORT || 8080;
 
 // Health check FIRST - Azure load balancer needs this ASAP
 app.get('/health', (req, res) => {
+  const mem = process.memoryUsage();
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: process.env.npm_package_version || '1.0.0',
     phase: app.locals.initPhase || 'starting',
+    freeTier: freeTierConfig.isFreeTier,
+    memory: {
+      rss: Math.round(mem.rss / 1024 / 1024),
+      heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+    },
   });
 });
 
@@ -39,8 +53,8 @@ app.use(helmet({
 
 // Rate limiting (skip health checks)
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
+  windowMs: freeTierConfig.rateLimitWindowMs,
+  max: parseInt(process.env.RATE_LIMIT_MAX || String(freeTierConfig.rateLimitMax), 10),
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -49,20 +63,30 @@ app.use(rateLimit({
 
 // Compression - gzip only (async, fast). Brotli sync is too slow for cold starts.
 app.use(compression({
-  threshold: 1024,
+  threshold: freeTierConfig.compressionThreshold,
   level: 6,
 }));
 
 // Body parsing
 app.use(express.json({
-  limit: '10mb',
+  limit: '2mb',
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// CORS
+// CORS - configurable via ALLOWED_ORIGINS env var (comma-separated), defaults to '*'
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  if (ALLOWED_ORIGINS === '*') {
+    res.header('Access-Control-Allow-Origin', '*');
+  } else {
+    const origin = req.headers.origin;
+    const allowed = ALLOWED_ORIGINS.split(',').map(s => s.trim());
+    if (origin && allowed.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+    }
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
@@ -184,8 +208,8 @@ async function initializeBackground() {
     }, 5000);
   }
 
-  // 3g. AI workers (deferred)
-  if (process.env.ENABLE_AI_WORKERS !== 'false') {
+  // 3g. AI workers (deferred, disabled on free tier)
+  if (freeTierConfig.features.aiWorkers) {
     setTimeout(() => {
       try {
         require('./workers/aiProcessingWorker');
@@ -196,8 +220,8 @@ async function initializeBackground() {
     }, 8000);
   }
 
-  // 3h. WebSocket server (deferred)
-  if (process.env.ENABLE_WEBSOCKET !== 'false' && server) {
+  // 3h. WebSocket server (deferred, disabled on free tier)
+  if (freeTierConfig.features.websocket && server) {
     setTimeout(() => {
       try {
         const { initializeWebSocketServer } = require('./websocket/server');

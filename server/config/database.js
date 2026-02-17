@@ -1,5 +1,6 @@
 const { MongoClient } = require('mongodb');
 const winston = require('winston');
+const freeTierConfig = require('./freeTier');
 
 // Logger setup
 const logger = winston.createLogger({
@@ -39,8 +40,8 @@ async function connectDatabase() {
 
     // MongoDB connection options optimized for Azure Cosmos DB
     const options = {
-      maxPoolSize: 10,
-      minPoolSize: 2,
+      maxPoolSize: freeTierConfig.dbMaxPoolSize,
+      minPoolSize: freeTierConfig.dbMinPoolSize,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
       retryWrites: false, // Azure Cosmos DB doesn't support retryable writes

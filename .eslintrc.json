@@ -16,8 +16,8 @@
     "no-useless-escape": "off",
     "no-redeclare": "off",
     "no-prototype-builtins": "off",
-    "no-undef": "off",
-    "no-async-promise-executor": "off"
+    "no-undef": "warn",
+    "no-async-promise-executor": "warn"
   },
   "env": {
     "node": true,
