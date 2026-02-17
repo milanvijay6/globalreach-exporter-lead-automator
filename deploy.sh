@@ -7,13 +7,20 @@ echo "Running Azure deployment script..."
 # Navigate to deployment directory
 cd "$DEPLOYMENT_TARGET" 2>/dev/null || cd /home/site/wwwroot
 
+# Detect Free Tier
+IS_FREE_TIER="false"
+if [ "$AZURE_FREE_TIER" = "true" ] || [ "$WEBSITE_SKU" = "Free" ]; then
+    IS_FREE_TIER="true"
+    echo "Azure F1 Free Tier detected - production-only dependencies"
+fi
+
 # Install production dependencies if node_modules doesn't exist or is incomplete
 if [ ! -d "node_modules" ] || [ ! -f "node_modules/express/package.json" ]; then
     echo "Installing production dependencies..."
     if [ -f "package-lock.json" ]; then
-        npm ci --production --legacy-peer-deps 2>&1 || npm install --production --legacy-peer-deps 2>&1
+        npm ci --omit=dev 2>&1 || npm install --omit=dev 2>&1
     else
-        npm install --production --legacy-peer-deps 2>&1
+        npm install --omit=dev 2>&1
     fi
 
     if [ $? -ne 0 ]; then
@@ -25,8 +32,10 @@ else
     echo "node_modules found, skipping dependency installation"
 fi
 
-# Build frontend if build directory doesn't exist
-if [ ! -d "build" ] || [ ! -f "build/index.html" ]; then
+# Build frontend if build directory doesn't exist (skip on Free Tier)
+if [ "$IS_FREE_TIER" = "true" ]; then
+    echo "Free Tier: Skipping frontend build (should be pre-built in CI)"
+elif [ ! -d "build" ] || [ ! -f "build/index.html" ]; then
     echo "Build directory not found. Attempting frontend build..."
     # Only build if vite is available (it may have been pruned)
     if [ -f "node_modules/.bin/vite" ]; then

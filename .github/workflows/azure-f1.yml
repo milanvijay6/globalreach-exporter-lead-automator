@@ -1,0 +1,67 @@
+name: Deploy to Azure F1 Free Tier
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install production dependencies only
+      run: npm ci --omit=dev
+
+    - name: Create minimal deployment package
+      run: |
+        mkdir -p deploy
+        cp -r server deploy/
+        cp -r build deploy/ 2>/dev/null || echo "No pre-built frontend, server-only deploy"
+        cp package.json deploy/
+        cp package-lock.json deploy/
+        cp web.config deploy/
+        cp deploy.sh deploy/ 2>/dev/null || true
+        cp .deployment deploy/ 2>/dev/null || true
+        cp .npmrc deploy/ 2>/dev/null || true
+
+    - name: Upload artifact for deployment
+      uses: actions/upload-artifact@v4
+      with:
+        name: node-app
+        path: deploy/
+
+    - name: Deploy to Azure Web App
+      id: deploy-to-webapp
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+        slot-name: 'Production'
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: deploy/
+
+    - name: Verify deployment health
+      run: |
+        echo "Waiting for deployment to stabilize..."
+        sleep 30
+        curl -f https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net/health || exit 1
+        echo "Health check passed!"

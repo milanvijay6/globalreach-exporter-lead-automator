@@ -256,6 +256,9 @@ function registerRoutes() {
     }
   }
 
+  // Free tier diagnostic routes (no auth, lightweight)
+  app.use('/api/f1',                  safeRequire('./routes/freeTier', 'freeTier'));
+
   // Register all API routes
   app.use('/webhooks',                safeRequire('./routes/webhooks', 'webhooks'));
   app.use('/api/products',            safeRequire('./routes/products', 'products'));
