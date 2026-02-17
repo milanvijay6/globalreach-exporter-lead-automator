@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const winston = require('winston');
+const freeTierConfig = require('../config/freeTier');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -15,26 +16,17 @@ const logger = winston.createLogger({
 let jobs = [];
 
 /**
- * Detect if running on Azure Free Tier
- */
-function isFreeTier() {
-  return process.env.AZURE_FREE_TIER === 'true' || 
-         process.env.WEBSITE_SKU === 'Free' ||
-         (process.env.WEBSITE_INSTANCE_ID && !process.env.WEBSITE_SKU);
-}
-
-/**
  * Start all scheduled jobs
  */
 function startScheduler() {
-  const freeTier = isFreeTier();
+  const freeTier = freeTierConfig.isFreeTier;
   if (freeTier) {
     logger.info('[Scheduler] Free tier detected - reducing job frequency');
   }
   logger.info('[Scheduler] Starting scheduled jobs...');
 
-  // Daily analytics aggregation at 2 AM (disabled on free tier)
-  const analyticsSchedule = freeTier ? '0 2 * * 0' : '0 2 * * *'; // Weekly on free tier
+  // Daily analytics aggregation at 2 AM (weekly on free tier)
+  const analyticsSchedule = freeTierConfig.schedules.analytics;
   const analyticsJob = cron.schedule(analyticsSchedule, async () => {
     logger.info('[Scheduler] Running daily analytics aggregation...');
     try {
@@ -49,8 +41,8 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // AI lead scoring - every 2 hours on free tier, hourly otherwise
-  const leadScoringSchedule = freeTier ? '0 */2 * * *' : '0 * * * *';
+  // AI lead scoring
+  const leadScoringSchedule = freeTierConfig.schedules.leadScoring;
   const leadScoringJob = cron.schedule(leadScoringSchedule, async () => {
     logger.info('[Scheduler] Running hourly lead scoring...');
     try {
@@ -65,8 +57,8 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // OAuth token refresh - every 60 minutes on free tier, 30 minutes otherwise
-  const tokenRefreshSchedule = freeTier ? '0 * * * *' : '*/30 * * * *';
+  // OAuth token refresh
+  const tokenRefreshSchedule = freeTierConfig.schedules.tokenRefresh;
   const tokenRefreshJob = cron.schedule(tokenRefreshSchedule, async () => {
     logger.info('[Scheduler] Running OAuth token refresh...');
     try {
@@ -81,8 +73,8 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // Cache warming - every 60 minutes on free tier, 15 minutes otherwise
-  const cacheWarmingSchedule = freeTier ? '0 * * * *' : '*/15 * * * *';
+  // Cache warming
+  const cacheWarmingSchedule = freeTierConfig.schedules.cacheWarming;
   const cacheWarmingJob = cron.schedule(cacheWarmingSchedule, async () => {
     logger.info('[Scheduler] Running cache warming...');
     try {
@@ -97,8 +89,8 @@ function startScheduler() {
     timezone: 'UTC',
   });
 
-  // Archive old data - weekly on free tier, nightly otherwise
-  const archiveSchedule = freeTier ? '0 3 * * 0' : '0 3 * * *';
+  // Archive old data
+  const archiveSchedule = freeTierConfig.schedules.archive;
   const archiveJob = cron.schedule(archiveSchedule, async () => {
     logger.info('[Scheduler] Running archive old data job...');
     try {
