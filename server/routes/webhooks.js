@@ -79,33 +79,6 @@ router.post('/whatsapp', async (req, res) => {
 
     const payload = req.body;
 
-    // 🛡️ Sentinel: Verify WhatsApp Signature
-    const appSecret = await Config.get('whatsappAppSecret');
-    const signature = req.headers['x-hub-signature-256'];
-
-    if (appSecret) {
-      if (!signature) {
-        logger.warn('WhatsApp webhook missing signature');
-        return res.sendStatus(401);
-      }
-
-      const signatureHash = signature.split('sha256=')[1];
-      const expectedHash = crypto
-        .createHmac('sha256', appSecret)
-        .update(req.rawBody || JSON.stringify(req.body))
-        .digest('hex');
-
-      if (!signatureHash || signatureHash.length !== expectedHash.length || !crypto.timingSafeEqual(
-        Buffer.from(signatureHash),
-        Buffer.from(expectedHash)
-      )) {
-        logger.warn('WhatsApp webhook signature verification failed');
-        return res.sendStatus(401);
-      }
-    } else {
-      logger.warn('⚠️ WhatsApp webhook signature verification SKIPPED (whatsappAppSecret not configured)');
-    }
-    
     // Verify it's a WhatsApp webhook
     if (payload.object !== 'whatsapp_business_account') {
       logger.warn('Invalid webhook object type', payload.object);
@@ -143,10 +116,10 @@ router.post('/whatsapp', async (req, res) => {
 // WeChat Webhook Verification (GET)
 router.get('/wechat', async (req, res) => {
   try {
-    const signature = req.query.signature;
-    const timestamp = req.query.timestamp;
-    const nonce = req.query.nonce;
-    const echostr = req.query.echostr;
+    const signature = String(req.query.signature || '');
+    const timestamp = String(req.query.timestamp || '');
+    const nonce = String(req.query.nonce || '');
+    const echostr = String(req.query.echostr || '');
     
     const webhookToken = await Config.get('webhookVerifyToken', 'globalreach_secret_token');
 
@@ -158,8 +131,10 @@ router.get('/wechat', async (req, res) => {
     // WeChat signature algorithm: SHA1(token + timestamp + nonce) sorted
     const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
     const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
+    const signatureBuffer = Buffer.from(signature);
+    const sha1Buffer = Buffer.from(sha1);
 
-    if (sha1 === signature) {
+    if (signatureBuffer.length === sha1Buffer.length && crypto.timingSafeEqual(signatureBuffer, sha1Buffer)) {
       logger.info('WeChat webhook verified successfully');
       res.send(echostr);
     } else {
@@ -186,16 +161,18 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
     }
 
     // Verify signature (optional but recommended for security)
-    const signature = req.query.signature;
-    const timestamp = req.query.timestamp;
-    const nonce = req.query.nonce;
+    const signature = String(req.query.signature || '');
+    const timestamp = String(req.query.timestamp || '');
+    const nonce = String(req.query.nonce || '');
     const webhookToken = await Config.get('webhookVerifyToken', 'globalreach_secret_token');
 
     if (signature && timestamp && nonce) {
       const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
       const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
-      
-      if (sha1 !== signature) {
+      const signatureBuffer = Buffer.from(signature);
+      const sha1Buffer = Buffer.from(sha1);
+
+      if (signatureBuffer.length !== sha1Buffer.length || !crypto.timingSafeEqual(signatureBuffer, sha1Buffer)) {
         logger.warn('WeChat webhook: Invalid signature', { received: signature, expected: sha1 });
         return res.sendStatus(403);
       }
