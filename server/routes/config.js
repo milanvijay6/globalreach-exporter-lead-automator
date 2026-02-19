@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Config = require('../models/Config');
-const { authenticateUser } = require('../middleware/auth');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware } = require('../middleware/cache');
 
 // Apply authentication middleware to all routes
@@ -12,7 +12,7 @@ router.get('/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const defaultValue = req.query.default !== undefined ? JSON.parse(req.query.default) : null;
-    const userId = req.userId || null;
+    const userId = req.user ? req.userId : null;
     
     // Get config (user-specific if userId available, otherwise global)
     const value = await Config.get(key, defaultValue, userId, false);
@@ -24,7 +24,7 @@ router.get('/:key', async (req, res) => {
 });
 
 // Set config value
-router.post('/:key', async (req, res) => {
+router.post('/:key', requireAuth, async (req, res) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
@@ -43,7 +43,7 @@ router.post('/:key', async (req, res) => {
 // app.use(cacheMiddleware); // Disabled temporarily
 router.get('/all', async (req, res) => {
   try {
-    const userId = req.userId || null;
+    const userId = req.user ? req.userId : null;
     
     // Get all configs (user-specific if userId available, otherwise global)
     const config = await Config.getAll(userId, false);
