@@ -20,8 +20,14 @@ router.use(requireAuth);
 // Uses compound index: importerId_channel_timestamp
 router.get('/', cacheMiddleware(60, ['messages']), async (req, res) => {
   try {
-    const { importerId, channel, status, limit = 50, cursor, getArchived = false } = req.query;
+    const { limit = 50, cursor, getArchived = false } = req.query;
     
+    // Sanitize inputs to prevent NoSQL injection
+    // Objects passed in req.query (e.g. ?importerId[$ne]=null) must be rejected
+    const importerId = typeof req.query.importerId === 'string' ? req.query.importerId : undefined;
+    const channel = typeof req.query.channel === 'string' ? req.query.channel : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+
     if (!importerId) {
       return res.status(400).json({ success: false, error: 'importerId is required' });
     }
