@@ -10,6 +10,7 @@ describe('Auth Middleware Security Tests', () => {
       user: null,
       userId: null
     };
+    // Mock response object
     res = {
       statusCode: 200,
       jsonData: null,
@@ -22,10 +23,11 @@ describe('Auth Middleware Security Tests', () => {
         return this;
       }
     };
+    // Mock next function
+    req.nextCalled = false;
     next = () => {
       req.nextCalled = true;
     };
-    req.nextCalled = false;
 
     // Re-require to get fresh module
     delete require.cache[require.resolve('../middleware/auth')];
@@ -43,7 +45,7 @@ describe('Auth Middleware Security Tests', () => {
     authMiddleware.requireAuth(req, res, next);
 
     assert.strictEqual(res.statusCode, 401, 'Should return 401 status');
-    assert.deepStrictEqual(res.jsonData, { error: 'Unauthorized' }, 'Should return unauthorized error');
+    assert.deepStrictEqual(res.jsonData, { success: false, error: 'Unauthorized: Authentication required' }, 'Should return unauthorized error');
     assert.strictEqual(req.nextCalled, false, 'Should not call next()');
   });
 
@@ -56,11 +58,13 @@ describe('Auth Middleware Security Tests', () => {
     assert.strictEqual(res.statusCode, 200, 'Should not change status code');
   });
 
-  it('requireAuth should allow access if req.userId is present', () => {
+  it('requireAuth should DENY access if only req.userId is present (no req.user)', () => {
     req.userId = 'user123';
+    req.user = null;
 
     authMiddleware.requireAuth(req, res, next);
 
-    assert.strictEqual(req.nextCalled, true, 'Should call next()');
+    assert.strictEqual(req.nextCalled, false, 'Should NOT call next()');
+    assert.strictEqual(res.statusCode, 401, 'Should return 401');
   });
 });

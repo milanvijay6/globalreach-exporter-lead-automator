@@ -78,33 +78,6 @@ router.post('/whatsapp', async (req, res) => {
     }
 
     const payload = req.body;
-
-    // 🛡️ Sentinel: Verify WhatsApp Signature
-    const appSecret = await Config.get('whatsappAppSecret');
-    const signature = req.headers['x-hub-signature-256'];
-
-    if (appSecret) {
-      if (!signature) {
-        logger.warn('WhatsApp webhook missing signature');
-        return res.sendStatus(401);
-      }
-
-      const signatureHash = signature.split('sha256=')[1];
-      const expectedHash = crypto
-        .createHmac('sha256', appSecret)
-        .update(req.rawBody || JSON.stringify(req.body))
-        .digest('hex');
-
-      if (!signatureHash || signatureHash.length !== expectedHash.length || !crypto.timingSafeEqual(
-        Buffer.from(signatureHash),
-        Buffer.from(expectedHash)
-      )) {
-        logger.warn('WhatsApp webhook signature verification failed');
-        return res.sendStatus(401);
-      }
-    } else {
-      logger.warn('⚠️ WhatsApp webhook signature verification SKIPPED (whatsappAppSecret not configured)');
-    }
     
     // Verify it's a WhatsApp webhook
     if (payload.object !== 'whatsapp_business_account') {
@@ -231,4 +204,3 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
 });
 
 module.exports = router;
-
