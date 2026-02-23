@@ -16,6 +16,16 @@ router.use(authenticateUser);
 router.get('/', cacheMiddleware(300, ['products']), async (req, res) => {
   try {
     const { category, search, tags, status, limit = 50, cursor } = req.query;
+
+    // Security: Validate inputs to prevent NoSQL injection
+    if (category && typeof category !== 'string') return res.status(400).json({ success: false, error: 'Invalid category' });
+    if (search && typeof search !== 'string') return res.status(400).json({ success: false, error: 'Invalid search' });
+    if (status && typeof status !== 'string') return res.status(400).json({ success: false, error: 'Invalid status' });
+    if (cursor && typeof cursor !== 'string') return res.status(400).json({ success: false, error: 'Invalid cursor' });
+    if (limit && isNaN(Number(limit))) return res.status(400).json({ success: false, error: 'Invalid limit' });
+    if (tags && typeof tags === 'object' && !Array.isArray(tags)) return res.status(400).json({ success: false, error: 'Invalid tags' });
+    if (Array.isArray(tags) && !tags.every(t => typeof t === 'string')) return res.status(400).json({ success: false, error: 'Invalid tags array' });
+
     const userId = req.userId || null;
     const sortField = 'createdAt';
     const sortOrder = 'desc';
@@ -91,6 +101,49 @@ router.get('/', cacheMiddleware(300, ['products']), async (req, res) => {
     }
     
     res.json(formatPaginatedResponse(formattedResults, nextCursor, limit));
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/products/search - Search products
+router.get('/search', async (req, res) => {
+  try {
+    const { q, category, tags } = req.query;
+
+    // Security: Validate inputs
+    if (q && typeof q !== 'string') return res.status(400).json({ success: false, error: 'Invalid q parameter' });
+    if (category && typeof category !== 'string') return res.status(400).json({ success: false, error: 'Invalid category' });
+    if (tags && typeof tags === 'object' && !Array.isArray(tags)) return res.status(400).json({ success: false, error: 'Invalid tags' });
+    if (Array.isArray(tags) && !tags.every(t => typeof t === 'string')) return res.status(400).json({ success: false, error: 'Invalid tags array' });
+
+    const query = new Parse.Query(Product);
+
+    if (q) {
+      query.matches('name', q, 'i');
+    }
+
+    if (category) {
+      query.equalTo('category', category);
+    }
+
+    if (tags) {
+      const tagArray = Array.isArray(tags) ? tags : tags.split(',');
+      query.containsAll('tags', tagArray);
+    }
+
+    const products = await query.find({ useMasterKey: true });
+    const results = products.map(p => ({
+      id: p.id,
+      name: p.get('name'),
+      description: p.get('description'),
+      price: p.get('price'),
+      category: p.get('category'),
+      tags: p.get('tags') || [],
+      photos: p.get('photos') || []
+    }));
+
+    res.json({ success: true, data: results });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -232,42 +285,6 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/products/search - Search products
-router.get('/search', async (req, res) => {
-  try {
-    const { q, category, tags } = req.query;
-    
-    const query = new Parse.Query(Product);
-    
-    if (q) {
-      query.matches('name', q, 'i');
-    }
-    
-    if (category) {
-      query.equalTo('category', category);
-    }
-    
-    if (tags) {
-      const tagArray = Array.isArray(tags) ? tags : tags.split(',');
-      query.containsAll('tags', tagArray);
-    }
-    
-    const products = await query.find({ useMasterKey: true });
-    const results = products.map(p => ({
-      id: p.id,
-      name: p.get('name'),
-      description: p.get('description'),
-      price: p.get('price'),
-      category: p.get('category'),
-      tags: p.get('tags') || [],
-      photos: p.get('photos') || []
-    }));
-    
-    res.json({ success: true, data: results });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 module.exports = router;
 
