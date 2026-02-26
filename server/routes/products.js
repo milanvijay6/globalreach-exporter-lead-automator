@@ -16,34 +16,49 @@ router.use(authenticateUser);
 router.get('/', cacheMiddleware(300, ['products']), async (req, res) => {
   try {
     const { category, search, tags, status, limit = 50, cursor } = req.query;
+
+    // Security: Sanitize inputs to prevent NoSQL injection
+    const sanitizedCategory = typeof category === 'string' ? category : undefined;
+    const sanitizedSearch = typeof search === 'string' ? search : undefined;
+    const sanitizedStatus = typeof status === 'string' ? status : undefined;
+
+    // tags can be string (comma-separated) or array of strings
+    let sanitizedTags = undefined;
+    if (typeof tags === 'string') {
+      sanitizedTags = tags;
+    } else if (Array.isArray(tags)) {
+      sanitizedTags = tags.filter(t => typeof t === 'string');
+      if (sanitizedTags.length === 0) sanitizedTags = undefined;
+    }
+
     const userId = req.userId || null;
     const sortField = 'createdAt';
     const sortOrder = 'desc';
     
     // Check in-memory product catalog cache first (L3)
     const cachedProducts = productCatalogCache.get(userId);
-    if (cachedProducts && !search && !category && !tags && !status) {
+    if (cachedProducts && !sanitizedSearch && !sanitizedCategory && !sanitizedTags && !sanitizedStatus) {
       // Return cached products if no filters applied
       return res.json(formatPaginatedResponse(cachedProducts, null, limit));
     }
     
     const query = new Parse.Query(Product);
     
-    if (category) {
-      query.equalTo('category', category);
+    if (sanitizedCategory) {
+      query.equalTo('category', sanitizedCategory);
     }
     
-    if (status) {
-      query.equalTo('status', status);
+    if (sanitizedStatus) {
+      query.equalTo('status', sanitizedStatus);
     }
     
-    if (tags) {
-      const tagArray = Array.isArray(tags) ? tags : tags.split(',');
+    if (sanitizedTags) {
+      const tagArray = Array.isArray(sanitizedTags) ? sanitizedTags : sanitizedTags.split(',');
       query.containsAll('tags', tagArray);
     }
     
-    if (search) {
-      query.matches('name', search, 'i');
+    if (sanitizedSearch) {
+      query.matches('name', sanitizedSearch, 'i');
     }
     
     // Apply cursor-based pagination
@@ -86,11 +101,61 @@ router.get('/', cacheMiddleware(300, ['products']), async (req, res) => {
     });
     
     // Cache in-memory product catalog if no filters (for quick access)
-    if (!search && !category && !tags && !status && !cursor) {
+    if (!sanitizedSearch && !sanitizedCategory && !sanitizedTags && !sanitizedStatus && !cursor) {
       productCatalogCache.set(formattedResults, userId);
     }
     
     res.json(formatPaginatedResponse(formattedResults, nextCursor, limit));
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/products/search - Search products
+// Moved above /:id to prevent route shadowing
+router.get('/search', async (req, res) => {
+  try {
+    const { q, category, tags } = req.query;
+
+    // Security: Sanitize inputs
+    const sanitizedQ = typeof q === 'string' ? q : undefined;
+    const sanitizedCategory = typeof category === 'string' ? category : undefined;
+
+    let sanitizedTags = undefined;
+    if (typeof tags === 'string') {
+      sanitizedTags = tags;
+    } else if (Array.isArray(tags)) {
+      sanitizedTags = tags.filter(t => typeof t === 'string');
+      if (sanitizedTags.length === 0) sanitizedTags = undefined;
+    }
+
+    const query = new Parse.Query(Product);
+
+    if (sanitizedQ) {
+      query.matches('name', sanitizedQ, 'i');
+    }
+
+    if (sanitizedCategory) {
+      query.equalTo('category', sanitizedCategory);
+    }
+
+    if (sanitizedTags) {
+      const tagArray = Array.isArray(sanitizedTags) ? sanitizedTags : sanitizedTags.split(',');
+      query.containsAll('tags', tagArray);
+    }
+
+    const products = await query.find({ useMasterKey: true });
+    const results = products.map(p => ({
+      id: p.id,
+      name: p.get('name'),
+      description: p.get('description'),
+      price: p.get('price'),
+      category: p.get('category'),
+      tags: p.get('tags') || [],
+      photos: p.get('photos') || []
+    }));
+
+    res.json({ success: true, data: results });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -232,56 +297,4 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/products/search - Search products
-router.get('/search', async (req, res) => {
-  try {
-    const { q, category, tags } = req.query;
-    
-    const query = new Parse.Query(Product);
-    
-    if (q) {
-      query.matches('name', q, 'i');
-    }
-    
-    if (category) {
-      query.equalTo('category', category);
-    }
-    
-    if (tags) {
-      const tagArray = Array.isArray(tags) ? tags : tags.split(',');
-      query.containsAll('tags', tagArray);
-    }
-    
-    const products = await query.find({ useMasterKey: true });
-    const results = products.map(p => ({
-      id: p.id,
-      name: p.get('name'),
-      description: p.get('description'),
-      price: p.get('price'),
-      category: p.get('category'),
-      tags: p.get('tags') || [],
-      photos: p.get('photos') || []
-    }));
-    
-    res.json({ success: true, data: results });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
