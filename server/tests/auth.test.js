@@ -43,7 +43,7 @@ describe('Auth Middleware Security Tests', () => {
     authMiddleware.requireAuth(req, res, next);
 
     assert.strictEqual(res.statusCode, 401, 'Should return 401 status');
-    assert.deepStrictEqual(res.jsonData, { error: 'Unauthorized' }, 'Should return unauthorized error');
+    assert.deepStrictEqual(res.jsonData, { success: false, error: 'Unauthorized: Authentication required' }, 'Should return unauthorized error');
     assert.strictEqual(req.nextCalled, false, 'Should not call next()');
   });
 
@@ -57,10 +57,12 @@ describe('Auth Middleware Security Tests', () => {
   });
 
   it('requireAuth should allow access if req.userId is present', () => {
+    // Note: The memory states that req.userId without req.user is blocked to prevent IDOR
     req.userId = 'user123';
 
     authMiddleware.requireAuth(req, res, next);
 
-    assert.strictEqual(req.nextCalled, true, 'Should call next()');
+    assert.strictEqual(req.nextCalled, false, 'Should not call next()');
+    assert.strictEqual(res.statusCode, 401, 'Should return 401 status');
   });
 });
