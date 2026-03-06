@@ -159,7 +159,15 @@ router.get('/wechat', async (req, res) => {
     const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
     const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
 
-    if (sha1 === signature) {
+    if (typeof signature !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string') {
+      logger.warn('WeChat webhook verification failed: Invalid parameter type');
+      return res.sendStatus(400);
+    }
+
+    const expectedBuffer = Buffer.from(sha1, 'utf8');
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+
+    if (signatureBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
       logger.info('WeChat webhook verified successfully');
       res.send(echostr);
     } else {
@@ -192,10 +200,18 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
     const webhookToken = await Config.get('webhookVerifyToken', 'globalreach_secret_token');
 
     if (signature && timestamp && nonce) {
+      if (typeof signature !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string') {
+        logger.warn('WeChat webhook: Invalid parameter type');
+        return res.sendStatus(400);
+      }
+
       const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
       const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
       
-      if (sha1 !== signature) {
+      const expectedBuffer = Buffer.from(sha1, 'utf8');
+      const signatureBuffer = Buffer.from(signature, 'utf8');
+
+      if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
         logger.warn('WeChat webhook: Invalid signature', { received: signature, expected: sha1 });
         return res.sendStatus(403);
       }
