@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.simple(),
   transports: [new winston.transports.Console()]
 });
+
+router.use(authenticateUser);
+router.use(requireAuth);
 
 /**
  * GET /api/ai/stream/generate-message
