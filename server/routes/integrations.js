@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Integration = require('../models/Integration');
 const Parse = require('parse/node');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // GET /api/integrations/status - Get all services status
 router.get('/status', async (req, res) => {
