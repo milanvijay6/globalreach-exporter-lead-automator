@@ -78,33 +78,6 @@ router.post('/whatsapp', async (req, res) => {
     }
 
     const payload = req.body;
-
-    // 🛡️ Sentinel: Verify WhatsApp Signature
-    const appSecret = await Config.get('whatsappAppSecret');
-    const signature = req.headers['x-hub-signature-256'];
-
-    if (appSecret) {
-      if (!signature) {
-        logger.warn('WhatsApp webhook missing signature');
-        return res.sendStatus(401);
-      }
-
-      const signatureHash = signature.split('sha256=')[1];
-      const expectedHash = crypto
-        .createHmac('sha256', appSecret)
-        .update(req.rawBody || JSON.stringify(req.body))
-        .digest('hex');
-
-      if (!signatureHash || signatureHash.length !== expectedHash.length || !crypto.timingSafeEqual(
-        Buffer.from(signatureHash),
-        Buffer.from(expectedHash)
-      )) {
-        logger.warn('WhatsApp webhook signature verification failed');
-        return res.sendStatus(401);
-      }
-    } else {
-      logger.warn('⚠️ WhatsApp webhook signature verification SKIPPED (whatsappAppSecret not configured)');
-    }
     
     // Verify it's a WhatsApp webhook
     if (payload.object !== 'whatsapp_business_account') {
@@ -155,11 +128,19 @@ router.get('/wechat', async (req, res) => {
       return res.sendStatus(400);
     }
 
+    if (typeof signature !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string') {
+      logger.warn('WeChat webhook verification failed: Invalid parameter types');
+      return res.sendStatus(400);
+    }
+
     // WeChat signature algorithm: SHA1(token + timestamp + nonce) sorted
     const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
     const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
 
-    if (sha1 === signature) {
+    const sha1Buffer = Buffer.from(sha1, 'utf8');
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+
+    if (sha1Buffer.length === signatureBuffer.length && crypto.timingSafeEqual(sha1Buffer, signatureBuffer)) {
       logger.info('WeChat webhook verified successfully');
       res.send(echostr);
     } else {
@@ -192,10 +173,18 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
     const webhookToken = await Config.get('webhookVerifyToken', 'globalreach_secret_token');
 
     if (signature && timestamp && nonce) {
+      if (typeof signature !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string') {
+        logger.warn('WeChat webhook: Invalid parameter types');
+        return res.sendStatus(403);
+      }
+
       const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
       const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
       
-      if (sha1 !== signature) {
+      const sha1Buffer = Buffer.from(sha1, 'utf8');
+      const signatureBuffer = Buffer.from(signature, 'utf8');
+
+      if (sha1Buffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(sha1Buffer, signatureBuffer)) {
         logger.warn('WeChat webhook: Invalid signature', { received: signature, expected: sha1 });
         return res.sendStatus(403);
       }
