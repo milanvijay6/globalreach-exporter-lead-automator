@@ -41,6 +41,8 @@ router.get('/whatsapp', async (req, res) => {
 router.post('/whatsapp', async (req, res) => {
   try {
     // SECURITY: Verify WhatsApp signature
+    // This block verifies the X-Hub-Signature-256 header using the raw request body.
+    // It replaces previous duplicate/conflicting verification blocks.
     const signature = req.get('X-Hub-Signature-256');
     const appSecret = (await Config.get('whatsappAppSecret')) || process.env.WHATSAPP_APP_SECRET;
 
@@ -79,33 +81,6 @@ router.post('/whatsapp', async (req, res) => {
 
     const payload = req.body;
 
-    // 🛡️ Sentinel: Verify WhatsApp Signature
-    const appSecret = await Config.get('whatsappAppSecret');
-    const signature = req.headers['x-hub-signature-256'];
-
-    if (appSecret) {
-      if (!signature) {
-        logger.warn('WhatsApp webhook missing signature');
-        return res.sendStatus(401);
-      }
-
-      const signatureHash = signature.split('sha256=')[1];
-      const expectedHash = crypto
-        .createHmac('sha256', appSecret)
-        .update(req.rawBody || JSON.stringify(req.body))
-        .digest('hex');
-
-      if (!signatureHash || signatureHash.length !== expectedHash.length || !crypto.timingSafeEqual(
-        Buffer.from(signatureHash),
-        Buffer.from(expectedHash)
-      )) {
-        logger.warn('WhatsApp webhook signature verification failed');
-        return res.sendStatus(401);
-      }
-    } else {
-      logger.warn('⚠️ WhatsApp webhook signature verification SKIPPED (whatsappAppSecret not configured)');
-    }
-    
     // Verify it's a WhatsApp webhook
     if (payload.object !== 'whatsapp_business_account') {
       logger.warn('Invalid webhook object type', payload.object);
@@ -124,19 +99,16 @@ router.post('/whatsapp', async (req, res) => {
       logger.warn('Webhook queue failed, processing synchronously:', queueError.message);
       
       // Process synchronously (fallback)
-      const webhookLog = new WebhookLog();
-      webhookLog.set('channel', 'WhatsApp');
-      webhookLog.set('payload', payload);
-      webhookLog.set('timestamp', new Date());
-      await webhookLog.save(null, { useMasterKey: true });
+      await WebhookLog.create({
+        channel: 'WhatsApp',
+        payload: payload,
+        timestamp: new Date()
+      });
       
-      // TODO: Process webhook payload (update leads, messages, etc.)
       logger.info('WhatsApp webhook processed synchronously');
     }
   } catch (err) {
     logger.error('Error handling WhatsApp webhook', err);
-    // Already sent 200, so we can't change status
-    // Log error for monitoring
   }
 });
 
@@ -150,6 +122,12 @@ router.get('/wechat', async (req, res) => {
     
     const webhookToken = await Config.get('webhookVerifyToken', 'globalreach_secret_token');
 
+    // Type checking
+    if (typeof signature !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string' || typeof echostr !== 'string') {
+        logger.warn('WeChat webhook verification failed: Invalid parameter types');
+        return res.sendStatus(400);
+    }
+
     if (!signature || !timestamp || !nonce || !echostr) {
       logger.warn('WeChat webhook verification failed: Missing parameters');
       return res.sendStatus(400);
@@ -159,7 +137,10 @@ router.get('/wechat', async (req, res) => {
     const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
     const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
 
-    if (sha1 === signature) {
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+    const expectedBuffer = Buffer.from(sha1, 'utf8');
+
+    if (signatureBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
       logger.info('WeChat webhook verified successfully');
       res.send(echostr);
     } else {
@@ -192,10 +173,19 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
     const webhookToken = await Config.get('webhookVerifyToken', 'globalreach_secret_token');
 
     if (signature && timestamp && nonce) {
+        // Type checking
+        if (typeof signature !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string') {
+             logger.warn('WeChat webhook signature verification failed: Invalid parameter types');
+             return res.sendStatus(400);
+        }
+
       const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
       const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
       
-      if (sha1 !== signature) {
+      const signatureBuffer = Buffer.from(signature, 'utf8');
+      const expectedBuffer = Buffer.from(sha1, 'utf8');
+
+      if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
         logger.warn('WeChat webhook: Invalid signature', { received: signature, expected: sha1 });
         return res.sendStatus(403);
       }
@@ -214,13 +204,12 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
       logger.warn('Webhook queue failed, processing synchronously:', queueError.message);
       
       // Process synchronously (fallback)
-      const webhookLog = new WebhookLog();
-      webhookLog.set('channel', 'WeChat');
-      webhookLog.set('payload', xmlPayload);
-      webhookLog.set('timestamp', new Date());
-      await webhookLog.save(null, { useMasterKey: true });
+      await WebhookLog.create({
+        channel: 'WeChat',
+        payload: xmlPayload,
+        timestamp: new Date()
+      });
       
-      // TODO: Process webhook payload (update leads, messages, etc.)
       logger.info('WeChat webhook processed synchronously');
     }
   } catch (err) {
@@ -231,4 +220,3 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
 });
 
 module.exports = router;
-
