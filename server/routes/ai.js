@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+router.use(authenticateUser);
+router.use(requireAuth);
 
 const logger = winston.createLogger({
   level: 'info',

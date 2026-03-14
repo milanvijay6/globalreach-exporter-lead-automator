@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { queueLeadScoring, queueMessageGeneration, queueAnalysis, getJobStatus, getQueueStatus } = require('../queues/aiProcessingQueue');
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+router.use(authenticateUser);
+router.use(requireAuth);
 
 const logger = winston.createLogger({
   level: 'info',
