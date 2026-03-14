@@ -7,6 +7,10 @@ const Parse = require('parse/node');
 const { cacheMiddleware } = require('../middleware/cache');
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+router.use(authenticateUser);
+router.use(requireAuth);
 
 const logger = winston.createLogger({
   level: 'info',
