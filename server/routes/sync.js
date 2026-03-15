@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
 const Lead = require('../models/Lead');
 const Message = require('../models/Message');
 const Product = require('../models/Product');
@@ -7,6 +9,10 @@ const Parse = require('parse/node');
 const { cacheMiddleware } = require('../middleware/cache');
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 const winston = require('winston');
+
+// Apply authentication middleware
+router.use(authenticateUser);
+router.use(requireAuth);
 
 const logger = winston.createLogger({
   level: 'info',
