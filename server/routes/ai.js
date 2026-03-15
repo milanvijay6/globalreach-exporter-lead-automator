@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
 const winston = require('winston');
+
+// Apply authentication middleware
+router.use(authenticateUser);
+router.use(requireAuth);
 
 const logger = winston.createLogger({
   level: 'info',
