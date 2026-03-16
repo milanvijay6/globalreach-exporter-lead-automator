@@ -6,6 +6,7 @@ const Product = require('../models/Product');
 const Config = require('../models/Config');
 const AnalyticsDaily = require('../models/AnalyticsDaily');
 const Parse = require('parse/node');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware } = require('../middleware/cache');
 const { parseFileService } = require('../utils/parseFileService');
 const winston = require('winston');
@@ -15,6 +16,10 @@ const logger = winston.createLogger({
   format: winston.format.simple(),
   transports: [new winston.transports.Console()]
 });
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 /**
  * GET /api/bundle/lead-detail/:id
