@@ -4,6 +4,7 @@ const Lead = require('../models/Lead');
 const Message = require('../models/Message');
 const Product = require('../models/Product');
 const Parse = require('parse/node');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware } = require('../middleware/cache');
 const { applyCursor, getNextCursor, formatPaginatedResponse } = require('../utils/pagination');
 const winston = require('winston');
@@ -13,6 +14,9 @@ const logger = winston.createLogger({
   format: winston.format.simple(),
   transports: [new winston.transports.Console()]
 });
+
+router.use(authenticateUser);
+router.use(requireAuth);
 
 /**
  * GET /api/sync/leads?since=timestamp&limit=100
