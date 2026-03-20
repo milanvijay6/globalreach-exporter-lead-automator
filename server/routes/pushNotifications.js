@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Parse = require('parse/node');
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -12,19 +13,24 @@ const logger = winston.createLogger({
 // Store device tokens in Parse (or use a dedicated DeviceToken class)
 const DeviceToken = Parse.Object.extend('DeviceToken');
 
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
+
 /**
  * POST /api/push-notifications/register
  * Register device token for push notifications
  */
 router.post('/register', async (req, res) => {
   try {
-    const { token, platform, userId } = req.body;
+    const { token, platform } = req.body;
     
     if (!token || !platform) {
       return res.status(400).json({ success: false, error: 'Token and platform are required' });
     }
 
-    const currentUserId = userId || req.userId || req.headers['x-user-id'] || null;
+    // SECURITY: Use authenticated user ID instead of spoofable headers or body
+    const currentUserId = req.userId || (req.user ? req.user.id : null);
 
     // Check if token already exists
     const query = new Parse.Query(DeviceToken);
