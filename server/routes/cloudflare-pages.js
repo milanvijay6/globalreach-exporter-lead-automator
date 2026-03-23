@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const Config = require('../models/Config');
 const { deployCloudflarePages } = require('../../scripts/deploy-cloudflare-pages');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // Get current Cloudflare Pages URL
 router.get('/url', async (req, res) => {
