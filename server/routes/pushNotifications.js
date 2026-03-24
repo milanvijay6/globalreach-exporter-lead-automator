@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Parse = require('parse/node');
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -11,6 +12,10 @@ const logger = winston.createLogger({
 
 // Store device tokens in Parse (or use a dedicated DeviceToken class)
 const DeviceToken = Parse.Object.extend('DeviceToken');
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 /**
  * POST /api/push-notifications/register
@@ -24,7 +29,13 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Token and platform are required' });
     }
 
-    const currentUserId = userId || req.userId || req.headers['x-user-id'] || null;
+    // 🛡️ Sentinel: Fix IDOR by securely extracting user ID from authenticated token
+    // Do not use spoofable req.headers['x-user-id'] or req.body.userId
+    const currentUserId = req.user ? req.user.id : null;
+
+    if (!currentUserId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Valid user session required' });
+    }
 
     // Check if token already exists
     const query = new Parse.Query(DeviceToken);
