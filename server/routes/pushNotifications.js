@@ -2,12 +2,17 @@ const express = require('express');
 const router = express.Router();
 const Parse = require('parse/node');
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.simple(),
   transports: [new winston.transports.Console()]
 });
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // Store device tokens in Parse (or use a dedicated DeviceToken class)
 const DeviceToken = Parse.Object.extend('DeviceToken');
@@ -24,7 +29,8 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Token and platform are required' });
     }
 
-    const currentUserId = userId || req.userId || req.headers['x-user-id'] || null;
+    // RequireAuth guarantees req.user exists. Extract the id robustly.
+    const currentUserId = req.user ? req.user.id : (req.userId || null);
 
     // Check if token already exists
     const query = new Parse.Query(DeviceToken);
