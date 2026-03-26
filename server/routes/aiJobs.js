@@ -2,12 +2,17 @@ const express = require('express');
 const router = express.Router();
 const { queueLeadScoring, queueMessageGeneration, queueAnalysis, getJobStatus, getQueueStatus } = require('../queues/aiProcessingQueue');
 const winston = require('winston');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.simple(),
   transports: [new winston.transports.Console()]
 });
+
+// Apply authentication middleware to all routes
+router.use(authenticateUser);
+router.use(requireAuth);
 
 /**
  * POST /api/ai/jobs/score-leads
@@ -16,7 +21,7 @@ const logger = winston.createLogger({
 router.post('/score-leads', async (req, res) => {
   try {
     const { leadIds, priority = 'normal', timeout } = req.body;
-    const userId = req.userId || req.headers['x-user-id'] || 'anonymous';
+    const userId = (req.user && req.user.id) || req.userId;
 
     if (!Array.isArray(leadIds) || leadIds.length === 0) {
       return res.status(400).json({
@@ -55,7 +60,7 @@ router.post('/score-leads', async (req, res) => {
 router.post('/generate-message', async (req, res) => {
   try {
     const { importer, history, myCompany, systemInstructionTemplate, targetChannel, priority = 'normal', timeout = 10000 } = req.body;
-    const userId = req.userId || req.headers['x-user-id'] || 'anonymous';
+    const userId = (req.user && req.user.id) || req.userId;
 
     if (!importer || !systemInstructionTemplate || !targetChannel) {
       return res.status(400).json({
@@ -100,7 +105,7 @@ router.post('/generate-message', async (req, res) => {
 router.post('/analyze', async (req, res) => {
   try {
     const { data, priority = 'normal', timeout = 30000 } = req.body;
-    const userId = req.userId || req.headers['x-user-id'] || 'anonymous';
+    const userId = (req.user && req.user.id) || req.userId;
 
     if (!data || !data.type) {
       return res.status(400).json({
