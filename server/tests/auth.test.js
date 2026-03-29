@@ -43,7 +43,7 @@ describe('Auth Middleware Security Tests', () => {
     authMiddleware.requireAuth(req, res, next);
 
     assert.strictEqual(res.statusCode, 401, 'Should return 401 status');
-    assert.deepStrictEqual(res.jsonData, { error: 'Unauthorized' }, 'Should return unauthorized error');
+    assert.deepStrictEqual(res.jsonData, { success: false, error: 'Unauthorized: Authentication required' }, 'Should return unauthorized error');
     assert.strictEqual(req.nextCalled, false, 'Should not call next()');
   });
 
@@ -56,11 +56,13 @@ describe('Auth Middleware Security Tests', () => {
     assert.strictEqual(res.statusCode, 200, 'Should not change status code');
   });
 
-  it('requireAuth should allow access if req.userId is present', () => {
+  it('requireAuth should deny access if only req.userId is present (user object missing)', () => {
     req.userId = 'user123';
+    req.user = null;
 
     authMiddleware.requireAuth(req, res, next);
 
-    assert.strictEqual(req.nextCalled, true, 'Should call next()');
+    assert.strictEqual(res.statusCode, 401, 'Should return 401 status');
+    assert.strictEqual(req.nextCalled, false, 'Should not call next()');
   });
 });
