@@ -6,6 +6,11 @@
 const express = require('express');
 const router = express.Router();
 const { liveQueryService } = require('../services/liveQueryService');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
+
+// 🛡️ Sentinel: Enforce Authentication on LiveQuery API
+router.use(authenticateUser);
+router.use(requireAuth);
 
 // POST /api/livequery/subscribe - Subscribe to active chat
 router.post('/subscribe', async (req, res) => {
