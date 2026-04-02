@@ -43,7 +43,7 @@ describe('Auth Middleware Security Tests', () => {
     authMiddleware.requireAuth(req, res, next);
 
     assert.strictEqual(res.statusCode, 401, 'Should return 401 status');
-    assert.deepStrictEqual(res.jsonData, { error: 'Unauthorized' }, 'Should return unauthorized error');
+    assert.deepStrictEqual(res.jsonData, { success: false, error: 'Unauthorized: Authentication required' }, 'Should return unauthorized error');
     assert.strictEqual(req.nextCalled, false, 'Should not call next()');
   });
 
