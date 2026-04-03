@@ -159,7 +159,10 @@ router.get('/wechat', async (req, res) => {
     const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
     const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
 
-    if (sha1 === signature) {
+    const signatureBuffer = Buffer.from(typeof signature === 'string' ? signature : '');
+    const expectedBuffer = Buffer.from(sha1);
+
+    if (signatureBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
       logger.info('WeChat webhook verified successfully');
       res.send(echostr);
     } else {
@@ -195,7 +198,10 @@ router.post('/wechat', express.text({ type: 'application/xml', limit: '10mb' }),
       const tmpStr = [webhookToken, timestamp, nonce].sort().join('');
       const sha1 = crypto.createHash('sha1').update(tmpStr).digest('hex');
       
-      if (sha1 !== signature) {
+      const signatureBuffer = Buffer.from(typeof signature === 'string' ? signature : '');
+      const expectedBuffer = Buffer.from(sha1);
+
+      if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
         logger.warn('WeChat webhook: Invalid signature', { received: signature, expected: sha1 });
         return res.sendStatus(403);
       }
