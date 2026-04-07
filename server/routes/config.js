@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const Config = require('../models/Config');
-const { authenticateUser } = require('../middleware/auth');
+const { authenticateUser, requireAuth } = require('../middleware/auth');
 const { cacheMiddleware } = require('../middleware/cache');
 
 // Apply authentication middleware to all routes
 router.use(authenticateUser);
+router.use(requireAuth);
 
 // Get config value
 router.get('/:key', async (req, res) => {
