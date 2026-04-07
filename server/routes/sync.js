@@ -89,7 +89,8 @@ router.get('/leads', cacheMiddleware(60), async (req, res) => {
  */
 router.get('/messages', cacheMiddleware(60), async (req, res) => {
   try {
-    const { since, limit = 100, cursor, importerId } = req.query;
+    const { since, limit = 100, cursor } = req.query;
+    const importerId = typeof req.query.importerId === 'string' ? req.query.importerId : undefined;
     const sinceTimestamp = since ? parseInt(since, 10) : 0;
     
     const query = new Parse.Query(Message);
