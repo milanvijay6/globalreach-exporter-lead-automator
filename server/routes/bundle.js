@@ -242,7 +242,11 @@ router.get('/dashboard', cacheMiddleware(30), async (req, res) => {
  */
 router.get('/lead-list', cacheMiddleware(60), async (req, res) => {
   try {
-    const { status, country, limit = 50, cursor, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+    const { limit = 50, cursor } = req.query;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const country = typeof req.query.country === 'string' ? req.query.country : undefined;
+    const sortBy = typeof req.query.sortBy === 'string' ? req.query.sortBy : 'createdAt';
+    const sortOrder = typeof req.query.sortOrder === 'string' ? req.query.sortOrder : 'desc';
     const userId = req.userId || null;
 
     // Fetch all data in parallel
