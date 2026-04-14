@@ -15,7 +15,15 @@ router.use(authenticateUser);
 // Uses L3 (Redis), L4 (Parse cache), and in-memory product catalog cache
 router.get('/', cacheMiddleware(300, ['products']), async (req, res) => {
   try {
-    const { category, search, tags, status, limit = 50, cursor } = req.query;
+    let { category, search, tags, status, limit = 50, cursor } = req.query;
+
+    // Sanitize inputs to prevent NoSQL injection and DoS
+    category = typeof category === 'string' ? category : undefined;
+    search = typeof search === 'string' ? search : undefined;
+    status = typeof status === 'string' ? status : undefined;
+    cursor = typeof cursor === 'string' ? cursor : undefined;
+    limit = typeof limit === 'string' || typeof limit === 'number' ? limit : 50;
+
     const userId = req.userId || null;
     const sortField = 'createdAt';
     const sortOrder = 'desc';
@@ -38,8 +46,15 @@ router.get('/', cacheMiddleware(300, ['products']), async (req, res) => {
     }
     
     if (tags) {
-      const tagArray = Array.isArray(tags) ? tags : tags.split(',');
-      query.containsAll('tags', tagArray);
+      if (typeof tags === 'string') {
+        query.containsAll('tags', tags.split(','));
+      } else if (Array.isArray(tags)) {
+        // Filter out non-string items to prevent deep NoSQL injection in arrays
+        const stringTags = tags.filter(t => typeof t === 'string');
+        if (stringTags.length > 0) {
+          query.containsAll('tags', stringTags);
+        }
+      }
     }
     
     if (search) {
@@ -235,7 +250,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
 // GET /api/products/search - Search products
 router.get('/search', async (req, res) => {
   try {
-    const { q, category, tags } = req.query;
+    let { q, category, tags } = req.query;
+
+    // Sanitize inputs to prevent NoSQL injection
+    q = typeof q === 'string' ? q : undefined;
+    category = typeof category === 'string' ? category : undefined;
     
     const query = new Parse.Query(Product);
     
@@ -248,8 +267,15 @@ router.get('/search', async (req, res) => {
     }
     
     if (tags) {
-      const tagArray = Array.isArray(tags) ? tags : tags.split(',');
-      query.containsAll('tags', tagArray);
+      if (typeof tags === 'string') {
+        query.containsAll('tags', tags.split(','));
+      } else if (Array.isArray(tags)) {
+        // Filter out non-string items to prevent deep NoSQL injection in arrays
+        const stringTags = tags.filter(t => typeof t === 'string');
+        if (stringTags.length > 0) {
+          query.containsAll('tags', stringTags);
+        }
+      }
     }
     
     const products = await query.find({ useMasterKey: true });
