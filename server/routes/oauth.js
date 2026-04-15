@@ -1,6 +1,17 @@
 const express = require('express');
 const router = express.Router();
 
+// 🛡️ Sentinel: Simple HTML escape function to prevent Reflected XSS
+const escapeHtml = (unsafe) => {
+  if (typeof unsafe !== 'string') return '';
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
 // Test endpoint to verify OAuth routes are working
 router.get('/test', (req, res) => {
   res.json({ success: true, message: 'OAuth routes are working' });
@@ -76,7 +87,7 @@ router.get('/callback', async (req, res) => {
         <html>
           <body>
             <h2>Authentication Failed</h2>
-            <p>Error: ${error}</p>
+            <p>Error: ${escapeHtml(error)}</p>
             <p>You can close this window and try again.</p>
             <script>setTimeout(() => window.close(), 3000);</script>
           </body>
@@ -167,13 +178,13 @@ router.get('/callback', async (req, res) => {
             </div>
             <div class="debug">
               <strong>Debug Info:</strong><br>
-              URL: ${rawUrl.substring(0, 200)}<br>
+              URL: ${escapeHtml(rawUrl.substring(0, 200))}<br>
               Has Query Params: ${Object.keys(req.query).length > 0 ? 'Yes' : 'No'}<br>
-              Query Keys: ${Object.keys(req.query).join(', ') || 'None'}
+              Query Keys: ${escapeHtml(Object.keys(req.query).join(', ') || 'None')}
             </div>
             <p><strong>Next Steps:</strong></p>
             <ol>
-              <li>Verify the redirect URI in Google Cloud Console matches exactly: <code>${fullUrl.split('?')[0]}</code></li>
+              <li>Verify the redirect URI in Google Cloud Console matches exactly: <code>${escapeHtml(fullUrl.split('?')[0])}</code></li>
               <li>Try connecting again from the application</li>
               <li>Make sure you complete the OAuth flow in one session (don't close the browser window)</li>
             </ol>
@@ -274,7 +285,7 @@ router.get('/callback', async (req, res) => {
       <html>
         <body>
           <h2>Authentication Error</h2>
-          <p>An error occurred processing the authentication: ${err.message}</p>
+          <p>An error occurred processing the authentication: ${escapeHtml(err.message)}</p>
           <p>You can close this window and try again.</p>
           <script>setTimeout(() => window.close(), 3000);</script>
         </body>
