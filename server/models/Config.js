@@ -24,7 +24,8 @@ class Config {
       
       // Try user-specific config first if userId is provided
       if (userId) {
-        const userKey = `config_${userId}_${key}`;
+        const safeUserId = String(userId);
+        const userKey = `config_${safeUserId}_${key}`;
         const userConfig = await collection.findOne({ key: userKey });
         
         if (userConfig) {
@@ -68,7 +69,8 @@ class Config {
       const collection = db.collection('Config');
       
       // Use user-specific key if userId is provided
-      const configKey = userId ? `config_${userId}_${key}` : key;
+      const safeUserId = userId ? String(userId) : null;
+      const configKey = safeUserId ? `config_${safeUserId}_${key}` : key;
       
       const result = await collection.updateOne(
         { key: configKey },
@@ -107,8 +109,10 @@ class Config {
       let query = {};
       
       if (userId) {
+        // 🛡️ Sentinel: Sanitize userId to prevent NoSQL injection via $regex
+        const safeUserId = String(userId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         // Get user-specific configs
-        query = { key: { $regex: `^config_${userId}_` } };
+        query = { key: { $regex: `^config_${safeUserId}_` } };
       } else {
         // Get global configs (those that don't start with 'config_')
         query = { key: { $not: { $regex: '^config_' } } };
